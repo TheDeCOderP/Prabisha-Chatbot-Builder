@@ -5,8 +5,7 @@ import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { RefreshCw, Monitor, Smartphone, Send, Loader2 } from "lucide-react"
-import { Chatbot, ShapeType, BorderType } from "../../../generated/prisma/browser";
-
+import { Chatbot, ShapeType, BorderType } from "@prisma/client";
 
 interface Message {
   role: "user" | "assistant"
