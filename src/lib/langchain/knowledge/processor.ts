@@ -498,10 +498,11 @@ async function processExcelFile(file: File): Promise<ProcessedTable> {
 }
 
 async function processSQL(file: File): Promise<ProcessedTable> {
+  console.log("Processing SQL file...");
   const text = await file.text();
   
   const createTableRegex = /CREATE TABLE\s+(?:IF NOT EXISTS\s+)?`?(\w+)`?\s*\(([\s\S]*?)\);/gi;
-  const insertRegex = /INSERT INTO\s+`?(\w+)`?\s*(?:\((.*?)\))?\s*VALUES\s*\((.*?)\);/gi;
+  const insertRegex = /INSERT INTO\s+`?(\w+)`?\s*(?:\((.*?)\))?\s*VALUES\s*([\s\S]*?);/gi;
   
   const tables: Map<string, { columns: string[], rows: any[] }> = new Map();
   
@@ -524,22 +525,62 @@ async function processSQL(file: File): Promise<ProcessedTable> {
   while ((match = insertRegex.exec(text)) !== null) {
     const tableName = match[1];
     const columnList = match[2];
-    const valuesStr = match[3];
+    const valuesAllStr = match[3];
     
     const table = tables.get(tableName);
     if (!table) continue;
     
-    const values = parseValues(valuesStr);
     const columns = columnList 
       ? columnList.split(',').map(c => c.trim().replace(/`/g, ''))
       : table.columns;
-    
-    const row: any = {};
-    columns.forEach((col, idx) => {
-      row[col] = values[idx];
-    });
-    
-    table.rows.push(row);
+
+    // Handle multiple value sets: (val1, val2), (val3, val4)
+    const rowStrings: string[] = [];
+    let currentBarcketContent = '';
+    let bracketDepth = 0;
+    let inQuotes = false;
+    let quoteChar = '';
+
+    for (let i = 0; i < valuesAllStr.length; i++) {
+      const char = valuesAllStr[i];
+      
+      if ((char === '"' || char === "'") && valuesAllStr[i - 1] !== '\\') {
+        if (!inQuotes) {
+          inQuotes = true;
+          quoteChar = char;
+        } else if (char === quoteChar) {
+          inQuotes = false;
+        }
+      }
+
+      if (!inQuotes) {
+        if (char === '(') {
+          bracketDepth++;
+          if (bracketDepth === 1) {
+            currentBarcketContent = '';
+            continue;
+          }
+        } else if (char === ')') {
+          bracketDepth--;
+          if (bracketDepth === 0) {
+            rowStrings.push(currentBarcketContent);
+          }
+        }
+      }
+
+      if (bracketDepth > 0) {
+        currentBarcketContent += char;
+      }
+    }
+
+    for (const valuesStr of rowStrings) {
+      const values = parseValues(valuesStr);
+      const row: any = {};
+      columns.forEach((col, idx) => {
+        row[col] = values[idx];
+      });
+      table.rows.push(row);
+    }
   }
   
   const allRows: any[] = [];
@@ -548,16 +589,22 @@ async function processSQL(file: File): Promise<ProcessedTable> {
   
   tables.forEach((table, tableName) => {
     tableNames.push(tableName);
+    console.log("Table:", table);
     table.columns.forEach(col => allColumns.add(col));
     
     table.rows.forEach(row => {
+      console.log("Row:", row);
       allRows.push({ 
         _table: tableName, 
         ...row 
       });
     });
   });
-  
+
+  console.log(tables);
+ 
+  console.log("Finished processing SQL file.");
+
   return {
     rows: allRows,
     metadata: {

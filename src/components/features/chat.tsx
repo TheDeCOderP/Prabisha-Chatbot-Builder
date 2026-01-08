@@ -1,3 +1,5 @@
+"use client";
+
 import { useState, useRef, useEffect } from "react";
 
 import { Card } from "@/components/ui/card"
@@ -188,11 +190,6 @@ export default function Chat({
     const baseSize = size || iconSize;
     return Math.max(30, Math.min(100, baseSize)); // Clamp between 30-100px
   }
-  
-  // Determine theme class
-  const getThemeClass = () => {
-    return theme === "dark" ? "bg-gray-900 text-white" : "bg-linear-to-br from-blue-50 via-purple-50 to-white";
-  }
 
   // Fetch chatbot data from database
   useEffect(() => {
@@ -350,7 +347,7 @@ export default function Chat({
     
     return (
       <div 
-        className={`shrink-0 overflow-hidden flex items-center justify-center`}
+        className={`shrink-0 overflow-hidden flex items-center justify-center border border-border`}
         style={{
           width: `${dim}px`,
           height: `${dim}px`,
@@ -381,8 +378,8 @@ export default function Chat({
   if (isLoadingChatbot && useDbConfig) {
     return (
       <div className="h-full max-h-screen flex flex-col items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
-        <p className="mt-2 text-sm text-gray-500">Loading chatbot...</p>
+        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+        <p className="mt-2 text-sm text-muted-foreground">Loading chatbot...</p>
       </div>
     );
   }
@@ -391,7 +388,7 @@ export default function Chat({
     <div className="h-full max-h-[calc(100vh-7rem)] flex flex-col">
       {/* Preview Header */}
       {showPreviewControls && (
-        <div className="flex items-center justify-between px-6 py-4 bg-white border-b border-[#e5e8ec]">
+        <div className="flex items-center justify-between px-6 py-4 border-b">
           <h2 className="text-lg font-semibold">Preview</h2>
           <div className="flex items-center gap-2">
             <Button 
@@ -416,10 +413,9 @@ export default function Chat({
       {/* Chat Area */}
       <div 
         ref={chatAreaRef}
-        className={`flex-1 overflow-y-auto no-scrollbar p-6 ${theme === "dark" ? "bg-gray-900 text-white" : "bg-white"}`}
-        style={{
-          backgroundColor: theme === "dark" ? "#111827" : undefined
-        }}
+        className={`flex-1 overflow-y-auto no-scrollbar p-6 ${
+          theme === "dark" ? "bg-background text-foreground" : "bg-background"
+        }`}
       >
         {/* Greeting/Initial Message */}
         {messages.length > 0 && (
@@ -440,8 +436,8 @@ export default function Chat({
               <Card 
                 className={`p-4 max-w-md ${
                   theme === "dark" 
-                    ? "bg-gray-800 border-gray-700 text-white" 
-                    : "bg-white border-[#e5e8ec]"
+                    ? "bg-card text-card-foreground" 
+                    : "bg-card"
                 }`}
                 style={{ borderRadius: getBorderRadiusValue() }}
               >
@@ -470,10 +466,10 @@ export default function Chat({
             <Card 
               className={`p-4 max-w-md ${
                 msg.role === "user" 
-                  ? `text-white ${theme === "dark" ? "bg-blue-700 border-blue-600" : "bg-blue-600 border-blue-500"}` 
+                  ? `text-white bg-primary border-primary` 
                   : theme === "dark" 
-                    ? "bg-gray-800 border-gray-700 text-white" 
-                    : "bg-white border-[#e5e8ec]"
+                    ? "bg-card text-card-foreground" 
+                    : "bg-card"
               }`}
               style={{ 
                 borderRadius: getBorderRadiusValue(),
@@ -499,8 +495,8 @@ export default function Chat({
             <Card 
               className={`p-4 max-w-md ${
                 theme === "dark" 
-                  ? "bg-gray-800 border-gray-700 text-white" 
-                  : "bg-white border-[#e5e8ec]"
+                  ? "bg-card text-card-foreground" 
+                  : "bg-card"
               }`}
               style={{ borderRadius: getBorderRadiusValue() }}
             >
@@ -520,8 +516,8 @@ export default function Chat({
       <div 
         className={`p-6 border-t ${
           theme === "dark" 
-            ? "bg-gray-900 border-gray-800" 
-            : "bg-white border-[#e5e8ec]"
+            ? "bg-background border-border" 
+            : "bg-background border-border"
         }`}
       >
         <div className="flex items-center gap-3">
@@ -532,8 +528,8 @@ export default function Chat({
             placeholder="Ask me anything"
             className={`flex-1 ${
               theme === "dark" 
-                ? "bg-gray-800 border-gray-700 text-white placeholder-gray-400" 
-                : "bg-white border-[#d4d0ca]"
+                ? "bg-card text-foreground placeholder-muted-foreground" 
+                : "bg-card"
             }`}
             style={{ borderRadius: getBorderRadiusValue() }}
             disabled={isLoading || isLoadingChatbot}
@@ -543,7 +539,7 @@ export default function Chat({
             variant="ghost" 
             className={`shrink-0 ${
               theme === "dark" 
-                ? "text-gray-400 hover:text-white hover:bg-gray-800" 
+                ? "text-muted-foreground hover:text-foreground hover:bg-accent" 
                 : ""
             }`}
             onClick={handleSendMessage}

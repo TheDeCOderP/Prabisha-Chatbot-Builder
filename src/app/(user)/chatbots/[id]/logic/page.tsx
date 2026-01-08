@@ -273,29 +273,16 @@ export default function LogicPage() {
 
       {/* Right Panel - Chat Preview */}
       <div className="hidden lg:block w-1/2 bg-background">
-        <div className="h-full flex flex-col">
-          <div className="border-b bg-card p-4">
-            <div className="flex items-center justify-between">
-              <h1 className="font-semibold text-foreground">Chat Preview</h1>
-              <div className="text-xs text-muted-foreground">
-                Test your logic configuration in real-time
-              </div>
-            </div>
-          </div>
-          
-          <div className="flex-1 flex flex-col">
-            <Chat
-              id={chatbotId}
-              showPreviewControls={false}
-              onSendMessage={handleSendMessage}
-              directive={`
-                # Objective: You are a logic configuration assistant for a chatbot builder. Help users configure various logic features like lead collection, Zapier integrations, scheduling, and suggestions.
-                # Style: Be technical but friendly. Provide clear explanations of logic features and their implications.
-                # Rules: When users ask about specific logic features, explain how they work and how to configure them. If unsure, suggest they check the feature documentation.
-              `}
-            />
-          </div>
-        </div>
+        <Chat
+          id={chatbotId}
+          showPreviewControls={true}
+          onSendMessage={handleSendMessage}
+          directive={`
+            # Objective: You are a logic configuration assistant for a chatbot builder. Help users configure various logic features like lead collection, Zapier integrations, scheduling, and suggestions.
+            # Style: Be technical but friendly. Provide clear explanations of logic features and their implications.
+            # Rules: When users ask about specific logic features, explain how they work and how to configure them. If unsure, suggest they check the feature documentation.
+          `}
+        />
       </div>
     </div>
   )

@@ -148,11 +148,11 @@ model Chatbot {
   updatedAt DateTime @updatedAt
 
   form          LeadForm? 
-  leads         Lead[]
+  leads         Lead[]           
   flows         Flow[]
   conversations Conversation[]
   knowledgeBases KnowledgeBase[]
-  logics        Logic[] // Add this line
+  logics        Logic[]
 
   workspaceId String
   workspace   Workspace @relation(fields: [workspaceId], references: [id])
@@ -181,7 +181,7 @@ model LeadForm {
   leadFormStyle LeadFormStyle @default(EMBEDDED)
 
   chatbotId String  @unique
-  chatbot   Chatbot @relation(fields: [chatbotId], references: [id])
+  chatbot   Chatbot @relation(fields: [chatbotId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -197,10 +197,10 @@ model Lead {
   data        Json
 
   formId      String
-  form        LeadForm @relation(fields: [formId], references: [id])
+  form        LeadForm @relation(fields: [formId], references: [id], onDelete: Cascade)
 
   chatbotId String
-  chatbot   Chatbot @relation(fields: [chatbotId], references: [id])
+  chatbot   Chatbot @relation(fields: [chatbotId], references: [id], onDelete: Cascade)
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -229,7 +229,7 @@ model Conversation {
   endedAt   DateTime? // When conversation was ended/archived
   
   // Relations
-  chatbot    Chatbot  @relation(fields: [chatbotId], references: [id])
+  chatbot    Chatbot  @relation(fields: [chatbotId], references: [id], onDelete: Cascade)
   messages   Message[] // Messages belong to a conversation
   
   @@index([chatbotId])
@@ -247,7 +247,7 @@ model Message {
   updatedAt       DateTime   @updatedAt
 
   conversationId  String 
-  conversation    Conversation @relation(fields: [conversationId], references: [id]) // Add this relation
+  conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade) // Add this relation
 
   @@index([conversationId])
   @@index([createdAt])
@@ -270,7 +270,7 @@ model Flow {
   createdAt DateTime @default(now())
 
   chatbotId String
-  chatbot   Chatbot @relation(fields: [chatbotId], references: [id])
+  chatbot   Chatbot @relation(fields: [chatbotId], references: [id], onDelete: Cascade)
   nodes     Node[]
   edges     Edge[]
 }
@@ -287,7 +287,7 @@ model Node {
 
   createdAt DateTime @default(now())
 
-  flow Flow @relation(fields: [flowId], references: [id])
+  flow Flow @relation(fields: [flowId], references: [id], onDelete: Cascade)
 
   outgoing Edge[] @relation("OutgoingEdges")
   incoming Edge[] @relation("IncomingEdges")
@@ -304,7 +304,7 @@ model Edge {
 
   condition Json?
 
-  flow Flow @relation(fields: [flowId], references: [id])
+  flow Flow @relation(fields: [flowId], references: [id], onDelete: Cascade)
 
   source Node @relation("OutgoingEdges", fields: [sourceId], references: [id])
   target Node @relation("IncomingEdges", fields: [targetId], references: [id])
@@ -329,7 +329,7 @@ model KnowledgeBase {
   indexName String // vector index name
   createdAt DateTime @default(now())
 
-  chatbot   Chatbot    @relation(fields: [chatbotId], references: [id])
+  chatbot   Chatbot    @relation(fields: [chatbotId], references: [id], onDelete: Cascade)
   documents Document[]
 }
 
@@ -341,7 +341,7 @@ model Document {
   metadata        Json
   createdAt       DateTime @default(now())
 
-  knowledgeBase KnowledgeBase @relation(fields: [knowledgeBaseId], references: [id])
+  knowledgeBase KnowledgeBase @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
 }
 
 enum KBType {
@@ -380,7 +380,7 @@ model Logic {
   updatedAt      DateTime    @updatedAt
   
   // Relations
-  chatbot        Chatbot     @relation(fields: [chatbotId], references: [id])
+  chatbot        Chatbot     @relation(fields: [chatbotId], references: [id], onDelete: Cascade)
   linkButton     LinkButton? // Optional one-to-one for link button logic
   meetingSchedule MeetingSchedule? // Optional one-to-one for meeting logic
   leadCollection LeadCollection? // Optional one-to-one for lead collection
@@ -409,7 +409,7 @@ model LinkButton {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   
-  logic Logic @relation(fields: [logicId], references: [id])
+  logic Logic @relation(fields: [logicId], references: [id], onDelete: Cascade)
 }
 
 // Meeting Schedule Logic - Specific configuration for meeting scheduling
@@ -439,7 +439,7 @@ model MeetingSchedule {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   
-  logic Logic @relation(fields: [logicId], references: [id])
+  logic Logic @relation(fields: [logicId], references: [id], onDelete: Cascade)
 }
 
 // Lead Collection Logic - Specific configuration for lead forms
@@ -470,7 +470,7 @@ model LeadCollection {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   
-  logic Logic @relation(fields: [logicId], references: [id])
+  logic Logic @relation(fields: [logicId], references: [id], onDelete: Cascade)
   formFields FormField[] // Add this reverse relationship
 }
 
@@ -494,7 +494,7 @@ model FormField {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   
-  leadCollection LeadCollection @relation(fields: [leadCollectionId], references: [id])
+  leadCollection LeadCollection @relation(fields: [leadCollectionId], references: [id], onDelete: Cascade)
   
   @@index([leadCollectionId])
   @@index([order])

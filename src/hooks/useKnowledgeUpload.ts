@@ -99,12 +99,13 @@ export function useKnowledgeUpload(chatbotId: string) {
     setUploading(true);
 
     try {
-      const response = await fetch(`/api/chatbot/${chatbotId}/knowledge/webpage`, {
+      const response = await fetch(`/api/chatbots/${chatbotId}/knowledge`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          type: 'webpage',
           url,
           crawlSubpages,
           name,

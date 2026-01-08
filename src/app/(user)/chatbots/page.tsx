@@ -15,6 +15,17 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Skeleton } from "@/components/ui/skeleton"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns"
 import Link from "next/link"
 import { useWorkspace } from "@/providers/workspace-provider"
@@ -58,6 +69,10 @@ export default function ChatbotsPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [chatbotToDelete, setChatbotToDelete] = useState<Chatbot | null>(null)
+  const [duplicateDialogOpen, setDuplicateDialogOpen] = useState(false)
+  const [chatbotToDuplicate, setChatbotToDuplicate] = useState<Chatbot | null>(null)
 
   const { activeWorkspace } = useWorkspace();
 
@@ -77,10 +92,14 @@ export default function ChatbotsPage() {
   } = form
 
   useEffect(() => {
-    fetchChatbots()
+    if (activeWorkspace?.id) {
+      fetchChatbots()
+    }
   }, [activeWorkspace?.id])
 
   const fetchChatbots = async () => {
+    if (!activeWorkspace?.id) return;
+    
     try {
       setIsLoading(true)
       setError(null)
@@ -95,16 +114,23 @@ export default function ChatbotsPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred')
       console.error('Error fetching chatbots:', err)
+      
+      toast.error("Failed to load chatbots")
     } finally {
       setIsLoading(false)
     }
   }
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this chatbot?')) return
-    
+  const handleDelete = async (chatbot: Chatbot) => {
+    setChatbotToDelete(chatbot)
+    setDeleteDialogOpen(true)
+  }
+
+  const confirmDelete = async () => {
+    if (!chatbotToDelete) return
+
     try {
-      const response = await fetch(`/api/chatbots/${id}`, {
+      const response = await fetch(`/api/chatbots/${chatbotToDelete.id}`, {
         method: 'DELETE',
       })
 
@@ -112,14 +138,26 @@ export default function ChatbotsPage() {
         throw new Error('Failed to delete chatbot')
       }
 
-      setChatbots(chatbots.filter(chatbot => chatbot.id !== id))
+      setChatbots(chatbots.filter(chatbot => chatbot.id !== chatbotToDelete.id))
+      
+      toast.success(`${chatbotToDelete.name} has been deleted successfully.`);
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to delete chatbot')
+      toast.error("Failed to delete chatbot");
       console.error('Error deleting chatbot:', err)
+    } finally {
+      setDeleteDialogOpen(false)
+      setChatbotToDelete(null)
     }
   }
 
   const handleDuplicate = async (chatbot: Chatbot) => {
+    setChatbotToDuplicate(chatbot)
+    setDuplicateDialogOpen(true)
+  }
+
+  const confirmDuplicate = async () => {
+    if (!chatbotToDuplicate) return
+
     try {
       const response = await fetch('/api/chatbots', {
         method: 'POST',
@@ -127,7 +165,7 @@ export default function ChatbotsPage() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          name: `${chatbot.name} (Copy)`,
+          name: `${chatbotToDuplicate.name} (Copy)`,
           workspaceId: activeWorkspace?.id,
         }),
       })
@@ -138,10 +176,16 @@ export default function ChatbotsPage() {
 
       const data = await response.json()
       fetchChatbots()
+      
+      toast.success("Chatbot duplicated")
+      
       return data
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to duplicate chatbot')
+      toast.error("Failed to duplicate chatbot")
       console.error('Error duplicating chatbot:', err)
+    } finally {
+      setDuplicateDialogOpen(false)
+      setChatbotToDuplicate(null)
     }
   }
 
@@ -173,12 +217,14 @@ export default function ChatbotsPage() {
       reset()
       fetchChatbots()
 
+      toast.success("Chatbot created");
+
       // Redirect to the newly created chatbot's edit page
       router.push(`/chatbots/${responseData.chatbot.id}/instructions`)
 
     } catch (error) {
       console.error('Error creating chatbot:', error)
-      alert(error instanceof Error ? error.message : 'Failed to create chatbot')
+      toast.error("Failed to create chatbot")
     }
   }
 
@@ -277,6 +323,52 @@ export default function ChatbotsPage() {
 
   return (
     <div className="flex flex-col gap-6 p-6">
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. This will permanently delete the chatbot{" "}
+              <span className="font-semibold">{chatbotToDelete?.name}</span> and all of its data.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setChatbotToDelete(null)}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Duplicate Confirmation Dialog */}
+      <AlertDialog open={duplicateDialogOpen} onOpenChange={setDuplicateDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Duplicate Chatbot</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will create a copy of{" "}
+              <span className="font-semibold">{chatbotToDuplicate?.name}</span>. 
+              The duplicate will have "(Copy)" appended to its name.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setChatbotToDuplicate(null)}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDuplicate}>
+              Duplicate
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold tracking-tight">Chatbots</h1>
@@ -479,7 +571,7 @@ export default function ChatbotsPage() {
                         <DropdownMenuItem>Share</DropdownMenuItem>
                         <DropdownMenuItem 
                           className="text-destructive"
-                          onClick={() => handleDelete(chatbot.id)}
+                          onClick={() => handleDelete(chatbot)}
                         >
                           Delete
                         </DropdownMenuItem>

@@ -1,5 +1,5 @@
 // app/api/chat/route.ts
-import { searchSimilar } from "@/lib/langchain/vector-store";
+import { searchSimilar } from '@/lib/langchain/vector-store';
 import { NextRequest, NextResponse } from 'next/server';
 import { createTogetherAI } from '@ai-sdk/togetherai';
 import { generateText } from 'ai';
@@ -9,210 +9,166 @@ const togetherai = createTogetherAI({
   apiKey: process.env.TOGETHER_AI_API_KEY ?? '',
 });
 
-// System prompt generator based on chatbot configuration
-function generateSystemPrompt(chatbot: any, context: any = {}) {
-  const basePrompt = chatbot.directive || 
-    "You are a helpful assistant. Answer questions clearly and concisely.";
-  
-  const knowledgeContext = chatbot.knowledgeBases?.length > 0 
-    ? "Use the provided knowledge base information to answer questions accurately."
-    : "";
-  
-  const greeting = chatbot.greeting 
-    ? `Start conversations with: "${chatbot.greeting}"`
-    : "";
-  
-  const personality = chatbot.description 
-    ? `Your personality: ${chatbot.description}`
-    : "";
-  
-  const modelConfig = `Use model settings: temperature=${chatbot.temperature || 0.7}, max_tokens=${chatbot.max_tokens || 500}`;
-  
-  return `
-${basePrompt}
+const QUERY_REWRITE_PROMPT = `Convert the conversational question into a clear search query.
+Rules: Extract key concepts, remove filler, keep it 3-10 words, no quotes.
+User: {question}
+Search Query:`;
 
-${personality}
-${knowledgeContext}
-${greeting}
-${modelConfig}
+const RAG_ANSWER_PROMPT = `Answer using ONLY the CONTEXT provided.
+RULES:
+1. Base answers STRICTLY on context
+2. If context lacks info, say "I don't have information about that."
+3. Don't make up information
+4. Be conversational but accurate
 
-Respond in a friendly, helpful manner. If you don't know something, say so.
-Format responses clearly with proper paragraphs, bullet points, or numbered lists when appropriate.
-`;
+CONTEXT:
+{context}
+
+CONVERSATION HISTORY:
+{history}
+
+USER: {question}
+
+ASSISTANT:`;
+
+function generateSystemPrompt(chatbot: any) {
+  const base = chatbot.directive || "You are a helpful assistant.";
+  const personality = chatbot.description ? `\nPersonality: ${chatbot.description}` : "";
+  return `${base}${personality}\nGuidelines: Prioritize knowledge base, be honest, stay professional.`;
 }
 
-// Enhanced response generator
-async function generateResponse(
-  chatbot: any, 
-  userMessage: string, 
-  conversationId: string,
-  context: any = {}
-) {
+async function rewriteQuery(userMessage: string): Promise<string> {
   try {
-    // Get conversation history for context
-    const conversationHistory = await prisma.message.findMany({
-      where: {
-        conversationId,
-        createdAt: {
-          gte: new Date(Date.now() - 30 * 60 * 1000) // Last 30 minutes
+    const { text } = await generateText({
+      model: togetherai('meta-llama/Llama-3.3-70B-Instruct-Turbo'),
+      prompt: QUERY_REWRITE_PROMPT.replace('{question}', userMessage),
+      maxOutputTokens: 100,
+      temperature: 0.3,
+    });
+    const rewritten = text.trim().replace(/["']/g, '');
+    console.log('🔄 Query:', userMessage, '→', rewritten);
+    return rewritten;
+  } catch (error) {
+    console.error('Query rewrite error:', error);
+    return userMessage;
+  }
+}
+
+async function searchKnowledgeBases(chatbot: any, query: string): Promise<string> {
+  if (!chatbot.knowledgeBases?.length) return '';
+
+  const allResults: any[] = [];
+  
+  for (const kb of chatbot.knowledgeBases) {
+    try {
+      const results = await searchSimilar({
+        query,
+        chatbotId: chatbot.id,
+        knowledgeBaseId: kb.id,
+        limit: 5,
+        threshold: 0.65,
+      });
+      console.log(`📊 ${kb.name}: ${results.length} results`);
+      allResults.push(...results.map((r: any) => ({ ...r, kbName: kb.name })));
+    } catch (error) {
+      console.error(`❌ ${kb.name}:`, error);
+    }
+  }
+
+  allResults.sort((a, b) => (b.score || 0) - (a.score || 0));
+  const top = allResults.slice(0, 8);
+  
+  if (!top.length) return '';
+
+  const formatted = top.map((r, i) => 
+    `[Source ${i + 1}: ${r.kbName} - ${(r.score * 100).toFixed(1)}%]\n${r.content}`
+  ).join('\n---\n');
+
+  return `KNOWLEDGE BASE:\n${formatted}\n\nSources: ${top.length}`;
+}
+
+function formatHistory(messages: any[]): string {
+  if (!messages.length) return "New conversation";
+  return messages.map(m => 
+    `${m.senderType === 'USER' ? 'User' : 'Bot'}: ${m.content}`
+  ).join('\n');
+}
+
+async function getLogicContext(chatbot: any, message: string): Promise<string> {
+  let ctx = '';
+  for (const logic of chatbot.logics || []) {
+    if (logic.triggerType === 'KEYWORD' && logic.keywords) {
+      try {
+        const keywords = JSON.parse(logic.keywords);
+        if (keywords.some((k: string) => message.toLowerCase().includes(k.toLowerCase()))) {
+          if (logic.type === 'LINK_BUTTON' && logic.linkButton) {
+            ctx += `\n[Mention: ${logic.linkButton.buttonText}]\n`;
+          } else if (logic.type === 'SCHEDULE_MEETING') {
+            ctx += '\n[Offer meeting scheduling]\n';
+          }
         }
-      },
+      } catch (e) {}
+    }
+  }
+  return ctx;
+}
+
+async function generateRAGResponse(chatbot: any, userMessage: string, conversationId: string) {
+  try {
+    const history = await prisma.message.findMany({
+      where: { conversationId, createdAt: { gte: new Date(Date.now() - 30 * 60 * 1000) }},
       orderBy: { createdAt: 'asc' },
-      take: 10 // Last 10 messages
+      take: 10
     });
 
-    // Format conversation history
-    const history = conversationHistory.map(msg => ({
-      role: msg.senderType === 'USER' ? 'user' as const : 'assistant' as const,
-      content: msg.content
-    }));
+    const formattedHistory = formatHistory(history);
+    const rewrittenQuery = await rewriteQuery(userMessage);
+    const knowledgeContext = await searchKnowledgeBases(chatbot, rewrittenQuery);
+    const logicContext = await getLogicContext(chatbot, userMessage);
 
-    // Search knowledge bases for relevant information
-    let knowledgeResults: string[] = [];
-    if (chatbot.knowledgeBases && chatbot.knowledgeBases.length > 0) {
-      for (const kb of chatbot.knowledgeBases) {
-        try {
-          const results = await searchSimilar({
-            query: userMessage,
-            chatbotId: chatbot.id,
-            knowledgeBaseId: kb.id,
-            limit: 3,
-          });
-          knowledgeResults.push(...results.map((r: any) => r.content));
-        } catch (kbError) {
-          console.error(`Error searching knowledge base ${kb.name}:`, kbError);
-        }
-      }
+    let prompt: string;
+    
+    if (knowledgeContext) {
+      prompt = RAG_ANSWER_PROMPT
+        .replace('{context}', knowledgeContext + logicContext)
+        .replace('{history}', formattedHistory)
+        .replace('{question}', userMessage);
+      console.log('✅ Using RAG mode with knowledge base');
+    } else {
+      prompt = `${generateSystemPrompt(chatbot)}\n${logicContext}\nHistory:\n${formattedHistory}\nUser: ${userMessage}\nAssistant:`;
+      console.log('⚠️ No knowledge found, using general mode');
     }
 
-    // Combine knowledge base results
-    const knowledgeContext = knowledgeResults.length > 0
-      ? `Relevant information from knowledge base:\n${knowledgeResults.join('\n\n')}`
-      : '';
-
-    // Check for logic triggers
-    const activeLogics = chatbot.logics || [];
-    let logicContext = '';
-    
-    for (const logic of activeLogics) {
-      // Check keyword triggers
-      if (logic.triggerType === 'KEYWORD' && logic.keywords) {
-        try {
-          const keywords = JSON.parse(logic.keywords) as string[];
-          const hasKeyword = keywords.some(keyword => 
-            userMessage.toLowerCase().includes(keyword.toLowerCase())
-          );
-          
-          if (hasKeyword) {
-            switch (logic.type) {
-              case 'COLLECT_LEADS':
-                logicContext += '\n[User might be interested in providing contact information.]\n';
-                break;
-              case 'LINK_BUTTON':
-                if (logic.linkButton) {
-                  logicContext += `\n[Consider mentioning: ${logic.linkButton.buttonText} (${logic.linkButton.buttonLink})]\n`;
-                }
-                break;
-              case 'SCHEDULE_MEETING':
-                if (logic.meetingSchedule) {
-                  logicContext += `\n[User might want to schedule a meeting: ${logic.meetingSchedule.calendarLink}]\n`;
-                }
-                break;
-            }
-          }
-        } catch (e) {
-          console.error('Error parsing logic keywords:', e);
-        }
-      }
-    }
-
-    // Prepare final prompt
-    const systemPrompt = generateSystemPrompt(chatbot, context);
-    
-    const fullPrompt = `${systemPrompt}
-
-${knowledgeContext}
-
-${logicContext}
-
-Current time: ${new Date().toLocaleString()}
-
-Conversation history:
-${history.map(h => `${h.role}: ${h.content}`).join('\n')}
-
-User: ${userMessage}
-
-Assistant:`;
-
-    // Generate response using Together AI
     const { text } = await generateText({
       model: togetherai(chatbot.model || 'meta-llama/Llama-3.3-70B-Instruct-Turbo'),
-      system: systemPrompt,
-      messages: [
-        ...history,
-        { role: 'user', content: userMessage }
-      ],
+      prompt,
       maxOutputTokens: chatbot.max_tokens || 500,
       temperature: chatbot.temperature || 0.7,
     });
 
-    // Apply any post-processing (e.g., adding logic buttons)
-    let finalResponse = text;
-    
-    // Add logic-based suggestions to response if applicable
-    const logicSuggestions: string[] = [];
-    
-    for (const logic of activeLogics) {
-      if (logic.showAlways || logic.showAtEnd) {
-        switch (logic.type) {
-          case 'LINK_BUTTON':
-            if (logic.linkButton) {
-              logicSuggestions.push(`[${logic.linkButton.buttonText}](${logic.linkButton.buttonLink})`);
-            }
-            break;
-          case 'SCHEDULE_MEETING':
-            if (logic.meetingSchedule) {
-              logicSuggestions.push(`Schedule a meeting: ${logic.meetingSchedule.calendarLink}`);
-            }
-            break;
-        }
-      }
-    }
-    
-    if (logicSuggestions.length > 0) {
-      finalResponse += `\n\n**Suggestions:**\n${logicSuggestions.map(s => `• ${s}`).join('\n')}`;
-    }
-
-    return finalResponse;
+    return text.trim();
 
   } catch (error) {
-    console.error('Error generating response:', error);
+    console.error('RAG error:', error);
     throw error;
   }
 }
 
-// Check for logic triggers separately (for immediate actions)
-async function checkLogicTriggers(chatbot: any, userMessage: string) {
-  const triggeredLogics: any[] = [];
+async function checkLogicTriggers(chatbot: any, message: string) {
+  const triggered: any[] = [];
   
   for (const logic of chatbot.logics || []) {
     if (logic.triggerType === 'KEYWORD' && logic.keywords) {
       try {
-        const keywords = JSON.parse(logic.keywords) as string[];
-        const hasKeyword = keywords.some(keyword => 
-          userMessage.toLowerCase().includes(keyword.toLowerCase())
-        );
-        
-        if (hasKeyword) {
-          triggeredLogics.push(logic);
+        const keywords = JSON.parse(logic.keywords);
+        if (keywords.some((k: string) => message.toLowerCase().includes(k.toLowerCase()))) {
+          triggered.push(logic);
         }
-      } catch (e) {
-        console.error('Error parsing logic keywords:', e);
-      }
+      } catch (e) {}
     }
   }
   
-  return triggeredLogics;
+  return triggered;
 }
 
 export async function POST(request: NextRequest) {
@@ -223,45 +179,24 @@ export async function POST(request: NextRequest) {
     const conversationId = body.conversationId;
     const context = body.context;
 
-    console.log('Received message:', message);
-
     if (!message?.trim()) {
-      return NextResponse.json(
-        { error: 'Message is required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Message required' }, { status: 400 });
     }
 
     if (!chatbotId) {
-      return NextResponse.json(
-        { error: 'Chatbot ID is required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Chatbot ID required' }, { status: 400 });
     }
 
-    // Get chatbot with configurations
     const chatbot = await prisma.chatbot.findUnique({
       where: { id: chatbotId },
       include: {
-        knowledgeBases: {
-          include: { documents: true }
-        },
-        flows: {
-          include: {
-            nodes: true,
-            edges: true
-          }
-        },
+        knowledgeBases: { include: { documents: true }},
         logics: {
           where: { isActive: true },
           include: {
             linkButton: true,
             meetingSchedule: true,
-            leadCollection: {
-              include: {
-                formFields: true
-              }
-            }
+            leadCollection: { include: { formFields: true }}
           }
         }
       }
@@ -271,62 +206,31 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Chatbot not found' }, { status: 404 });
     }
 
-    // Create or get conversation
     let conversation;
     if (conversationId) {
-      conversation = await prisma.conversation.findUnique({
-        where: { id: conversationId }
-      });
-      
+      conversation = await prisma.conversation.findUnique({ where: { id: conversationId }});
       if (!conversation) {
         conversation = await prisma.conversation.create({
-          data: {
-            chatbotId,
-            title: message.substring(0, 50),
-            metadata: context
-          }
+          data: { chatbotId, title: message.substring(0, 50), metadata: context }
         });
       }
     } else {
       conversation = await prisma.conversation.create({
-        data: {
-          chatbotId,
-          title: message.substring(0, 50),
-          metadata: context
-        }
+        data: { chatbotId, title: message.substring(0, 50), metadata: context }
       });
     }
 
-    // Save user message
     await prisma.message.create({
-      data: {
-        content: message,
-        senderType: 'USER',
-        conversationId: conversation.id
-      }
+      data: { content: message, senderType: 'USER', conversationId: conversation.id }
     });
 
-    // Check for immediate logic triggers
     const triggeredLogics = await checkLogicTriggers(chatbot, message);
-    
-    // Generate AI response
-    const aiResponse = await generateResponse(
-      chatbot, 
-      message, 
-      conversation.id,
-      context
-    );
+    const aiResponse = await generateRAGResponse(chatbot, message, conversation.id);
 
-    // Save bot response
     await prisma.message.create({
-      data: {
-        content: aiResponse,
-        senderType: 'BOT',
-        conversationId: conversation.id
-      }
+      data: { content: aiResponse, senderType: 'BOT', conversationId: conversation.id }
     });
 
-    // Prepare response with logic triggers
     const responseData: any = {
       message: aiResponse,
       response: aiResponse,
@@ -335,7 +239,6 @@ export async function POST(request: NextRequest) {
       chatbotName: chatbot.name
     };
 
-    // Add logic triggers to response if any
     if (triggeredLogics.length > 0) {
       responseData.logicTriggers = triggeredLogics.map(logic => ({
         id: logic.id,
@@ -353,29 +256,24 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error('Chat API error:', error);
     
-    // Provide more specific error messages
     let errorMessage = 'Failed to process message';
     let statusCode = 500;
     
-    if (error.message?.includes('API key') || error.message?.includes('authentication')) {
+    if (error.message?.includes('API key')) {
       errorMessage = 'AI service configuration error';
       statusCode = 503;
     } else if (error.message?.includes('rate limit')) {
-      errorMessage = 'Rate limit exceeded. Please try again later.';
+      errorMessage = 'Rate limit exceeded';
       statusCode = 429;
     }
     
     return NextResponse.json(
-      { 
-        error: errorMessage,
-        details: process.env.NODE_ENV === 'development' ? error.message : undefined
-      },
+      { error: errorMessage, details: process.env.NODE_ENV === 'development' ? error.message : undefined },
       { status: statusCode }
     );
   }
 }
 
-// Optional: GET endpoint to fetch conversation history
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
@@ -384,29 +282,20 @@ export async function GET(request: NextRequest) {
 
     if (!conversationId || !chatbotId) {
       return NextResponse.json(
-        { error: 'conversationId and chatbotId are required' },
+        { error: 'conversationId and chatbotId required' },
         { status: 400 }
       );
     }
 
     const conversation = await prisma.conversation.findUnique({
       where: { id: conversationId },
-      include: {
-        messages: {
-          orderBy: { createdAt: 'asc' },
-          take: 50 // Limit to last 50 messages
-        }
-      }
+      include: { messages: { orderBy: { createdAt: 'asc' }, take: 50 }}
     });
 
     if (!conversation) {
-      return NextResponse.json(
-        { error: 'Conversation not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
     }
 
-    // Verify conversation belongs to chatbot
     if (conversation.chatbotId !== chatbotId) {
       return NextResponse.json(
         { error: 'Conversation does not belong to this chatbot' },
@@ -423,24 +312,17 @@ export async function GET(request: NextRequest) {
 
   } catch (error) {
     console.error('Error fetching conversation:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch conversation' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to fetch conversation' }, { status: 500 });
   }
 }
 
-// Optional: PUT endpoint to update conversation (e.g., mark as ended)
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
     const { conversationId, isActive, metadata } = body;
 
     if (!conversationId) {
-      return NextResponse.json(
-        { error: 'conversationId is required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'conversationId required' }, { status: 400 });
     }
 
     const conversation = await prisma.conversation.update({
@@ -461,9 +343,6 @@ export async function PUT(request: NextRequest) {
 
   } catch (error) {
     console.error('Error updating conversation:', error);
-    return NextResponse.json(
-      { error: 'Failed to update conversation' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to update conversation' }, { status: 500 });
   }
 }

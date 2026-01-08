@@ -5,54 +5,11 @@ import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 
 import { embedAndStore } from '@/lib/langchain/vector-store';
+import { processURL } from '@/lib/langchain/knowledge/web-scraper';
 import { processFile, processTable } from '@/lib/langchain/knowledge/processor';
 
 interface RouterParams {
   params: Promise<{ id: string }>
-}
-
-export async function GET(
-  request: NextRequest,
-  context: RouterParams
-) {
-  try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const { id: chatbotId } = await context.params;
-
-    const knowledgeBases = await prisma.knowledgeBase.findMany({
-      where: {
-        chatbotId,
-      },
-      include: {
-        documents: {
-          select: {
-            id: true,
-            source: true,
-            metadata: true,
-            createdAt: true,
-          },
-          orderBy: {
-            createdAt: 'desc',
-          },
-        },
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-    })
-
-    return NextResponse.json(knowledgeBases)
-  } catch (error) {
-    console.error('Failed to fetch knowledge bases:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch knowledge bases' },
-      { status: 500 }
-    )
-  }
 }
 
 export async function POST(
@@ -85,6 +42,142 @@ export async function POST(
       return NextResponse.json({ error: 'Chatbot not found' }, { status: 404 });
     }
 
+    const contentType = request.headers.get('content-type') || '';
+
+    // Handle JSON body for webpage scraping
+    if (contentType.includes('application/json')) {
+      const body = await request.json();
+      const { type, url, crawlSubpages, name } = body;
+
+      if (type !== 'webpage') {
+        return NextResponse.json({ error: 'Invalid type for JSON request' }, { status: 400 });
+      }
+
+      if (!url) {
+        return NextResponse.json({ error: 'URL is required' }, { status: 400 });
+      }
+
+      // Create knowledge base
+      const knowledgeBase = await prisma.knowledgeBase.create({
+        data: {
+          chatbotId,
+          name: name || `Webpage - ${new Date().toLocaleDateString()}`,
+          type: 'PAGE',
+          indexName: `kb_${chatbotId}_${Date.now()}`,
+        },
+      });
+
+      try {
+        console.log(`Starting scraping: ${url} (crawl: ${crawlSubpages})`);
+        
+        // Process URL with crawling option
+        const { content, metadata, pages } = await processURL(url, crawlSubpages, 50);
+        console.log(`Finished scraping: ${url} (crawl: ${crawlSubpages})`);
+
+        if (pages && pages.length > 0) {
+          // Store each page as a separate document
+          const documentPromises = pages.map(async (page) => {
+            const document = await prisma.document.create({
+              data: {
+                knowledgeBaseId: knowledgeBase.id,
+                source: page.url,
+                content: page.content,
+                metadata: {
+                  ...page.metadata,
+                  title: page.title,
+                  url: page.url,
+                },
+              },
+            });
+
+            // Embed and store
+            await embedAndStore({
+              documentId: document.id,
+              content: page.content,
+              metadata: {
+                chatbotId,
+                knowledgeBaseId: knowledgeBase.id,
+                source: page.url,
+                title: page.title,
+                type: 'url',
+              },
+              chatbotId,
+              knowledgeBaseId: knowledgeBase.id,
+            });
+
+            return {
+              success: true,
+              url: page.url,
+              title: page.title,
+              documentId: document.id,
+            };
+          });
+
+          const results = await Promise.allSettled(documentPromises);
+          
+          const successResults = results
+            .filter(r => r.status === 'fulfilled')
+            .map(r => (r as PromiseFulfilledResult<any>).value);
+          
+          const errorResults = results
+            .filter(r => r.status === 'rejected')
+            .map(r => ({
+              success: false,
+              error: (r as PromiseRejectedResult).reason?.message || 'Unknown error',
+            }));
+
+          return NextResponse.json({
+            knowledgeBaseId: knowledgeBase.id,
+            pagesScraped: pages.length,
+            results: [...successResults, ...errorResults],
+            metadata: {
+              totalPages: pages.length,
+              totalWords: metadata.totalWordCount,
+              crawled: crawlSubpages,
+            },
+          });
+        } else {
+          // Single page
+          const document = await prisma.document.create({
+            data: {
+              knowledgeBaseId: knowledgeBase.id,
+              source: url,
+              content,
+              metadata,
+            },
+          });
+
+          await embedAndStore({
+            documentId: document.id,
+            content,
+            metadata: {
+              chatbotId,
+              knowledgeBaseId: knowledgeBase.id,
+              source: url,
+              type: 'url',
+            },
+            chatbotId,
+            knowledgeBaseId: knowledgeBase.id,
+          });
+
+          return NextResponse.json({
+            knowledgeBaseId: knowledgeBase.id,
+            documentId: document.id,
+            success: true,
+            url,
+          });
+        }
+      } catch (error) {
+        // Delete the knowledge base if scraping failed
+        await prisma.knowledgeBase.delete({
+          where: { id: knowledgeBase.id },
+        });
+
+        throw error;
+      }
+    }
+
+    // Handle FormData for file uploads
     const formData = await request.formData();
     const type = formData.get('type') as string;
     const name = formData.get('name') as string;
@@ -96,7 +189,6 @@ export async function POST(
         return NextResponse.json({ error: 'No files provided' }, { status: 400 });
       }
 
-      // Create knowledge base
       const knowledgeBase = await prisma.knowledgeBase.create({
         data: {
           chatbotId,
@@ -110,10 +202,8 @@ export async function POST(
 
       for (const file of files) {
         try {
-          // Process file and extract text
           const { content, metadata } = await processFile(file);
 
-          // Create document record
           const document = await prisma.document.create({
             data: {
               knowledgeBaseId: knowledgeBase.id,
@@ -128,7 +218,6 @@ export async function POST(
             },
           });
 
-          // Embed and store in vector database
           await embedAndStore({
             documentId: document.id,
             content,
@@ -166,12 +255,11 @@ export async function POST(
         return NextResponse.json({ error: 'No files provided' }, { status: 400 });
       }
 
-      // Create knowledge base
       const knowledgeBase = await prisma.knowledgeBase.create({
         data: {
           chatbotId,
           name: name || `Tables - ${new Date().toLocaleDateString()}`,
-          type: 'FAQ', // Using FAQ type for structured data
+          type: 'FAQ',
           indexName: `kb_${chatbotId}_${Date.now()}`,
         },
       });
@@ -180,11 +268,9 @@ export async function POST(
 
       for (const file of files) {
         try {
-          // Process table file
           const { rows, metadata } = await processTable(file);
 
-          // Create document for each row or batch
-          const chunks = chunkArray(rows, 100); // Process in batches of 100
+          const chunks = chunkArray(rows, 100);
 
           for (let i = 0; i < chunks.length; i++) {
             const chunk = chunks[i];
@@ -207,7 +293,6 @@ export async function POST(
               },
             });
 
-            // Embed and store
             await embedAndStore({
               documentId: document.id,
               content,
@@ -247,7 +332,7 @@ export async function POST(
   } catch (error) {
     console.error('Error processing knowledge:', error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: error instanceof Error ? error.message : 'Internal server error' },
       { status: 500 }
     );
   }

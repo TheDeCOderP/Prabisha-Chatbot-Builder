@@ -14,12 +14,14 @@ import {
   LayoutDashboard,
   Map,
   MessageCircle,
+  Moon,
   Palette,
   PieChart,
   ScrollText,
   Settings2,
   SlidersHorizontal,
   SquareTerminal,
+  Sun,
   UsersRound,
 } from "lucide-react"
 import {
@@ -72,7 +74,7 @@ import {
   AvatarImage,
 } from "@/components/ui/avatar"
 import { Skeleton } from "@/components/ui/skeleton";
-import { useSession } from "next-auth/react"
+import { signOut, useSession } from "next-auth/react"
 import { Workspace } from "@/types/workspace"
 import { Session } from "next-auth";
 import { toast } from "sonner";
@@ -112,33 +114,6 @@ export default function AppSidebar({ ...props }: React.ComponentProps<typeof Sid
             icon: Bot,
             title: "Chatbots",
             url: "/chatbots",
-          },
-        ],
-      },
-      {
-        title: "Settings",
-        url: "#",
-        icon: Settings2,
-        items: [
-          {
-            icon: SlidersHorizontal,
-            title: "General",
-            url: "#",
-          },
-          {
-            icon: UsersRound,
-            title: "Team",
-            url: "#",
-          },
-          {
-            icon: CreditCard,
-            title: "Billing",
-            url: "#",
-          },
-          {
-            icon: Frame,
-            title: "Limits",
-            url: "#",
           },
         ],
       },
@@ -211,7 +186,7 @@ export default function AppSidebar({ ...props }: React.ComponentProps<typeof Sid
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [loading, setLoading] = useState(true);
   const [navData, setNavData] = useState<NavItem[]>([]);
-
+      
   useEffect(() => {
     // Fetch workspaces
     const fetchWorkspaces = async () => {
@@ -243,7 +218,7 @@ export default function AppSidebar({ ...props }: React.ComponentProps<typeof Sid
       }
     };
 
-    fetchWorkspaces();
+        fetchWorkspaces();
     fetchNavigationData();
   }, []);
 
@@ -379,32 +354,13 @@ export function NavUser({
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
-              <DropdownMenuItem>
-                <Sparkles />
-                Upgrade to Pro
-              </DropdownMenuItem>
-            </DropdownMenuGroup>
-            <DropdownMenuSeparator />
-            <DropdownMenuGroup>
               <DropdownMenuItem onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
-                <Sparkles />
-                Appearance
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <BadgeCheck />
-                Account
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <CreditCard />
-                Billing
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <Bell />
-                Notifications
+                {theme === 'dark' ?  <Sun className="mr-2 h-4 w-4" /> : <Moon className="mr-2 h-4 w-4" />}
+                {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
               </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>
+            <DropdownMenuItem onClick={() => signOut()}>
               <LogOut />
               Log out
             </DropdownMenuItem>

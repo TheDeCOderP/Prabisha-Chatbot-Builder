@@ -188,3 +188,51 @@ export async function PUT(request: NextRequest, context: RouterParams) {
     )
   }
 }
+
+export async function DELETE(request: NextRequest, context: RouterParams) {
+  try {
+    const { id } = await context.params;
+
+    if (!id) {
+      return NextResponse.json(
+        { error: 'Chatbot ID is required' },
+        { status: 400 }
+      )
+    }
+
+    // Delete all related records first to avoid foreign key constraint issues
+    await prisma.$transaction([
+      // 1. Deeply nested records
+      prisma.document.deleteMany({ where: { knowledgeBase: { chatbotId: id } } }),
+      prisma.formField.deleteMany({ where: { leadCollection: { logic: { chatbotId: id } } } }),
+      prisma.linkButton.deleteMany({ where: { logic: { chatbotId: id } } }),
+      prisma.meetingSchedule.deleteMany({ where: { logic: { chatbotId: id } } }),
+      prisma.leadCollection.deleteMany({ where: { logic: { chatbotId: id } } }),
+      prisma.message.deleteMany({ where: { conversation: { chatbotId: id } } }),
+      prisma.node.deleteMany({ where: { flow: { chatbotId: id } } }),
+      prisma.edge.deleteMany({ where: { flow: { chatbotId: id } } }),
+      
+      // 2. Direct related records
+      prisma.lead.deleteMany({ where: { chatbotId: id } }),
+      prisma.leadForm.deleteMany({ where: { chatbotId: id } }),
+      prisma.flow.deleteMany({ where: { chatbotId: id } }),
+      prisma.conversation.deleteMany({ where: { chatbotId: id } }),
+      prisma.knowledgeBase.deleteMany({ where: { chatbotId: id } }),
+      prisma.logic.deleteMany({ where: { chatbotId: id } }),
+      
+      // 3. The chatbot itself
+      prisma.chatbot.delete({ where: { id } }),
+    ]);
+
+    return NextResponse.json({
+      message: 'Chatbot deleted successfully',
+    });
+
+  } catch (error) {
+    console.error('Error deleting chatbot:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    )
+  }
+}

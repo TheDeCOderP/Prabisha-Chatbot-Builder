@@ -1,3 +1,4 @@
+import Script from "next/script";
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
@@ -25,17 +26,45 @@ export const metadata: Metadata = {
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode;
-}>) {
+}) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body
-       suppressHydrationWarning={true}
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <Suspense fallback={<Skeleton className="h-screen w-full" />}>
-          <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+          <ThemeProvider
+            attribute="class"
+            defaultTheme="system"
+            enableSystem
+          >
+            <Script
+                id="chatbot-loader"
+                strategy="afterInteractive"
+                dangerouslySetInnerHTML={{
+                  __html: `
+                  (function(w,d,s,o,f,js,fjs){
+                    w[o]=w[o]||function(){(w[o].q=w[o].q||[]).push(arguments)};
+                    js=d.createElement(s),fjs=d.getElementsByTagName(s)[0];
+                    js.id=o;js.src=f;js.async=1;fjs.parentNode.insertBefore(js,fjs);
+                  }(window,document,'script','chatbot','http://localhost:3000/embed.js'));
+
+                  chatbot('init', {
+                    chatbotId: 'cmk24703g0000potx45f7siyd',
+                    baseUrl: 'http://localhost:3000',
+                    showButton: true,
+                    autoOpen: false,
+                    delay: 1000,
+                    position: 'bottom-right',
+                    buttonColor: '#3b82f6',
+                    buttonTextColor: '#ffffff',
+                    buttonSize: 'medium'
+                  });
+                `,
+              }}
+            />
             <SessionProvider>
               <GoogleOneTap />
               <Toaster richColors position="top-right" closeButton />

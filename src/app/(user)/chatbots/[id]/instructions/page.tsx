@@ -1,15 +1,15 @@
 "use client"
 
 import { toast } from "sonner"
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect } from "react"
 import { useParams } from "next/navigation"
 import { Card } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
-import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Sparkles, Info, Smartphone, Loader2 } from "lucide-react"
-import Chat from "@/components/features/chat" // Adjust the import path as needed
+
+import Chat from "@/components/features/chat" 
 
 interface Message {
   role: "user" | "assistant";
@@ -162,32 +162,11 @@ export default function InstructionsPage() {
   }
 
   return (
-    <div className="flex w-full">
+    <div className="flex w-full max-h-[calc(100vh-7rem)]">
       {/* Left Panel - Instructions */}
-      <div className="w-full lg:w-1/2 bg-[#f8f6f3] border-r border-[#e5e2dd] overflow-y-auto no-scrollbar">
+      <div className="w-full lg:w-1/2 border-r border-border overflow-y-auto no-scrollbar">
         <div className="p-8 max-h-screen">
-          <div className="flex justify-between items-center mb-8">
-            <div>
-              <h1 className="text-2xl font-semibold">Instructions</h1>
-              <p className="text-sm text-muted-foreground mt-1">
-                Editing: {chatbotData.name}
-              </p>
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="flex items-center gap-2"
-              onClick={handleGenerateGreeting}
-              disabled={isGeneratingGreeting}
-            >
-              {isGeneratingGreeting ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Sparkles className="w-4 h-4" />
-              )}
-              Generate Greeting
-            </Button>
-          </div>
+          <h1 className="text-2xl font-semibold mb-8">Instructions</h1>
 
           {/* Greeting Section */}
           <div className="mb-6">
@@ -201,7 +180,7 @@ export default function InstructionsPage() {
               id="greeting"
               value={greeting}
               onChange={(e) => setGreeting(e.target.value)}
-              className="min-h-[100px] bg-white border-[#d4d0ca] resize-none"
+              className="min-h-[100px] resize-none"
               placeholder="Enter greeting message..."
             />
           </div>
@@ -218,7 +197,7 @@ export default function InstructionsPage() {
               id="directive"
               value={directive}
               onChange={(e) => setDirective(e.target.value)}
-              className="min-h-[280px] bg-white border-[#d4d0ca] font-mono text-sm resize-none"
+              className="min-h-[280px] font-mono text-sm resize-none"
               placeholder="Enter directive instructions..."
             />
           </div>
@@ -226,7 +205,7 @@ export default function InstructionsPage() {
           {/* Save Button */}
           <Button 
             size="lg" 
-            className="w-full bg-[#d4d0ca] hover:bg-[#c4bfb8] text-[#6b665f] mb-6"
+            className="w-full mb-6"
             onClick={handleSaveChanges}
           >
             Save changes
@@ -235,7 +214,7 @@ export default function InstructionsPage() {
       </div>
 
       {/* Right Panel - Chat Preview */}
-      <div className="hidden lg:block w-1/2 bg-[#f0f4f8]">
+      <div className="hidden lg:block w-1/2">
         <Chat
           id={chatbotId}
           name={name}
