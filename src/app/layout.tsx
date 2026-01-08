@@ -52,8 +52,8 @@ export default function RootLayout({
                   }(window,document,'script','chatbot','http://localhost:3000/embed.js'));
 
                   chatbot('init', {
-                    chatbotId: 'cmk24703g0000potx45f7siyd',
-                    baseUrl: 'http://localhost:3000',
+                    chatbotId: 'cmk57u7c8000004jufgkkdhj0',
+                    baseUrl: 'https://chatbots.prabisha.com',
                     showButton: true,
                     autoOpen: false,
                     delay: 1000,
