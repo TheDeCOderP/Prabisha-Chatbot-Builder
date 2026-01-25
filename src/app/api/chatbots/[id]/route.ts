@@ -6,6 +6,13 @@ interface RouterParams {
   params: Promise<{ id: string }>
 }
 
+// Helper to set CORS headers
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*', // Allow any domain to fetch this
+  'Access-Control-Allow-Methods': 'GET, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+};
+
 export async function GET(
   request: NextRequest,
   context: RouterParams
@@ -40,18 +47,31 @@ export async function GET(
     if (!chatbot) {
       return NextResponse.json(
         { error: 'Chatbot not found' },
-        { status: 404 }
+        { status: 404, headers: corsHeaders }
       )
     }
 
-    return NextResponse.json(chatbot)
+    // UPDATED: Return response with CORS headers
+    return NextResponse.json(chatbot, {
+      status: 200,
+      headers: corsHeaders
+    })
+
   } catch (error) {
     console.error('Error fetching chatbot:', error)
     return NextResponse.json(
       { error: 'Internal server error' },
-      { status: 500 }
+      { status: 500, headers: corsHeaders }
     )
   }
+}
+
+// UPDATED: Add OPTIONS method to handle CORS preflight checks
+export async function OPTIONS(request: NextRequest) {
+  return new NextResponse(null, {
+    status: 200,
+    headers: corsHeaders,
+  });
 }
 
 export async function PUT(request: NextRequest, context: RouterParams) {
