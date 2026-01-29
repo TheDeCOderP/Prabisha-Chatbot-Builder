@@ -533,7 +533,7 @@ export default function ConversationsPage() {
                               />
                             </div>
                             <span className="text-[10px] text-muted-foreground px-1">
-                              {format((msg.createdAt), 'p')}
+                              {msg.createdAt ? format(new Date(msg.createdAt), 'yyyy-MM-dd HH:mm:ss') : ''}
                             </span>
                           </div>
                         </motion.div>
