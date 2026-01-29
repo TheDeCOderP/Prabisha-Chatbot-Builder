@@ -2,7 +2,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { ChatMessage } from '@/types/chat';
+import { Message } from '@/types/chat';
 
 interface ChatbotData {
   id: string;
@@ -31,7 +31,7 @@ interface UseChatbotReturn {
   text: string;
   setText: (text: string) => void;
   status: 'submitted' | 'streaming' | 'ready' | 'error';
-  messages: ChatMessage[];
+  messages: Message[];
   loading: boolean;
   error: string;
   conversationId: string | null;
@@ -54,7 +54,7 @@ export function useChatbot({ chatbotId, initialChatbotData }: UseChatbotProps): 
 
   const [text, setText] = useState<string>('');
   const [status, setStatus] = useState<'submitted' | 'streaming' | 'ready' | 'error'>('ready');
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -92,9 +92,9 @@ export function useChatbot({ chatbotId, initialChatbotData }: UseChatbotProps): 
         if (Array.isArray(messages) && messages.length > 0) {
           // Format messages from API response
           const formattedMessages = messages.map((msg: any) => ({
-            role: msg.senderType === 'BOT' ? 'bot' as const : 'user' as const,
+            senderType: msg.senderType,
             content: msg.content,
-            timestamp: new Date(msg.createdAt),
+            createdAt: new Date(msg.createdAt),
           }));
           
           setMessages(formattedMessages);
@@ -121,10 +121,10 @@ export function useChatbot({ chatbotId, initialChatbotData }: UseChatbotProps): 
   const showWelcomeMessage = useCallback(() => {
     if (!chatbot) return;
     
-    const welcomeMessage: ChatMessage = {
-      role: 'bot',
+    const welcomeMessage: Message = {
+      senderType: 'BOT',
       content: chatbot.greeting || "👋 Hello! How can I help you today?",
-      timestamp: new Date(),
+      createdAt: new Date(),
     };
     setMessages([welcomeMessage]);
     setHasLoadedInitialMessages(true);
@@ -232,10 +232,10 @@ export function useChatbot({ chatbotId, initialChatbotData }: UseChatbotProps): 
     }
 
     // Add user message
-    const userMessage: ChatMessage = { 
-      role: 'user', 
+    const userMessage: Message = { 
+      senderType: 'USER', 
       content: searchQuery,
-      timestamp: new Date()
+      createdAt: new Date()
     };
     setMessages(prev => [...prev, userMessage]);
 
@@ -279,10 +279,10 @@ export function useChatbot({ chatbotId, initialChatbotData }: UseChatbotProps): 
       
       setStatus('streaming');
       
-      const assistantMessage: ChatMessage = {
-        role: 'bot',
+      const assistantMessage: Message = {
+        senderType: 'BOT',
         content: data.message || data.response,
-        timestamp: new Date()
+        createdAt: new Date()
       };
       setMessages(prev => [...prev, assistantMessage]);
 
@@ -296,10 +296,10 @@ export function useChatbot({ chatbotId, initialChatbotData }: UseChatbotProps): 
       setStatus('error');
       setLoading(false);
       
-      const errorMessage: ChatMessage = {
-        role: 'bot',
+      const errorMessage: Message = {
+        senderType: 'BOT',
         content: 'Sorry, I encountered an error. Please try again.',
-        timestamp: new Date()
+        createdAt: new Date()
       };
       setMessages(prev => [...prev, errorMessage]);
       
