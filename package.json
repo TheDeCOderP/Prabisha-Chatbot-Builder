@@ -6,11 +6,7 @@
     "dev": "next dev",
     "build": "prisma generate && next build",
     "start": "next start",
-    "lint": "eslint",
-    "migrate": "npx tsx scripts/migrate-embeddings.ts",
-    "migrate:gemini:chatbot": "npx tsx scripts/migrate-to-gemini.ts --chatbot-id",
-    "migrate:gemini:retry": "npx tsx scripts/migrate-to-gemini.ts --retry-only",
-    "migrate:gemini:verify": "npx tsx scripts/migrate-to-gemini.ts --verify-only"
+    "lint": "eslint"
   },
   "dependencies": {
     "@ai-sdk/google": "^3.0.20",

@@ -522,7 +522,7 @@ function ChatHeader({ onClose, chatbot, isMobile, isEmbedded }: ChatHeaderProps)
     <div className={`bg-primary text-primary-foreground ${isMobile || isEmbedded ? 'rounded-none' : 'rounded-t-xl'} flex items-stretch overflow-hidden z-10 relative`}>
       
       {/* 1. Avatar - No padding, spans full height */}
-      <div className="w-20 shrink-0"> 
+      <div className="max-w-20 shrink-0"> 
         <Image 
           src={chatbot.avatar || "/icons/logo.png"}
           height={64}

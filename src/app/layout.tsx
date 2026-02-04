@@ -40,24 +40,6 @@ export default function RootLayout({
             defaultTheme="system"
             enableSystem
           >
-            <Script
-                  id="chatbot-loader"
-                  strategy="afterInteractive"
-                  dangerouslySetInnerHTML={{
-                    __html: `
-                      (function(w,d,s,o,f,js,fjs){
-                        w[o]=w[o]||function(){(w[o].q=w[o].q||[]).push(arguments)};
-                        js=d.createElement(s),fjs=d.getElementsByTagName(s)[0];
-                        js.id=o;js.src=f;js.async=1;fjs.parentNode.insertBefore(js,fjs);
-                      }(window,document,'script','chatbot','http://localhost:3000/embed.js'));
-
-                      chatbot('init', {
-  chatbotId: 'cmkm5p8ft00004otxgz3ov8rn',
-  baseUrl: 'http://localhost:3000'
-});
-                    `
-                  }}
-                />
             <SessionProvider>
               { process.env.NODE_ENV !== "development" && <GoogleOneTap /> }
               <Toaster richColors position="top-right" closeButton />
