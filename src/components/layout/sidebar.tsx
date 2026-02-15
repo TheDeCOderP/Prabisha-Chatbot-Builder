@@ -71,7 +71,6 @@ import { useWorkspace } from "@/providers/workspace-provider"
 import { Chatbot } from "../../../generated/prisma/client"
 import { usePathname, useRouter } from "next/navigation"
 import ChatbotForm from "../forms/chatbot-form"
-import { handleLogout } from "../../lib/auth"
 
 // Types for navigation items
 type NavItem = {
@@ -330,6 +329,13 @@ export function NavUser({ session }: { session: Session | null }) {
     avatar: session?.user?.image || "/avatars/default.jpg",
   }
 
+  const handleLogout = async () => {
+    const appUrl = window.location.origin; 
+    const centralLogoutUrl = `https://auth.prabisha.com/auth/logout?callbackUrl=${appUrl}/login`;
+    
+    await signOut({ callbackUrl: centralLogoutUrl });
+  };
+
   return (
     <SidebarMenu>
       <SidebarMenuItem>
@@ -376,7 +382,7 @@ export function NavUser({ session }: { session: Session | null }) {
               </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() =>handleLogout()}>
+            <DropdownMenuItem onClick={handleLogout}>
               <LogOut />
               Log out
             </DropdownMenuItem>
