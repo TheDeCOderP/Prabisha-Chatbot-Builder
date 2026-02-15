@@ -71,6 +71,7 @@ import { useWorkspace } from "@/providers/workspace-provider"
 import { Chatbot } from "../../../generated/prisma/client"
 import { usePathname, useRouter } from "next/navigation"
 import ChatbotForm from "../forms/chatbot-form"
+import { handleLogout } from "../../lib/auth"
 
 // Types for navigation items
 type NavItem = {
@@ -375,7 +376,7 @@ export function NavUser({ session }: { session: Session | null }) {
               </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => signOut()}>
+            <DropdownMenuItem onClick={() =>handleLogout()}>
               <LogOut />
               Log out
             </DropdownMenuItem>
