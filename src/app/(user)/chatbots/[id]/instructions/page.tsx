@@ -5,9 +5,10 @@ import { useState, useEffect } from "react"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import { Check, Info, Loader2, Plus, Trash2, X } from "lucide-react"
+import { Check, Info, Loader2, Plus, Trash2, X, ImageIcon, Upload } from "lucide-react"
 import { useChatbot } from "@/providers/chatbot-provider"
 import { Input } from "@/components/ui/input"
+import Image from "next/image"
 
 interface Message {
   senderType: "USER" | "BOT";
@@ -31,6 +32,8 @@ export default function InstructionsPage() {
   const [directive, setDirective] = useState("");
   const [greeting, setGreeting] = useState("");
   const [description, setDescription] = useState("");
+  const [avatar, setAvatar] = useState("");
+  const [icon, setIcon] = useState("");
 
   // Single effect to initialize all state from config
   useEffect(() => {
@@ -39,9 +42,28 @@ export default function InstructionsPage() {
       setDirective(config.directive || "");
       setGreeting(config.greeting || "How can I help you today?");
       setDescription(config.description || "");
+      setAvatar(config.avatar || "");
+      setIcon(config.icon || "");
       setMessages([{ senderType: "BOT", content: config.greeting || "How can I help you today?" }]);
     }
-  }, [config.id]); // Only re-run when config.id changes
+  }, [config.id, config.name, config.directive, config.greeting, config.description, config.avatar, config.icon]); // Added all dependencies
+
+  // Handle image upload to base64
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, type: 'avatar' | 'icon') => {
+    const file = e.target.files?.[0]
+    if (file) {
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        const base64String = reader.result as string
+        if (type === 'avatar') {
+          setAvatar(base64String)
+        } else {
+          setIcon(base64String)
+        }
+      }
+      reader.readAsDataURL(file)
+    }
+  }
 
   const handleSave = async () => {
     setIsLoading(true);
@@ -52,6 +74,8 @@ export default function InstructionsPage() {
         greeting,
         directive,
         description,
+        avatar,
+        icon,
         suggestions: config.suggestions // Use the suggestions from context, not local state
       };
 
@@ -64,6 +88,18 @@ export default function InstructionsPage() {
       formData.append("greeting", greeting);
       formData.append("directive", directive);
       formData.append("description", description);
+      
+      // Handle avatar - if it's base64, convert to blob; if it's a URL, don't send it
+      if (avatar && avatar.startsWith('data:image')) {
+        const avatarBlob = await fetch(avatar).then(r => r.blob());
+        formData.append("avatar", avatarBlob, "avatar.png");
+      }
+      
+      // Handle icon - if it's base64, convert to blob; if it's a URL, don't send it
+      if (icon && icon.startsWith('data:image')) {
+        const iconBlob = await fetch(icon).then(r => r.blob());
+        formData.append("icon", iconBlob, "icon.png");
+      }
       
       const response = await fetch(`/api/chatbots/${config.id}`, {
         method: "PUT",
@@ -101,6 +137,65 @@ export default function InstructionsPage() {
 
   return (
     <div className="space-y-6">
+      {/* Images Section */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 border rounded-lg bg-muted/30">
+        {/* Avatar Upload */}
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Label className="text-sm font-medium">Avatar (Header Image)</Label>
+            <Info className="w-4 h-4 text-muted-foreground" />
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="h-16 w-16 rounded-lg border-2 bg-background flex items-center justify-center overflow-hidden">
+              {avatar ? (
+                <Image src={avatar} alt="Avatar" width={64} height={64} className="h-full w-full object-contain" />
+              ) : (
+                <ImageIcon className="h-8 w-8 text-muted-foreground" />
+              )}
+            </div>
+            <div className="flex-1">
+              <Input 
+                type="file" 
+                accept="image/*"
+                className="text-xs cursor-pointer"
+                onChange={(e) => handleImageUpload(e, 'avatar')}
+              />
+              <p className="text-[10px] text-muted-foreground mt-1">
+                Recommended: 200x200px PNG
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Icon Upload */}
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Label className="text-sm font-medium">Bot Icon (Messages)</Label>
+            <Info className="w-4 h-4 text-muted-foreground" />
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="h-16 w-16 rounded-lg border-2 bg-background flex items-center justify-center overflow-hidden">
+              {icon ? (
+                <Image src={icon} alt="Icon" width={64} height={64} className="h-full w-full object-contain" />
+              ) : (
+                <ImageIcon className="h-8 w-8 text-muted-foreground" />
+              )}
+            </div>
+            <div className="flex-1">
+              <Input 
+                type="file" 
+                accept="image/*"
+                className="text-xs cursor-pointer"
+                onChange={(e) => handleImageUpload(e, 'icon')}
+              />
+              <p className="text-[10px] text-muted-foreground mt-1">
+                Recommended: 100x100px PNG
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Name Section */}
       <div>
         <div className="mb-4">
@@ -197,7 +292,7 @@ export default function InstructionsPage() {
             rows={12}
           />
           <div className="text-xs text-muted-foreground mt-2 space-y-1">
-            <p>Define your chatbot's personality, behavior, and instructions.</p>
+            <p>Define your chatbot&apos;s personality, behavior, and instructions.</p>
             <p>Be specific about tone, response length, and limitations.</p>
           </div>
         </div>

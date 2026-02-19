@@ -55,6 +55,13 @@
         config.iconShape = dbConfig.iconShape;
         config.iconSize = dbConfig.iconSize;
         config.iconBorder = dbConfig.iconBorder;
+        
+        // Store widget sizes for responsive behavior
+        if (dbConfig.theme) {
+          config.widgetSize = dbConfig.theme.widgetSize || 70;
+          config.widgetSizeMobile = dbConfig.theme.widgetSizeMobile || 60;
+        }
+        
         if (dbConfig.popup_onload !== undefined && userConfig.autoOpen === undefined) {
           config.autoOpen = dbConfig.popup_onload;
         }
@@ -142,13 +149,17 @@
     }
     button.appendChild(iconContainer);
 
+    // Use responsive size based on screen width
+    const isMobile = window.innerWidth < 768;
+    const buttonSize = isMobile && config.widgetSizeMobile ? config.widgetSizeMobile : (config.widgetSize || 70);
+
     button.style.cssText = `
       position: fixed;
       z-index: 999999;
       bottom: 20px;
       right: 20px;
-      width: ${getButtonSize()};
-      height: ${getButtonSize()};
+      width: ${buttonSize}px;
+      height: ${buttonSize}px;
       border-radius: 50%;
       background-color: ${config.buttonColor};
       color: ${config.buttonTextColor};
@@ -217,6 +228,16 @@
   }
 
   window.addEventListener('resize', updateIframeDimensions);
+  
+  // Also update button size on resize if mobile size is different
+  window.addEventListener('resize', () => {
+    if (button && config.widgetSize && config.widgetSizeMobile) {
+      const isMobile = window.innerWidth < 768;
+      const size = isMobile ? config.widgetSizeMobile : config.widgetSize;
+      button.style.width = `${size}px`;
+      button.style.height = `${size}px`;
+    }
+  });
 
   function getButtonSize() {
     switch(config.buttonSize) {
@@ -237,7 +258,7 @@
   function openChat() {
     updateIframeDimensions();
     iframe.style.display = 'block';
-    if (button) button.style.display = 'none';
+    // Keep button visible on the right side
   }
 
   function closeChat() {
@@ -255,6 +276,30 @@
       if (event.data.type === 'chatbot-resize') {
         if (event.data.width) iframe.style.width = event.data.width;
         if (event.data.height) iframe.style.height = event.data.height;
+      }
+      // Listen for theme updates from admin panel
+      if (event.data.type === 'theme-update' && event.data.theme) {
+        const theme = event.data.theme;
+        
+        // Update button size if changed
+        if (theme.widgetSize && button) {
+          const isMobile = window.innerWidth < 768;
+          const size = isMobile && theme.widgetSizeMobile ? theme.widgetSizeMobile : theme.widgetSize;
+          button.style.width = `${size}px`;
+          button.style.height = `${size}px`;
+        }
+        
+        // Update button color if changed
+        if (theme.widgetColor && button) {
+          button.style.backgroundColor = theme.widgetColor;
+        }
+        
+        // Update button position if changed
+        if (theme.widgetPosition && button) {
+          config.position = theme.widgetPosition.toLowerCase().replace(/([A-Z])/g, '-$1').toLowerCase();
+          applyPosition(button, false);
+          if (iframe) applyPosition(iframe, true);
+        }
       }
     });
   }

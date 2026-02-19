@@ -323,7 +323,7 @@ export function LeadForm({
             We'll be in touch soon.
           </p>
           {!config.autoClose && onClose && (
-            <Button onClick={onClose} variant="outline" className="mt-4">
+            <Button onClick={onClose} variant="outline" className="mt-4 cursor-pointer">
               Close
             </Button>
           )}
@@ -346,6 +346,7 @@ export function LeadForm({
                 size="icon" 
                 onClick={onClose}
                 disabled={isSubmitting}
+                className="cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </Button>
@@ -375,7 +376,7 @@ export function LeadForm({
                 <Button
                   variant="outline"
                   onClick={() => setCurrentFieldIndex((prev) => prev - 1)}
-                  className="flex-1"
+                  className="flex-1 cursor-pointer"
                   disabled={isSubmitting}
                 >
                   Back
@@ -384,7 +385,7 @@ export function LeadForm({
               {currentFieldIndex < fields.length - 1 ? (
                 <Button 
                   onClick={handleNextField} 
-                  className="flex-1"
+                  className="flex-1 cursor-pointer"
                   disabled={isSubmitting}
                 >
                   Next
@@ -393,7 +394,7 @@ export function LeadForm({
                 <Button
                   onClick={handleSubmit}
                   disabled={isSubmitting}
-                  className="flex-1"
+                  className="flex-1 cursor-pointer"
                 >
                   {isSubmitting ? (
                     <>
@@ -440,6 +441,7 @@ export function LeadForm({
               onClick={onClose} 
               type="button"
               disabled={isSubmitting}
+              className="cursor-pointer"
             >
               <X className="w-4 h-4" />
             </Button>
@@ -471,13 +473,13 @@ export function LeadForm({
               variant="outline" 
               onClick={onClose} 
               type="button" 
-              className="flex-1"
+              className="flex-1 cursor-pointer"
               disabled={isSubmitting}
             >
               Cancel
             </Button>
           )}
-          <Button type="submit" disabled={isSubmitting} className="flex-1">
+          <Button type="submit" disabled={isSubmitting} className="flex-1 cursor-pointer">
             {isSubmitting ? (
               <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />

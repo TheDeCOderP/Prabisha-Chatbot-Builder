@@ -8,7 +8,7 @@ interface ChatbotConfig {
   name: string;
   greeting: string;
   directive: string;
-  theme: string;
+  theme: any; // Changed from string to any to hold theme object
   avatar: string | null;
   avatarSize: number;
   avatarColor: string;
@@ -43,7 +43,7 @@ const defaultConfig: ChatbotConfig = {
   name: '',
   greeting: 'How can I help you today?',
   directive: '',
-  theme: '',
+  theme: null, // Changed from '' to null
   avatar: null,
   avatarSize: 50,
   avatarColor: '',
@@ -105,7 +105,7 @@ export function ChatbotProvider({
           name: data.name || '',
           greeting: data.greeting || 'How can I help you today?',
           directive: data.directive || '',
-          theme: data.theme || '',
+          theme: data.theme || null, // Changed from '' to null
           avatar: data.avatar,
           avatarSize: data.avatarSize || 50,
           avatarColor: data.avatarColor || '',
