@@ -4,9 +4,11 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:webpack": "NEXT_PRIVATE_DISABLE_TURBOPACK=1 next dev",
     "build": "prisma generate && next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "check:stats": "tsx scripts/check-workspace-stats.ts"
   },
   "dependencies": {
     "@ai-sdk/google": "^3.0.20",
@@ -39,7 +41,6 @@
     "@radix-ui/react-switch": "^1.2.6",
     "@radix-ui/react-tabs": "^1.1.13",
     "@radix-ui/react-tooltip": "^1.2.8",
-    "@sentry/nextjs": "^10.38.0",
     "@types/dom-speech-recognition": "^0.0.7",
     "@types/pg": "^8.16.0",
     "ai": "^6.0.3",

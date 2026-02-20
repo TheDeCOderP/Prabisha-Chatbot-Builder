@@ -25,7 +25,10 @@ interface ChatProps {
   // New props for suggestions
   suggestions?: string[]
   
-  // Theme props that can override database values
+  // Theme object prop
+  theme?: any
+  
+  // Legacy theme props that can override database values
   avatar?: string | null
   icon?: string | null
   iconShape?: string
@@ -39,7 +42,6 @@ interface ChatProps {
   avatarBgColor?: string
   color?: string
   borderRadius?: string
-  theme?: string
   autoOpenChat?: boolean
   autoGreeting?: boolean
   
@@ -61,7 +63,10 @@ export default function ChatPreview({
   // New suggestions prop
   suggestions: propSuggestions = [],
   
-  // Theme props with default values
+  // Theme object prop
+  theme: propTheme,
+  
+  // Legacy theme props with default values
   avatar: propAvatar,
   icon: propIcon,
   iconShape: propIconShape,
@@ -75,7 +80,6 @@ export default function ChatPreview({
   avatarBgColor: propAvatarBgColor,
   color: propColor,
   borderRadius: propBorderRadius,
-  theme: propTheme,
   autoOpenChat: propAutoOpenChat,
   autoGreeting: propAutoGreeting,
   
@@ -90,6 +94,7 @@ export default function ChatPreview({
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const chatAreaRef = useRef<HTMLDivElement>(null)
   const [showSuggestions, setShowSuggestions] = useState(true)
+  const [liveTheme, setLiveTheme] = useState<any>(null)
   
   // Colors mapping for default colors
   const colorMap: Record<string, string> = {
@@ -118,9 +123,25 @@ export default function ChatPreview({
   const avatarBgColor = propAvatarBgColor || chatbot?.avatarBgColor || undefined;
   const color = propColor || iconColor || avatarColor || "blue";
   const borderRadius = propBorderRadius || getBorderRadiusFromBorderType(iconBorder) || "regular";
-  const theme = propTheme || "light";
   const autoOpenChat = propAutoOpenChat ?? chatbot?.popup_onload ?? false;
   const autoGreeting = propAutoGreeting || false;
+  
+  // Get theme colors from theme object (prioritize liveTheme for live updates)
+  const themeColors = liveTheme || propTheme || (chatbot as any)?.theme || {};
+  const headerBgColor = themeColors.headerBgColor || "#1320AA";
+  const headerTextColor = themeColors.headerTextColor || "#ffffff";
+  const botMessageBgColor = themeColors.botMessageBgColor || "#f1f5f9";
+  const botMessageTextColor = themeColors.botMessageTextColor || "#0f172a";
+  const userMessageBgColor = themeColors.userMessageBgColor || "#1320AA";
+  const userMessageTextColor = themeColors.userMessageTextColor || "#ffffff";
+  const closeButtonBgColor = themeColors.closeButtonBgColor || "#DD692E";
+  const closeButtonColor = themeColors.closeButtonColor || "#000000";
+  const quickSuggestionBgColor = themeColors.quickSuggestionBgColor || "#ffffff";
+  const quickSuggestionTextColor = themeColors.quickSuggestionTextColor || "#0f172a";
+  
+  // Get widget size from live theme
+  const widgetSize = themeColors.widgetSize || 70;
+  const widgetSizeMobile = themeColors.widgetSizeMobile || 60;
   
   // Get suggestions (props override database)
   const suggestions = propSuggestions.length > 0 ? propSuggestions : (chatbot?.suggestions as string[] || []);
@@ -226,6 +247,13 @@ export default function ChatPreview({
         setIsLoadingChatbot(false);
       });
   }, [id, useDbConfig]);
+
+  // Listen for live theme updates from parent
+  useEffect(() => {
+    if (propTheme) {
+      setLiveTheme(propTheme);
+    }
+  }, [propTheme]);
 
   // Initialize messages with greeting
   useEffect(() => {
@@ -402,9 +430,48 @@ export default function ChatPreview({
   // Show loading skeleton while fetching chatbot data
   if (isLoadingChatbot && useDbConfig) {
     return (
-      <div className="h-full max-h-screen flex flex-col items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
-        <p className="mt-2 text-sm text-muted-foreground">Loading chatbot...</p>
+      <div className="h-full flex flex-col">
+        {/* Header Skeleton */}
+        {showPreviewControls && (
+          <div className="flex items-center justify-between px-6 py-4 border-b">
+            <div className="h-6 w-24 bg-gray-200 rounded animate-pulse" />
+            <div className="flex items-center gap-2">
+              <div className="h-8 w-28 bg-gray-200 rounded animate-pulse" />
+              <div className="h-9 w-9 bg-gray-200 rounded animate-pulse" />
+              <div className="h-9 w-9 bg-gray-200 rounded animate-pulse" />
+            </div>
+          </div>
+        )}
+
+        {/* Chat Area Skeleton */}
+        <div className="flex-1 overflow-y-auto p-6 bg-background space-y-4">
+          {/* Avatar + Message Skeleton */}
+          <div className="flex gap-3">
+            <div className="w-12 h-12 bg-gray-200 rounded-full animate-pulse shrink-0" />
+            <div className="flex-1 space-y-2">
+              <div className="h-4 w-3/4 bg-gray-200 rounded animate-pulse" />
+              <div className="h-4 w-1/2 bg-gray-200 rounded animate-pulse" />
+            </div>
+          </div>
+
+          {/* Quick Suggestions Skeleton */}
+          <div className="space-y-3 mt-6">
+            <div className="h-4 w-32 bg-gray-200 rounded animate-pulse" />
+            <div className="flex flex-wrap gap-2">
+              <div className="h-8 w-32 bg-gray-200 rounded animate-pulse" />
+              <div className="h-8 w-40 bg-gray-200 rounded animate-pulse" />
+              <div className="h-8 w-36 bg-gray-200 rounded animate-pulse" />
+            </div>
+          </div>
+        </div>
+
+        {/* Input Area Skeleton */}
+        <div className="p-6 border-t bg-background">
+          <div className="flex items-center gap-3">
+            <div className="flex-1 h-10 bg-gray-200 rounded animate-pulse" />
+            <div className="h-10 w-10 bg-gray-200 rounded animate-pulse" />
+          </div>
+        </div>
       </div>
     );
   }
@@ -438,9 +505,7 @@ export default function ChatPreview({
       {/* Chat Area */}
       <div 
         ref={chatAreaRef}
-        className={`flex-1 overflow-y-auto no-scrollbar p-6 ${
-          theme === "dark" ? "bg-background text-foreground" : "bg-background"
-        }`}
+        className="flex-1 overflow-y-auto no-scrollbar p-6 bg-background"
       >
         {/* Greeting/Initial Message */}
         {messages.length > 0 && (
@@ -459,12 +524,12 @@ export default function ChatPreview({
               })}
               
               <Card 
-                className={`p-4 max-w-md ${
-                  theme === "dark" 
-                    ? "bg-card text-card-foreground" 
-                    : "bg-card"
-                }`}
-                style={{ borderRadius: getBorderRadiusValue() }}
+                className="p-4 max-w-md border"
+                style={{ 
+                  borderRadius: getBorderRadiusValue(),
+                  backgroundColor: botMessageBgColor,
+                  color: botMessageTextColor,
+                }}
               >
                 <p className="text-sm">{messages[0]?.content}</p>
               </Card>
@@ -485,10 +550,12 @@ export default function ChatPreview({
                   key={index}
                   variant="outline"
                   size="sm"
-                  className="text-xs h-8 px-3 whitespace-normal text-left hover:bg-accent hover:text-accent-foreground"
+                  className="text-xs h-8 px-3 whitespace-normal text-left hover:opacity-80 cursor-pointer"
                   style={{ 
                     borderRadius: getBorderRadiusValue(),
-                    borderColor: theme === "dark" ? "hsl(var(--border))" : getColorValue(),
+                    backgroundColor: quickSuggestionBgColor,
+                    color: quickSuggestionTextColor,
+                    borderColor: quickSuggestionTextColor + '20',
                   }}
                   onClick={() => handleSuggestionClick(suggestion)}
                   disabled={isLoading}
@@ -517,16 +584,11 @@ export default function ChatPreview({
               })
             )}
             <Card 
-              className={`p-4 max-w-md ${
-                msg.role === "user" 
-                  ? `text-white bg-primary border-primary` 
-                  : theme === "dark" 
-                    ? "bg-card text-card-foreground" 
-                    : "bg-card"
-              }`}
+              className="p-4 max-w-md border"
               style={{ 
                 borderRadius: getBorderRadiusValue(),
-                backgroundColor: msg.role === "user" ? getColorValue() : undefined
+                backgroundColor: msg.role === "user" ? userMessageBgColor : botMessageBgColor,
+                color: msg.role === "user" ? userMessageTextColor : botMessageTextColor,
               }}
             >
               <div className="text-sm whitespace-pre-wrap"
@@ -550,16 +612,28 @@ export default function ChatPreview({
               colorValue: getColorValue(avatar ? avatarColor : iconColor),
             })}
             <Card 
-              className={`p-4 max-w-md ${
-                theme === "dark" 
-                  ? "bg-card text-card-foreground" 
-                  : "bg-card"
-              }`}
-              style={{ borderRadius: getBorderRadiusValue() }}
+              className="p-4 max-w-md border"
+              style={{ 
+                borderRadius: getBorderRadiusValue(),
+                backgroundColor: botMessageBgColor,
+                color: botMessageTextColor,
+              }}
             >
-              <div className="flex items-center space-x-2">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <p className="text-sm">Thinking...</p>
+              <div className="flex items-center space-x-3">
+                <div className="flex space-x-1.5">
+                  {[0, 150, 300].map((delay, i) => (
+                    <div 
+                      key={delay} 
+                      className="w-2.5 h-2.5 rounded-full bg-gradient-to-br from-primary/80 to-primary animate-bounce" 
+                      style={{ 
+                        animationDelay: `${delay}ms`,
+                        animationDuration: '1s',
+                        animationIterationCount: 'infinite'
+                      }} 
+                    />
+                  ))}
+                </div>
+                <p className="text-sm font-medium bg-gradient-to-r from-primary/80 to-primary bg-clip-text text-transparent animate-pulse">Thinking...</p>
               </div>
             </Card>
           </div>
@@ -570,35 +644,21 @@ export default function ChatPreview({
       </div>
 
       {/* Chat Input */}
-      <div 
-        className={`p-6 border-t ${
-          theme === "dark" 
-            ? "bg-background border-border" 
-            : "bg-background border-border"
-        }`}
-      >
+      <div className="p-6 border-t bg-background">
         <div className="flex items-center gap-3">
           <Input
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Ask me anything"
-            className={`flex-1 ${
-              theme === "dark" 
-                ? "bg-card text-foreground placeholder-muted-foreground" 
-                : "bg-card"
-            }`}
+            className="flex-1 bg-card"
             style={{ borderRadius: getBorderRadiusValue() }}
             disabled={isLoading || isLoadingChatbot}
           />
           <Button 
             size="icon" 
             variant="ghost" 
-            className={`shrink-0 ${
-              theme === "dark" 
-                ? "text-muted-foreground hover:text-foreground hover:bg-accent" 
-                : ""
-            }`}
+            className="shrink-0"
             onClick={() => handleSendMessage()}
             disabled={isLoading || !message.trim() || isLoadingChatbot}
             style={{ borderRadius: getBorderRadiusValue() }}

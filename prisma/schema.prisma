@@ -139,33 +139,35 @@ enum WidgetIconType {
 model ChatbotTheme {
   id              String         @id @default(cuid())
 
-  // Matches 'config.iconUrl' - script uses "💬" emoji if null
+  // Widget Settings
   widgetIcon      String?
   widgetIconType  WidgetIconType @default(EMOJI) 
-  
-  // Script doesn't explicitly use a label on the button, but common for UX
   widgetText      String?        @default("Chat with us")
-
   widgetSize      Int            @default(70) 
-  
-  // Matches defaults.buttonColor: '#3b82f6'
+  widgetSizeMobile Int?          @default(60) 
   widgetColor     String?        @default("#3b82f6")
-  
   widgetShape     ShapeType      @default(ROUND)
   widgetBorder    BorderType     @default(FLAT)
-  
-  // Matches background: white in createIframe
   widgetBgColor   String?        @default("#FFFFFF")
-  
-  // Matches defaults.position: 'bottom-right'
   widgetPosition  Position       @default(BottomRight)
-  
-  // Default spacing
   widgetPadding   Int            @default(0)
   widgetMargin    Int            @default(20)
-
-  // Matches defaults.autoOpen: false
   popup_onload    Boolean        @default(false)
+
+  // Window Theme Colors
+  headerBgColor            String? @default("#1320AA")
+  headerTextColor          String? @default("#ffffff")
+  botMessageBgColor        String? @default("#f1f5f9")
+  botMessageTextColor      String? @default("#0f172a")
+  userMessageBgColor       String? @default("#1320AA")
+  userMessageTextColor     String? @default("#ffffff")
+  inputBgColor             String? @default("#ffffff")
+  inputBorderColor         String? @default("#e2e8f0")
+  inputButtonColor         String? @default("#DD692E")
+  closeButtonColor         String? @default("#000000")
+  closeButtonBgColor       String? @default("#DD692E")
+  quickSuggestionBgColor   String? @default("#ffffff")
+  quickSuggestionTextColor String? @default("#0f172a")
 
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt

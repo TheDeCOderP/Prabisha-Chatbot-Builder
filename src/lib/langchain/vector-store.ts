@@ -107,7 +107,7 @@ export async function generateEmbedding(text: string): Promise<number[]> {
     const embeddings = new GoogleGenerativeAIEmbeddings({
       taskType: TaskType.RETRIEVAL_DOCUMENT,
       apiKey: process.env.GEMINI_API_KEY!,
-      model: "models/embedding-001",
+      model: "gemini-embedding-001", // Official Gemini embedding model
     });
 
     const embedding = await embeddings.embedQuery(text);

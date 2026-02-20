@@ -1,7 +1,7 @@
 "use client"
 
 import { toast } from "sonner"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { 
   MousePointer2, 
@@ -15,6 +15,7 @@ import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
+import { useChatbot } from "@/providers/chatbot-provider"
 
 // You would create these form components separately 
 // similar to LinkButtonForm in your Logic page
@@ -33,6 +34,7 @@ export default function ThemePage() {
   const params = useParams()
   const router = useRouter()
   const chatbotId = params.id as string
+  const { config, updateConfig } = useChatbot()
 
   const [activeTab, setActiveTab] = useState("selection")
   const [isLoading, setIsLoading] = useState(false)
@@ -49,11 +51,36 @@ export default function ThemePage() {
       if (!response.ok) throw new Error('Failed to fetch theme')
       const data = await response.json()
       setExistingTheme(data.theme || null)
+      // Update the provider's config with the theme
+      if (data.theme) {
+        updateConfig({ theme: data.theme })
+      }
     } catch (error) {
       console.error('Error fetching theme:', error)
       toast.error('Failed to load theme settings')
     }
   }
+
+  const handleLivePreviewUpdate = useCallback((updatedTheme: any) => {
+    // Update the provider's config for live preview
+    updateConfig({ theme: updatedTheme })
+    
+    // Send message to embedded chatbot widget iframe to update its theme
+    const iframe = document.querySelector('iframe[src*="/embed/widget/"]') as HTMLIFrameElement
+    if (iframe && iframe.contentWindow) {
+      iframe.contentWindow.postMessage({
+        type: 'theme-update',
+        theme: updatedTheme
+      }, '*')
+    }
+    
+    // Also send message to parent window (for embed.js button updates)
+    window.postMessage({
+      type: 'theme-update',
+      chatbotId: chatbotId,
+      theme: updatedTheme
+    }, '*')
+  }, [updateConfig, chatbotId])
 
   const themeFeatures: ThemeFeature[] = [
     {
@@ -67,7 +94,6 @@ export default function ThemePage() {
       icon: <Layout className="w-5 h-5" />,
       title: "Chat Window",
       description: "Configure the header, messages, and window style.",
-      badge: "Coming Soon"
     },
   ]
 
@@ -110,7 +136,7 @@ export default function ThemePage() {
               {themeFeatures.map((feature) => {
                 const isConfigured = !!existingTheme && (
                    (feature.id === "widget" && existingTheme.widgetIcon) ||
-                   (feature.id === "window" && existingTheme.windowBgColor)
+                   (feature.id === "window" && existingTheme.headerBgColor)
                 )
 
                 return (
@@ -118,7 +144,6 @@ export default function ThemePage() {
                     key={feature.id}
                     className="p-4 hover:shadow-md transition-shadow cursor-pointer hover:bg-card"
                     onClick={() => {
-                      if (feature.badge === "Coming Soon") return
                       setSelectedFeature(feature.id)
                       setActiveTab(feature.id)
                     }}
@@ -160,6 +185,7 @@ export default function ThemePage() {
               onSave={handleSaveTheme}
               isLoading={isLoading}
               initial={existingTheme}
+              onLiveUpdate={handleLivePreviewUpdate}
             />
           </TabsContent>
 
@@ -170,6 +196,7 @@ export default function ThemePage() {
               onSave={handleSaveTheme}
               isLoading={isLoading}
               initial={existingTheme}
+              onLiveUpdate={handleLivePreviewUpdate}
             />
           </TabsContent>
 

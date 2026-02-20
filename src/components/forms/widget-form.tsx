@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Loader2, Save, ChevronLeft, Palette, MousePointer2, Upload, ImageIcon } from "lucide-react"
 
 import { Input } from "@/components/ui/input"
@@ -24,23 +24,79 @@ interface WidgetThemeFormProps {
   onSave: (data: any) => Promise<void>
   isLoading: boolean
   initial?: any
+  onLiveUpdate?: (theme: any) => void
 }
 
-export function WidgetThemeForm({ onBack, onSave, isLoading, initial }: WidgetThemeFormProps) {
+export function WidgetThemeForm({ onBack, onSave, isLoading, initial, onLiveUpdate }: WidgetThemeFormProps) {
   const [formData, setFormData] = useState({
-    widgetIcon: initial?.widgetIcon || "💬",
-    widgetIconType: (initial?.widgetIconType as WidgetIconType) || "EMOJI",
-    widgetText: initial?.widgetText || "Chat with us",
-    widgetSize: initial?.widgetSize || 70,
-    widgetColor: initial?.widgetColor || "#3b82f6",
-    widgetShape: (initial?.widgetShape as ShapeType) || "ROUND",
-    widgetBorder: (initial?.widgetBorder as BorderType) || "FLAT",
-    widgetBgColor: initial?.widgetBgColor || "#FFFFFF",
-    widgetPosition: (initial?.widgetPosition as Position) || "BottomRight",
-    widgetPadding: initial?.widgetPadding || 0,
-    widgetMargin: initial?.widgetMargin || 20,
-    popup_onload: initial?.popup_onload ?? false,
+    widgetIcon: "💬",
+    widgetIconType: "EMOJI" as WidgetIconType,
+    widgetText: "Chat with us",
+    widgetSize: 70,
+    widgetSizeMobile: 60,
+    widgetColor: "#3b82f6",
+    widgetShape: "ROUND" as ShapeType,
+    widgetBorder: "FLAT" as BorderType,
+    widgetBgColor: "#FFFFFF",
+    widgetPosition: "BottomRight" as Position,
+    widgetPadding: 0,
+    widgetMargin: 20,
+    popup_onload: false,
   })
+
+  // Use a ref to track if we're currently updating to prevent loops
+  const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const isInitializedRef = useRef(false)
+
+  // Initialize form data from initial prop
+  useEffect(() => {
+    if (initial && !isInitializedRef.current) {
+      setFormData({
+        widgetIcon: initial.widgetIcon || "💬",
+        widgetIconType: (initial.widgetIconType as WidgetIconType) || "EMOJI",
+        widgetText: initial.widgetText || "Chat with us",
+        widgetSize: initial.widgetSize || 70,
+        widgetSizeMobile: initial.widgetSizeMobile || 60,
+        widgetColor: initial.widgetColor || "#3b82f6",
+        widgetShape: (initial.widgetShape as ShapeType) || "ROUND",
+        widgetBorder: (initial.widgetBorder as BorderType) || "FLAT",
+        widgetBgColor: initial.widgetBgColor || "#FFFFFF",
+        widgetPosition: (initial.widgetPosition as Position) || "BottomRight",
+        widgetPadding: initial.widgetPadding || 0,
+        widgetMargin: initial.widgetMargin || 20,
+        popup_onload: initial.popup_onload ?? false,
+      })
+      isInitializedRef.current = true
+    }
+  }, [initial])
+
+  // Debounced live preview update
+  useEffect(() => {
+    if (onLiveUpdate && isInitializedRef.current) {
+      // Clear any existing timeout
+      if (updateTimeoutRef.current) {
+        clearTimeout(updateTimeoutRef.current)
+      }
+
+      // Set a new timeout to update after 100ms of no changes
+      updateTimeoutRef.current = setTimeout(() => {
+        const updatedTheme = {
+          ...initial,
+          ...formData,
+        }
+        onLiveUpdate(updatedTheme)
+      }, 100)
+    }
+
+    // Cleanup timeout on unmount
+    return () => {
+      if (updateTimeoutRef.current) {
+        clearTimeout(updateTimeoutRef.current)
+      }
+    }
+    // Only depend on formData
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData])
 
   // Handle Image Upload to Base64
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -72,7 +128,15 @@ export function WidgetThemeForm({ onBack, onSave, isLoading, initial }: WidgetTh
         </div>
       </div>
 
-      <div className="space-y-6 py-4 overflow-y-auto max-h-[70vh]">
+      <div className="space-y-6 py-4 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 16rem)' }}>
+        
+        {/* Info Section about Avatar/Icon */}
+        <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+          <p className="text-[11px] text-blue-900 dark:text-blue-100">
+            <strong>Note:</strong> The chatbot avatar (header image) and bot icon (message bubbles) are managed in the <strong>Instructions</strong> tab.
+          </p>
+        </div>
+
         <div className="space-y-4">
           <div className="flex items-center gap-2 text-sm font-semibold">
             <Palette className="w-4 h-4" />
@@ -124,8 +188,8 @@ export function WidgetThemeForm({ onBack, onSave, isLoading, initial }: WidgetTh
                 <div className="space-y-2">
                   <div className="flex items-center gap-4 p-3 border rounded-md bg-muted/30">
                     <div className="h-12 w-12 rounded-md border bg-background flex items-center justify-center overflow-hidden">
-                      {formData.widgetIcon && formData.widgetIcon.startsWith('data:image') ? (
-                        <img src={formData.widgetIcon} alt="Preview" className="h-full w-full object-cover" />
+                      {formData.widgetIcon ? (
+                        <img src={formData.widgetIcon} alt="Widget Icon Preview" className="h-full w-full object-contain" />
                       ) : (
                         <ImageIcon className="h-6 w-6 text-muted-foreground" />
                       )}
@@ -137,6 +201,9 @@ export function WidgetThemeForm({ onBack, onSave, isLoading, initial }: WidgetTh
                         className="text-xs"
                         onChange={handleImageUpload}
                       />
+                      {formData.widgetIcon && (
+                        <p className="text-[10px] text-muted-foreground mt-1">Image uploaded ✓</p>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -212,7 +279,7 @@ export function WidgetThemeForm({ onBack, onSave, isLoading, initial }: WidgetTh
           <div className="space-y-6">
             <div className="space-y-2">
               <div className="flex justify-between items-center">
-                <Label>Size</Label>
+                <Label>Size (Desktop)</Label>
                 <span className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded">{formData.widgetSize}px</span>
               </div>
               <Slider 
@@ -220,6 +287,19 @@ export function WidgetThemeForm({ onBack, onSave, isLoading, initial }: WidgetTh
                 min={40} max={100} step={1} 
                 onValueChange={([v]) => setFormData({ ...formData, widgetSize: v })} 
               />
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <Label>Size (Mobile)</Label>
+                <span className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded">{formData.widgetSizeMobile}px</span>
+              </div>
+              <Slider 
+                value={[formData.widgetSizeMobile]} 
+                min={40} max={80} step={1} 
+                onValueChange={([v]) => setFormData({ ...formData, widgetSizeMobile: v })} 
+              />
+              <p className="text-[10px] text-muted-foreground">Recommended: 50-60px for mobile devices</p>
             </div>
 
             <div className="space-y-2">
@@ -250,8 +330,8 @@ export function WidgetThemeForm({ onBack, onSave, isLoading, initial }: WidgetTh
           </div>
         </div>
 
-        {/* Action Buttons */}
-        <div className="border-t pt-4 flex gap-2">
+        {/* Action Buttons - Fixed at bottom */}
+        <div className="sticky bottom-0 bg-background border-t pt-4 mt-6 flex gap-2">
           <Button variant="outline" onClick={onBack} className="flex-1">
             Cancel
           </Button>

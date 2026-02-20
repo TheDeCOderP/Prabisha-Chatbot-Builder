@@ -101,7 +101,7 @@ ASSISTANT - Output ONLY clean, compact HTML with no extra spacing:`;
 export async function rewriteQuery(userMessage: string): Promise<string[]> {
   try {
     const { text } = await generateText({
-      model: googleAI('gemini-3-flash-preview'),
+      model: googleAI('gemini-2.5-flash'), // Latest stable Gemini 2.5 model
       prompt: QUERY_REWRITE_PROMPT.replace('{question}', userMessage),
       maxOutputTokens: 150,
       temperature: 0.4,
@@ -287,7 +287,10 @@ export async function getLogicContext(chatbot: any, message: string): Promise<st
   }
   
   try {
-    const triggers = JSON.parse(chatbotLogic.triggers as string);
+    // Triggers is already an object from Prisma, not a string
+    const triggers = typeof chatbotLogic.triggers === 'string' 
+      ? JSON.parse(chatbotLogic.triggers) 
+      : chatbotLogic.triggers;
     if (!Array.isArray(triggers)) return ctx;
     
     // Check each trigger for keyword matches
@@ -362,7 +365,10 @@ export async function checkLogicTriggers(chatbot: any, message: string) {
   }
   
   try {
-    const triggers = JSON.parse(chatbotLogic.triggers as string);
+    // Triggers is already an object from Prisma, not a string
+    const triggers = typeof chatbotLogic.triggers === 'string' 
+      ? JSON.parse(chatbotLogic.triggers) 
+      : chatbotLogic.triggers;
     if (!Array.isArray(triggers)) return triggered;
     
     // Check each trigger
@@ -598,9 +604,9 @@ export async function generateRAGResponse(
 
     console.log(`✅ Mode: ${mode}`);
 
-    // UPDATED: Use Gemini instead of TogetherAI
+    // Use latest Gemini 2.5 Flash model (stable)
     const { text } = await generateText({
-      model: googleAI('gemini-3-flash-preview'),
+      model: googleAI('gemini-2.5-flash'), // Latest stable Gemini 2.5 model
       prompt,
       maxOutputTokens: chatbot.max_tokens || 600,
       temperature: chatbot.temperature || 0.7,
