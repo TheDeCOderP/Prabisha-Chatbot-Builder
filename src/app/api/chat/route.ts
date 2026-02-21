@@ -3,42 +3,60 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { executeSearchChain, simpleSearch } from '@/lib/langchain/chains/search-chain';
 
+function timer(label: string) {
+  const start = Date.now();
+  return {
+    end: () => {
+      const ms = Date.now() - start;
+      console.log(`⏱️ [API /chat] ${label}: ${ms}ms`);
+      return ms;
+    }
+  };
+}
+
 export async function POST(request: NextRequest) {
+  const tTotal = timer('POST [total]');
   try {
+    const tParse = timer('parse request body');
     const body = await request.json();
+    tParse.end();
+
     const message = body.message || body.input;
     const chatbotId = body.chatbotId;
-    let conversationId = body.conversationId; // Might be null/undefined
-    
+    let conversationId = body.conversationId;
+
     if (!message?.trim()) {
       return NextResponse.json({ error: 'Message required' }, { status: 400 });
     }
-
     if (!chatbotId) {
       return NextResponse.json({ error: 'Chatbot ID required' }, { status: 400 });
     }
 
-    // Fetch chatbot to verify it exists
+    const tChatbotFetch = timer('prisma: fetch chatbot');
     const chatbot = await prisma.chatbot.findUnique({
       where: { id: chatbotId },
       include: {
-        knowledgeBases: true,
-        logic: true
+        knowledgeBases: {
+          select: { id: true, name: true } // avoid loading all KB content/documents
+        },
+        logic: true,
+        form: true
       }
     });
+    tChatbotFetch.end();
 
     if (!chatbot) {
       return NextResponse.json({ error: 'Chatbot not found' }, { status: 404 });
     }
 
-    // If conversationId provided, verify it exists and belongs to this chatbot
     if (conversationId) {
+      const tConvCheck = timer('prisma: verify conversation');
       const existingConversation = await prisma.conversation.findUnique({
         where: { id: conversationId }
       });
-      
+      tConvCheck.end();
+
       if (!existingConversation) {
-        // Conversation not found, reset to null so new one gets created
         conversationId = null;
       } else if (existingConversation.chatbotId !== chatbotId) {
         return NextResponse.json(
@@ -48,17 +66,19 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Execute search chain - it will handle conversation creation if needed
+    const tChain = timer('executeSearchChain');
     const result = await executeSearchChain({
       chatbotId,
-      conversationId, // Might be null
+      conversationId,
       userMessage: message,
+      chatbot, // ← pass pre-fetched chatbot — avoids a second 6s DB call
     });
+    tChain.end();
 
     const responseData: any = {
       message: result.response,
       response: result.response,
-      conversationId: result.conversationId, // Always return the conversationId
+      conversationId: result.conversationId,
     };
 
     if (result.triggeredLogics?.length) {
@@ -77,14 +97,16 @@ export async function POST(request: NextRequest) {
       responseData.sourceUrls = result.sourceUrls;
     }
 
+    tTotal.end();
     return NextResponse.json(responseData);
 
   } catch (error: any) {
+    tTotal.end();
     console.error('Chat API error:', error);
-    
+
     let errorMessage = 'Failed to process message';
     let statusCode = 500;
-    
+
     if (error.message?.includes('Chatbot not found')) {
       errorMessage = 'Chatbot not found';
       statusCode = 404;
@@ -95,7 +117,7 @@ export async function POST(request: NextRequest) {
       errorMessage = 'Rate limit exceeded';
       statusCode = 429;
     }
-    
+
     return NextResponse.json(
       { error: errorMessage, details: process.env.NODE_ENV === 'development' ? error.message : undefined },
       { status: statusCode }
@@ -103,8 +125,8 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// New search-only endpoint
 export async function GET(request: NextRequest) {
+  const tTotal = timer('GET [total]');
   try {
     const searchParams = request.nextUrl.searchParams;
     const query = searchParams.get('query');
@@ -112,23 +134,20 @@ export async function GET(request: NextRequest) {
     const conversationId = searchParams.get('conversationId');
 
     if (!query || !chatbotId) {
-      return NextResponse.json(
-        { error: 'query and chatbotId required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'query and chatbotId required' }, { status: 400 });
     }
 
-    // If conversationId provided, fetch conversation messages
     if (conversationId) {
+      const tConv = timer('prisma: fetch conversation with messages');
       const conversation = await prisma.conversation.findUnique({
         where: { id: conversationId },
         include: { messages: { orderBy: { createdAt: 'asc' }, take: 50 }}
       });
+      tConv.end();
 
       if (!conversation) {
         return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
       }
-
       if (conversation.chatbotId !== chatbotId) {
         return NextResponse.json(
           { error: 'Conversation does not belong to this chatbot' },
@@ -136,6 +155,7 @@ export async function GET(request: NextRequest) {
         );
       }
 
+      tTotal.end();
       return NextResponse.json({
         data: conversation.messages,
         conversationId: conversation.id,
@@ -143,28 +163,27 @@ export async function GET(request: NextRequest) {
         createdAt: conversation.createdAt
       });
     } else {
-      // Simple search without conversation context
+      const tSearch = timer('simpleSearch');
       const results = await simpleSearch(chatbotId, query, {
         limit: parseInt(searchParams.get('limit') || '10'),
         threshold: parseFloat(searchParams.get('threshold') || '0.65'),
         includeKnowledgeBaseNames: searchParams.get('includeKbNames') === 'true'
       });
+      tSearch.end();
 
-      return NextResponse.json({
-        results,
-        query,
-        chatbotId,
-        count: results.length
-      });
+      tTotal.end();
+      return NextResponse.json({ results, query, chatbotId, count: results.length });
     }
 
   } catch (error) {
+    tTotal.end();
     console.error('Error in GET:', error);
     return NextResponse.json({ error: 'Failed to process request' }, { status: 500 });
   }
 }
 
 export async function PUT(request: NextRequest) {
+  const tTotal = timer('PUT [total]');
   try {
     const body = await request.json();
     const { conversationId, isActive, metadata } = body;
@@ -173,6 +192,7 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'conversationId required' }, { status: 400 });
     }
 
+    const tUpdate = timer('prisma: update conversation');
     const conversation = await prisma.conversation.update({
       where: { id: conversationId },
       data: {
@@ -181,7 +201,9 @@ export async function PUT(request: NextRequest) {
         ...(isActive === false && { endedAt: new Date() })
       }
     });
+    tUpdate.end();
 
+    tTotal.end();
     return NextResponse.json({
       success: true,
       conversationId: conversation.id,
@@ -190,6 +212,7 @@ export async function PUT(request: NextRequest) {
     });
 
   } catch (error) {
+    tTotal.end();
     console.error('Error updating conversation:', error);
     return NextResponse.json({ error: 'Failed to update conversation' }, { status: 500 });
   }

@@ -123,12 +123,28 @@ export async function POST(
         console.log(`Starting scraping: ${url} (crawl: ${crawlSubpages})`);
         
         // Process URL with crawling option
-        const { content, metadata, pages } = await processURL(url, crawlSubpages);
+        const { content, metadata, pages } = await processURL(url, crawlSubpages, 3000);
         console.log(`Finished scraping: ${url} (crawl: ${crawlSubpages})`);
 
         if (pages && pages.length > 0) {
           // Store each page as a separate document
           const documentPromises = pages.map(async (page) => {
+            const existingDocument = await prisma.document.findFirst({
+              where: {
+                knowledgeBaseId: knowledgeBase.id,
+                source: page.url,
+              },
+            })
+
+            if (existingDocument) {
+              return {
+                success: true,
+                url: page.url,
+                title: page.title,
+                documentId: existingDocument.id,
+              };
+            }
+            
             const document = await prisma.document.create({
               data: {
                 knowledgeBaseId: knowledgeBase.id,

@@ -412,7 +412,7 @@ model DocumentVector {
   chatbotId       String
   chunkIndex      Int
   content         String   @db.Text
-  embedding       Unsupported("vector(768)")? // pgvector type
+  embedding       Unsupported("vector(3072)")? // pgvector type
   metadata        Json
   createdAt       DateTime @default(now())
 

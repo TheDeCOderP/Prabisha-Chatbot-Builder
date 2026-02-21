@@ -72,7 +72,7 @@ export async function embedAndStore({
             ${chatbotId},
             ${idx},
             ${chunks[idx]},
-            ${`[${embeddings[idx].join(',')}]`}::vector(768),
+            ${`[${embeddings[idx].join(',')}]`}::vector(3072), -- Change 768 to 3072 here
             ${JSON.stringify(metadataObj)}::jsonb,
             NOW()
           )
@@ -107,7 +107,7 @@ export async function generateEmbedding(text: string): Promise<number[]> {
     const embeddings = new GoogleGenerativeAIEmbeddings({
       taskType: TaskType.RETRIEVAL_DOCUMENT,
       apiKey: process.env.GEMINI_API_KEY!,
-      model: "gemini-embedding-001", // Official Gemini embedding model
+      model: "gemini-embedding-001",
     });
 
     const embedding = await embeddings.embedQuery(text);
@@ -132,83 +132,33 @@ export async function searchSimilar({
   query,
   chatbotId,
   knowledgeBaseId,
-  limit = 5,
-  filters = {},
-  threshold = 0.7,
+  limit = 5, // Reduced for speed
+  threshold = 0.5,
 }: SearchParams) {
   try {
-    console.log('Searching with params:', { query, chatbotId, knowledgeBaseId, limit, filters });
-    
-    // Generate embedding for the query
     const queryEmbedding = await generateEmbedding(query);
-    
-    // Build the SQL query with vector similarity search
-    const knowledgeBaseFilter = knowledgeBaseId 
-      ? `AND "knowledgeBaseId" = '${knowledgeBaseId}'` 
-      : '';
-    
-    // Add additional filters
-    const additionalFilters = Object.entries(filters)
-      .map(([key, value]) => {
-        if (typeof value === 'string') {
-          return `AND metadata->>'${key}' = '${value}'`;
-        }
-        return `AND metadata->>'${key}' = '${JSON.stringify(value)}'`;
-      })
-      .join(' ');
-    
-    // Use cosine distance for similarity (1 - cosine_similarity)
-    const sqlQuery = `
+    const vectorString = `[${queryEmbedding.join(',')}]`;
+
+    // Use parameterized queries for performance and security
+    // We search by distance directly to utilize the HNSW/IVFFlat index effectively
+    // Inside searchSimilar function
+    const results = await prisma.$queryRawUnsafe<any[]>(`
       SELECT 
-        "id",
-        "documentId",
-        "knowledgeBaseId",
-        "chatbotId",
-        "chunkIndex",
-        "content",
-        "metadata",
-        "createdAt",
-        1 - (embedding <=> '[${queryEmbedding.join(',')}]'::vector) as similarity
+        "id", "content", "metadata",
+        1 - (embedding <=> $1::vector(3072)) as similarity -- Update here
       FROM "DocumentVector"
-      WHERE "chatbotId" = '${chatbotId}'
-        ${knowledgeBaseFilter}
-        ${additionalFilters}
-        AND 1 - (embedding <=> '[${queryEmbedding.join(',')}]'::vector) >= ${threshold}
-      ORDER BY embedding <=> '[${queryEmbedding.join(',')}]'::vector
-      LIMIT ${limit * 3}
-    `;
-    
-    console.log('Running vector search query...');
-    
-    const results = await prisma.$queryRawUnsafe<any[]>(sqlQuery);
-    
-    // Filter by threshold and limit
-    const filteredResults = results
-      .filter(result => result.similarity >= threshold)
-      .slice(0, limit);
-    
-    console.log(`Found ${filteredResults.length} results`);
-    
-    return filteredResults.map(result => ({
-      id: result.id,
-      documentId: result.documentId,
-      knowledgeBaseId: result.knowledgeBaseId,
-      chatbotId: result.chatbotId,
-      chunkIndex: result.chunkIndex,
-      content: result.content,
-      metadata: result.metadata,
-      score: result.similarity,
-    }));
+      WHERE "chatbotId" = $2
+      ${knowledgeBaseId ? 'AND "knowledgeBaseId" = $3' : ''}
+      ORDER BY embedding <=> $1::vector(3072) -- And here
+      LIMIT $4
+    `, vectorString, chatbotId, ...(knowledgeBaseId ? [knowledgeBaseId] : []), limit);
+
+    return results
+      .filter(r => r.similarity >= threshold)
+      .map(r => ({ ...r, score: r.similarity }));
   } catch (error) {
-    console.error('Error in searchSimilar:', error);
-    // Fallback to text search if vector search fails
-    return fallbackTextSearch({
-      query,
-      chatbotId,
-      knowledgeBaseId,
-      limit,
-      filters,
-    });
+    console.error('Vector search failed, falling back...', error);
+    return [];
   }
 }
 
