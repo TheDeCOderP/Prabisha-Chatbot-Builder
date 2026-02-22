@@ -52,41 +52,44 @@ Output format (one per line):
 2. [variation]
 3. [variation]`;
 
-const RAG_ANSWER_PROMPT = `You are a knowledgeable assistant. Use the CONTEXT below to answer the user's question.
+const RAG_ANSWER_PROMPT = `You are a helpful assistant. Answer the user's question using ONLY the CONTEXT provided below.
 
-IMPORTANT RULES:
-1. Synthesize information from ALL relevant context chunks
-2. If context has PARTIAL information, provide what you know and acknowledge gaps
-3. Be specific - mention features, services, pricing, timelines when available
-4. Connect related information across different context sources
-5. Only say "I don't have information" if context is completely irrelevant
-6. Use a helpful, conversational tone
+RESPONSE RULES:
+1. Use information from the context — be specific about products, prices, features, or details mentioned
+2. If context is partially relevant, use what applies and acknowledge what you don't know
+3. Keep answers concise but complete — aim for 3-6 sentences or a short list
+4. Use a warm, conversational tone — like a knowledgeable shop assistant
 
-CRITICAL FORMATTING RULES - FOLLOW EXACTLY:
-- Wrap each paragraph in <p> tags with NO extra newlines
-- Use <ul><li> for bullet lists (NO newlines between items)
-- Use <strong> only for truly important keywords
-- DO NOT add extra <br> tags or newlines
-- DO NOT add blank lines between elements
-- Keep HTML compact and clean
-- DO NOT mention sources or URLs
+HTML FORMATTING (strictly follow):
+- Wrap every paragraph in <p> tags
+- Use <ul><li> for lists — no extra newlines between <li> items
+- Use <strong> only for product names or key terms
+- NO <br> tags, NO blank lines between elements
+- Output compact HTML only — no markdown, no plain text
+
+SOURCE CITATION RULES:
+- Each context chunk starts with a label like: [Chunk 1 | Source: Page Title (https://example.com/page/)]
+- When you use information from a chunk that has a URL in its label, add an inline citation tag immediately after the sentence
+- Citation format: <cite data-url="FULL_URL">Page Title</cite>
+- Place the cite tag INSIDE the <p> or <li>, at the END of the sentence that uses that info
+- Example: <li><strong>Kids Books</strong>: Over 50 books for ages 3-12. <cite data-url="https://example.com/books/">Fun Learning Books</cite></li>
+- Only use URLs that APPEAR in the context labels — never invent or guess URLs
+- If a chunk has no URL in its label, do not add a citation for it
 
 FOLLOW-UP RULE:
-- After your complete answer, ask EXACTLY ONE short follow-up question
-- The question must be relevant to what the user just asked
+- End with exactly ONE relevant follow-up question
 - Wrap it in: <p class="follow-up-question">...</p>
-- It must be the LAST element in your response
-- Do NOT ask more than one question
+- Must be the very last element
 
-CONTEXT (from knowledge base):
+CONTEXT:
 {context}
 
 CONVERSATION HISTORY:
 {history}
 
-USER QUESTION: {question}
+USER: {question}
 
-Provide a complete answer first, then ONE follow-up question at the end. Output ONLY clean, compact HTML:`;
+Output ONLY compact HTML. Answer first with inline citations where applicable, then one follow-up question:`;
 
 const GENERAL_ANSWER_PROMPT = `{systemPrompt}
 
@@ -413,6 +416,22 @@ function cleanHtmlResponse(html: string): string {
   cleaned = cleaned.replace(/<ol>/g, '<ol style="margin: 12px 0; padding-left: 24px;">');
   cleaned = cleaned.replace(/<li>/g, '<li style="margin-bottom: 6px;">');
   cleaned = cleaned.replace(/^<p style="margin-top: 12px;">/, '<p>');
+
+  // Convert LLM <cite data-url="...">label</cite> → styled inline link
+  cleaned = cleaned.replace(
+    /<cite data-url="([^"]+)">([^<]+)<\/cite>/g,
+    (_, url, label) =>
+      `<a href="${url}" target="_blank" rel="noopener noreferrer" ` +
+      `style="display:inline-flex;align-items:center;gap:3px;color:#2563eb;` +
+      `font-size:0.75em;font-weight:500;text-decoration:none;` +
+      `background:#eff6ff;border:1px solid #bfdbfe;border-radius:4px;` +
+      `padding:1px 5px;margin-left:3px;vertical-align:middle;white-space:nowrap;" ` +
+      `title="${label}">` +
+      `<svg width="10" height="10" viewBox="0 0 12 12" fill="none" style="flex-shrink:0">` +
+      `<path d="M2 10L10 2M10 2H4M10 2V8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>` +
+      `</svg>${label}</a>`
+  );
+
   if (!cleaned.startsWith('<div') && !cleaned.startsWith('<p')) {
     cleaned = `<div style="line-height: 1.6; color: #1f2937;">${cleaned}</div>`;
   } else if (cleaned.startsWith('<p')) {
@@ -444,23 +463,42 @@ function appendReadMoreSection(
 ): string {
   if (!sources.length) return htmlResponse;
 
-  const readMoreSection = `
-<div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid #e5e7eb;">
-  <div style="font-weight: 600; color: #374151; margin-bottom: 10px; font-size: 14px; display: flex; align-items: center; gap: 6px;">
-    <span>📚</span>
-    <span>Learn More</span>
-  </div>
-  <div style="display: flex; flex-direction: column; gap: 8px;">
-    ${sources.map(source => `
-    <a href="${source.url}" 
-       target="_blank" 
+  // Deduplicate: skip sources already shown as inline <cite> links in the response
+  const inlineCiteUrls = new Set<string>();
+  const citeRegex = /data-url="([^"]+)"/g;
+  let match;
+  while ((match = citeRegex.exec(htmlResponse)) !== null) {
+    inlineCiteUrls.add(match[1]);
+  }
+  const newSources = sources.filter(s => !inlineCiteUrls.has(s.url));
+
+  // Build source cards for sources NOT already shown inline
+  const allSourcesToShow = sources; // always show all in the footer section
+  
+  const sourceItems = allSourcesToShow.map((source) => {
+    let hostname = '';
+    try { hostname = new URL(source.url).hostname.replace('www.', ''); } catch {}
+    const isInline = inlineCiteUrls.has(source.url);
+
+    return `<a href="${source.url}"
+       target="_blank"
        rel="noopener noreferrer"
-       style="color: #2563eb; text-decoration: none; font-size: 14px; display: flex; align-items: center; gap: 6px; padding: 4px 0; transition: opacity 0.2s;">
-      <span style="opacity: 0.6;">🔗</span>
-      <span style="border-bottom: 1px solid transparent; transition: border-color 0.2s; flex: 1;">${source.title}</span>
-      <span style="font-size: 11px; opacity: 0.5;">↗</span>
-    </a>`).join('')}
-  </div>
+       style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:#f8fafc;border:1px solid ${isInline ? '#bfdbfe' : '#e2e8f0'};border-radius:8px;text-decoration:none;"
+     >
+      <span style="font-size:15px;flex-shrink:0">${isInline ? '🔵' : '🔗'}</span>
+      <span style="display:flex;flex-direction:column;gap:1px;min-width:0;flex:1">
+        <span style="font-size:13px;font-weight:600;color:#1e293b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${source.title}</span>
+        ${hostname ? `<span style="font-size:11px;color:#94a3b8">${hostname}</span>` : ''}
+      </span>
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style="flex-shrink:0;color:#94a3b8">
+        <path d="M2 10L10 2M10 2H4M10 2V8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+    </a>`;
+  }).join('');
+
+  const readMoreSection = `<div style="margin-top:20px;padding-top:16px;border-top:2px solid #f1f5f9">
+  <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;color:#94a3b8;text-transform:uppercase;margin-bottom:10px">Sources</div>
+  <div style="display:flex;flex-direction:column;gap:8px">${sourceItems}</div>
 </div>`;
 
   return htmlResponse + readMoreSection;
@@ -573,6 +611,44 @@ export async function generateRAGResponse(
   };
 }
 
+function extractSourceUrl(r: any): { url: string; title: string } | null {
+  const m = r.metadata || {};
+  
+  // Try all known metadata fields where a URL might live
+  // Your Document model uses 'source' as the canonical URL field
+  const url =
+    m.source ||   // Document.source — the primary URL field in your schema
+    m.url ||      // alternate key some scrapers use
+    m.link ||
+    m.pageUrl ||
+    r.source ||   // sometimes hoisted to top level by vector store
+    null;
+
+  if (!url || !(url.startsWith('http://') || url.startsWith('https://'))) return null;
+
+  // Derive a human-readable title
+  const title =
+    m.title ||
+    m.name ||
+    m.filename ||
+    m.page_title ||
+    (() => {
+      // Fall back to cleaned-up URL hostname + path
+      try {
+        const u = new URL(url);
+        const path = u.pathname.replace(/\/$/, '').split('/').filter(Boolean).pop() || '';
+        const readable = path.replace(/[-_]/g, ' ').replace(/\.[^.]+$/, '');
+        return readable
+          ? `${readable.charAt(0).toUpperCase()}${readable.slice(1)}`
+          : u.hostname;
+      } catch {
+        return url;
+      }
+    })();
+
+  return { url, title };
+}
+
 function processSearchResults(allResults: any[], chatbot: any) {
   const seen = new Set();
   const uniqueResults = allResults
@@ -584,13 +660,28 @@ function processSearchResults(allResults: any[], chatbot: any) {
     .sort((a, b) => b.score - a.score)
     .slice(0, 8);
 
-  const context = uniqueResults.map((r, i) => `[Source ${i + 1}]\n${r.content}`).join('\n\n');
+  // Build context — include source label so LLM knows what each chunk is about
+  const context = uniqueResults.map((r, i) => {
+    const src = extractSourceUrl(r);
+    const label = src?.title || r.metadata?.title || `Source ${i + 1}`;
+    return `[${label}]\n${r.content}`;
+  }).join('\n\n');
 
-  const sources = Array.from(new Map(
-    uniqueResults
-      .filter(r => r.metadata?.url)
-      .map(r => [r.metadata.url, { title: r.metadata.title || 'Link', url: r.metadata.url }])
-  ).values());
+  // Collect unique source URLs using the robust extractor
+  const sourceMap = new Map<string, { title: string; url: string }>();
+  for (const r of uniqueResults) {
+    const src = extractSourceUrl(r);
+    if (src && !sourceMap.has(src.url)) {
+      sourceMap.set(src.url, src);
+    }
+  }
+  const sources = Array.from(sourceMap.values()).slice(0, 5);
+
+  // Debug log so you can see what metadata looks like
+  if (uniqueResults.length > 0) {
+    console.log('🔍 Sample result metadata:', JSON.stringify(uniqueResults[0]?.metadata, null, 2));
+    console.log(`🔗 Sources found: ${sources.length}`, sources.map(s => s.url));
+  }
 
   return { context, sources };
 }
@@ -780,7 +871,7 @@ export async function streamRAGResponse(
 
   const tStreamInit = timer('streamText init (LLM call start)');
   const result = await streamText({
-    model: googleAI('gemini-2.0-flash'),  // fast, stable, low-latency
+    model: googleAI('gemini-2.5-flash'),  // fast, stable, low-latency
     prompt,
     maxOutputTokens: chatbot.max_tokens || 400,
     temperature: chatbot.temperature || 0.7,

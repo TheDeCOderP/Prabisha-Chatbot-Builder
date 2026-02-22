@@ -44,7 +44,7 @@ export async function GET(
   try {
     const { id: chatbotId } = await context.params;
 
-    // Get the chatbot logic configuration AND the chatbot form
+    // 1. Fetch data without the invalid 'include'
     const [chatbotLogic, chatbotForm] = await Promise.all([
       prisma.chatbotLogic.findUnique({
         where: { chatbotId },
@@ -54,80 +54,58 @@ export async function GET(
       }),
     ]);
 
+    // If logic doesn't exist or lead collection is off, exit early
     if (!chatbotLogic || !chatbotLogic.leadCollectionEnabled) {
-      return NextResponse.json(
-        { isActive: false },
-        { status: 200 }
-      );
+      return NextResponse.json({ isActive: false }, { status: 200 });
     }
 
-    // Safely parse JSON fields
-    const leadCollectionConfig = safelyParseJson(chatbotLogic.leadCollectionConfig);
+    // 2. Parse the legacy JSON config from ChatbotLogic
+    const legacyConfig = safelyParseJson(chatbotLogic.leadCollectionConfig) || {};
     const triggers = safelyParseJson(chatbotLogic.triggers);
 
-    // Extract trigger information
-    let triggerType = 'MANUAL'; // Default trigger type
+    // 3. Build the Config Object
+    // We prioritize the ChatbotForm table fields, then fall back to the Logic JSON
+    const config = {
+      id: chatbotForm?.id || '',
+      formTitle: chatbotForm?.title || legacyConfig.formTitle || "Let's Connect",
+      formDesc: chatbotForm?.description || legacyConfig.formDesc || '',
+      leadFormStyle: chatbotForm?.leadFormStyle || legacyConfig.leadFormStyle || 'EMBEDDED',
+      cadence: chatbotForm?.cadence || legacyConfig.cadence || 'ALL_AT_ONCE',
+      
+      // Handle Fields: If it's already an object/array, stringify it for the frontend
+      // If ChatbotForm.fields is empty, check the legacyConfig.fields
+      fields: chatbotForm?.fields 
+        ? JSON.stringify(chatbotForm.fields) 
+        : legacyConfig.fields ? JSON.stringify(legacyConfig.fields) : '[]',
+
+      successMessage: chatbotForm?.successMessage || legacyConfig.successMessage || "Thank you!",
+      redirectUrl: chatbotForm?.redirectUrl || legacyConfig.redirectUrl || '',
+      autoClose: chatbotForm?.autoClose ?? legacyConfig.autoClose ?? true,
+      showThankYou: chatbotForm?.showThankYou ?? legacyConfig.showThankYou ?? true,
+      notifyEmail: chatbotForm?.notifyEmail || legacyConfig.notifyEmail || '',
+      webhookUrl: chatbotForm?.webhookUrl || legacyConfig.webhookUrl || '',
+    };
+
+    // 4. Extract Triggers
+    let triggerType = 'MANUAL';
     let triggerKeywords: string[] = [];
     let showAlways = false;
     let showAtEnd = false;
     let showOnButton = false;
 
     if (triggers && Array.isArray(triggers)) {
-      // Find lead collection trigger
-      const leadTrigger = triggers.find((trigger: any) => 
-        trigger.type === 'COLLECT_LEADS' || trigger.feature === 'leadCollection'
+      const leadTrigger = triggers.find((t: any) => 
+        t.type === 'KEYWORD' || t.type === 'COLLECT_LEADS' || t.feature === 'leadCollection'
       );
       
       if (leadTrigger) {
-        triggerType = leadTrigger.triggerType || 'MANUAL';
+        triggerType = leadTrigger.type || 'MANUAL';
         triggerKeywords = leadTrigger.keywords || [];
         showAlways = leadTrigger.showAlways || false;
-        showAtEnd = leadTrigger.showAtEnd || false;
+        showAtEnd = leadTrigger.type === 'END_OF_CONVERSATION' || leadTrigger.showAtEnd || false;
         showOnButton = leadTrigger.showOnButton || false;
       }
     }
-
-    // If no lead collection config exists, return default structure
-    if (!leadCollectionConfig) {
-      return NextResponse.json({
-        isActive: true,
-        config: {
-          id: chatbotForm?.id || '', // Add form ID here
-          formTitle: 'Get started',
-          formDesc: '',
-          leadFormStyle: 'EMBEDDED',
-          cadence: 'ALL_AT_ONCE',
-          fields: '[]',
-          successMessage: 'Thank you! We\'ll be in touch soon.',
-          redirectUrl: '',
-          autoClose: true,
-          showThankYou: true,
-          notifyEmail: '',
-          webhookUrl: '',
-        },
-        triggerType,
-        triggerKeywords,
-        showAlways,
-        showAtEnd,
-        showOnButton,
-      });
-    }
-
-    // Build the config object
-    const config = {
-      id: chatbotForm?.id || '', // Add form ID here
-      formTitle: leadCollectionConfig.formTitle || 'Get started',
-      formDesc: leadCollectionConfig.formDesc || '',
-      leadFormStyle: leadCollectionConfig.leadFormStyle || 'EMBEDDED',
-      cadence: leadCollectionConfig.cadence || 'ALL_AT_ONCE',
-      fields: leadCollectionConfig.fields ? JSON.stringify(leadCollectionConfig.fields) : '[]',
-      successMessage: leadCollectionConfig.successMessage || 'Thank you! We\'ll be in touch soon.',
-      redirectUrl: leadCollectionConfig.redirectUrl || '',
-      autoClose: leadCollectionConfig.autoClose !== undefined ? leadCollectionConfig.autoClose : true,
-      showThankYou: leadCollectionConfig.showThankYou !== undefined ? leadCollectionConfig.showThankYou : true,
-      notifyEmail: leadCollectionConfig.notifyEmail || '',
-      webhookUrl: leadCollectionConfig.webhookUrl || '',
-    };
 
     return NextResponse.json({
       isActive: true,

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useConversationalLead, ConversationalLeadConfig } from './useConversationalLead';
 import { Message } from '@/types/chat';
 
 interface ChatbotData {
@@ -21,6 +22,10 @@ interface ChatbotData {
 interface UseChatbotProps {
   chatbotId: string;
   initialChatbotData?: ChatbotData;
+  /** Pass the lead form config to enable conversational lead collection */
+  conversationalLeadConfig?: ConversationalLeadConfig | null;
+  /** Called when lead is fully collected */
+  onLeadCollected?: (data: Record<string, string>) => void;
 }
 
 interface UseChatbotReturn {
@@ -39,6 +44,12 @@ interface UseChatbotReturn {
   mode: 'streaming' | 'standard';
   setMode: (mode: 'streaming' | 'standard') => void;
   handleSubmit: (e?: React.FormEvent, overrideText?: string) => Promise<void>;
+  /** Start conversational lead collection (replaces modal showLeadForm) */
+  startLeadCollection: () => void;
+  /** True while the bot is waiting for a lead field answer */
+  isAwaitingLeadAnswer: boolean;
+  /** Current lead collection status */
+  leadCollectionStatus: 'idle' | 'collecting' | 'submitting' | 'done' | 'error';
   handleQuickQuestion: (question: string) => Promise<void>;
   handleNewChat: () => void;
   formatTime: (date?: Date) => string;
@@ -60,7 +71,7 @@ function timer(label: string) {
   };
 }
 
-export function useChatbot({ chatbotId, initialChatbotData }: UseChatbotProps): UseChatbotReturn {
+export function useChatbot({ chatbotId, initialChatbotData, conversationalLeadConfig, onLeadCollected }: UseChatbotProps): UseChatbotReturn {
   const [chatbot, setChatbot] = useState<ChatbotData | null>(initialChatbotData || null);
   const [isLoadingChatbot, setIsLoadingChatbot] = useState(!initialChatbotData);
   const [chatbotError, setChatbotError] = useState<string | null>(null);
@@ -74,6 +85,24 @@ export function useChatbot({ chatbotId, initialChatbotData }: UseChatbotProps): 
   const [hasLoadedInitialMessages, setHasLoadedInitialMessages] = useState<boolean>(false);
   const [quickQuestions, setQuickQuestions] = useState<string[]>([]);
   const [mode, setMode] = useState<'streaming' | 'standard'>('standard');
+  const [pendingMessage, setPendingMessage] = useState<string | null>(null);
+
+  // ── Conversational lead: inject a BOT message directly into chat ──────────
+  const onBotMessage = useCallback((content: string) => {
+    setMessages(prev => [...prev, {
+      senderType: 'BOT',
+      content,
+      createdAt: new Date(),
+    }]);
+  }, []);
+
+  const conversationalLead = useConversationalLead({
+    chatbotId,
+    conversationId,
+    config: conversationalLeadConfig ?? null,
+    onBotMessage,
+    onLeadCollected,
+  });
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -190,6 +219,37 @@ export function useChatbot({ chatbotId, initialChatbotData }: UseChatbotProps): 
       setTimeout(() => inputRef.current?.focus(), 300);
     }
   }, [hasLoadedInitialMessages]);
+
+  const sendMessage = useCallback(async (searchQuery: string) => {
+    console.group(`🚀 sendMessage [mode=${mode}] — "${searchQuery.substring(0, 40)}..."`);
+    const tSubmit = timer('sendMessage [total including UI updates]');
+
+    setMessages(prev => [...prev, { senderType: 'USER', content: searchQuery, createdAt: new Date() }]);
+    setLoading(true);
+    setStatus('submitted');
+    setError('');
+    setText('');
+    setTimeout(() => inputRef.current?.focus(), 50);
+
+    if (mode === 'streaming') {
+      await handleStreamingSubmit(searchQuery);
+    } else {
+      await handleStandardSubmit(searchQuery);
+    }
+
+    tSubmit.end();
+    console.groupEnd();
+  }, [mode]);
+
+  useEffect(() => {
+    if (conversationalLead.status === 'done' && pendingMessage) {
+      const timer = setTimeout(() => {
+        sendMessage(pendingMessage);
+        setPendingMessage(null);
+      }, 800);
+      return () => clearTimeout(timer);
+    }
+  }, [conversationalLead.status, pendingMessage, sendMessage]);
 
   const handleStreamingSubmit = async (searchQuery: string) => {
     const tTotal = timer('handleStreamingSubmit [total]');
@@ -335,24 +395,33 @@ export function useChatbot({ chatbotId, initialChatbotData }: UseChatbotProps): 
     const searchQuery = (overrideText || text).trim();
     if (!searchQuery) { setError('Please enter a message'); return; }
 
-    console.group(`🚀 handleSubmit [mode=${mode}] — "${searchQuery.substring(0, 40)}..."`);
-    const tSubmit = timer('handleSubmit [total including UI updates]');
-
-    setMessages(prev => [...prev, { senderType: 'USER', content: searchQuery, createdAt: new Date() }]);
-    setLoading(true);
-    setStatus('submitted');
-    setError('');
-    setText('');
-    setTimeout(() => inputRef.current?.focus(), 50);
-
-    if (mode === 'streaming') {
-      await handleStreamingSubmit(searchQuery);
-    } else {
-      await handleStandardSubmit(searchQuery);
+    // ── Conversational lead intercept ────────────────────────────────────────
+    // If we're mid-lead-collection, let the lead hook consume this message.
+    // We still show the user's message in chat, but skip the AI call.
+    if (conversationalLead.isAwaitingLeadAnswer) {
+      // Show user message in chat
+      setMessages(prev => [...prev, { senderType: 'USER', content: searchQuery, createdAt: new Date() }]);
+      setText('');
+      setTimeout(() => inputRef.current?.focus(), 50);
+      // Let lead hook handle the reply (it will call onBotMessage for the next question)
+      await conversationalLead.handleUserMessage(searchQuery);
+      return;
     }
+    // ────────────────────────────────────────────────────────────────────────
 
-    tSubmit.end();
-    console.groupEnd();
+    // ── Auto-start lead collection if needed ────────────────────────────────
+    // If conversational lead config exists and hasn't started collecting yet,
+    // intercept the message to ask lead questions first
+    if (conversationalLeadConfig && conversationalLead.status === 'idle') {
+      setPendingMessage(searchQuery);
+      setText('');
+      setTimeout(() => inputRef.current?.focus(), 50);
+      conversationalLead.startLeadCollection();
+      return;
+    }
+    // ────────────────────────────────────────────────────────────────────────
+
+    await sendMessage(searchQuery);
   };
 
   const handleQuickQuestion = async (question: string) => {
@@ -397,6 +466,9 @@ export function useChatbot({ chatbotId, initialChatbotData }: UseChatbotProps): 
     handleSubmit,
     handleQuickQuestion,
     handleNewChat,
+    startLeadCollection: conversationalLead.startLeadCollection,
+    isAwaitingLeadAnswer: conversationalLead.isAwaitingLeadAnswer,
+    leadCollectionStatus: conversationalLead.status,
     formatTime,
     refetchChatbot,
     messagesEndRef,
