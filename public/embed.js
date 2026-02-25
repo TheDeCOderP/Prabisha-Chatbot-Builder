@@ -86,7 +86,7 @@
   function createIframe() {
     iframe = document.createElement('iframe');
     const chatbotUrl = `${config.baseUrl}/embed/widget/${config.chatbotId}`;
-    
+    iframe.allow = "microphone";
     iframe.src = chatbotUrl;
     iframe.style.cssText = `
       position: fixed;
@@ -258,12 +258,21 @@
   function openChat() {
     updateIframeDimensions();
     iframe.style.display = 'block';
-    // Keep button visible on the right side
+    
+    // Logic to hide the button on mobile when chat is open
+    const isMobile = window.innerWidth <= 480;
+    if (button && isMobile) {
+      button.style.display = 'none';
+    }
   }
 
   function closeChat() {
     iframe.style.display = 'none';
-    if (button) button.style.display = 'flex';
+    
+    // Always show the button again when the chat is closed
+    if (button) {
+      button.style.display = 'flex';
+    }
   }
 
   function setupMessageListener() {

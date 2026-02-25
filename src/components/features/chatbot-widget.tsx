@@ -15,6 +15,7 @@ import {
   VolumeX,
   Volume2,
   MessageCircle,
+  SmilePlus,
 } from 'lucide-react';
 import { Message } from '@/types/chat';
 import {
@@ -31,6 +32,9 @@ import { useLeadGeneration } from '@/hooks/useLeadGeneration';
 import { LeadForm } from '@/components/forms/lead-form';
 import { Button } from '@/components/ui/button';
 import { useTextToSpeech } from '@/hooks/useTextToSpeech';
+import Link from 'next/link';
+import dynamic from 'next/dynamic';
+import { EmojiClickData } from 'emoji-picker-react';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -134,6 +138,8 @@ const LeadFormOverlay = ({
     </div>
   </div>
 );
+
+const Picker = dynamic(() => import('emoji-picker-react'), { ssr: false });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ChatbotWidget — root export
@@ -472,9 +478,18 @@ function ChatBot({
             isConversationalMode={isConversationalMode}
             chatbot={chatbot}
           />
+
+          <div className="flex items-center justify-end gap-1.5 p-1 mr-4">
+            <span className="text-xs font-medium tracking-wide text-gray-400 lowercase">
+              Powered by
+            </span>
+            <Link target="_blank" rel="noopener noreferrer" href='https://prabisha.com/' className="cursor-pointer text-sm font-bold text-[#1320AA] hover:text-[#1320AA] transition-colors">
+              Prabisha
+            </Link>
+          </div>
         </div>
       ) : (
-        !isEmbedded && (
+        !isEmbedded && !isMobile && (
           <ChatToggleButton onClick={() => setIsOpen(true)} chatbot={chatbot} />
         )
       )}
@@ -882,15 +897,56 @@ function ChatInput({
   isAwaitingLeadAnswer, isConversationalMode, chatbot,
 }: ChatInputProps) {
   const accentColor = chatbot?.theme?.inputButtonColor || '#DD692E';
+  const [showPicker, setShowPicker] = useState(false);
+
+  const onEmojiClick = (emojiData: EmojiClickData) => {
+    setText(text + emojiData.emoji);
+  };
 
   return (
-    <div className="border-t bg-background p-3 shrink-0">
+    <div className="border-t bg-background p-3 shrink-0 relative">
+      
+      {/* 1. Responsive Picker Container */}
+      {showPicker && (
+        <div className="absolute bottom-full left-0 w-full z-50 animate-in fade-in slide-in-from-bottom-2">
+          <div className="flex flex-col border-t bg-card shadow-2xl">
+            
+            {/* 2. Custom Picker Header with Close Option */}
+            <div className="flex items-center justify-between p-2 border-b bg-muted/50">
+              <span className="text-xs font-medium px-2">Select Emoji</span>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="h-8 w-8 p-0 rounded-full"
+                onClick={() => setShowPicker(false)}
+              >
+                <XIcon className="h-4 w-4" />
+              </Button>
+            </div>
+
+            {/* 3. Dynamic Width/Height Picker */}
+            <Picker 
+              onEmojiClick={onEmojiClick} 
+              autoFocusSearch={false}
+              width="100%" 
+              height="60vh"
+              previewConfig={{ showPreview: false }} // Hides large emoji preview to save space
+              skinTonesDisabled
+              searchPlaceHolder="Search..."
+            />
+          </div>
+        </div>
+      )}
+
       <PromptInput
-        onSubmit={async (e: React.FormEvent) => { e.preventDefault(); await onSubmit(e); }}
+        onSubmit={async (e: React.FormEvent) => {
+          e.preventDefault();
+          // Ensure picker closes on message send
+          setShowPicker(false);
+          await onSubmit(e);
+        }}
       >
         <div className="flex items-end gap-2">
-
-          {/* min-w-0 stops the textarea area from pushing the layout wider */}
           <div className="flex-1 min-w-0">
             <PromptInputTextarea
               ref={inputRef}
@@ -904,85 +960,56 @@ function ChatInput({
 
             <PromptInputToolbar>
               <PromptInputTools>
+                {/* 4. Emoji Toggle - Added type="button" to prevent auto-submit */}
+                <PromptInputButton
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setShowPicker(!showPicker);
+                  }}
+                  className={showPicker ? 'bg-muted' : ''}
+                >
+                  <SmilePlus className="h-4 w-4" />
+                </PromptInputButton>
 
-                {/* Lead action — hidden while awaiting a lead answer */}
-                {hasLeadForm && !isLoadingLeadConfig && !isAwaitingLeadAnswer && (
-                  <PromptInputButton
-                    size="sm"
-                    variant="ghost"
-                    onClick={onLeadAction}
-                    title={isConversationalMode ? 'Start quick form' : 'Get started'}
-                    className="text-[11px] hover:opacity-80 cursor-pointer"
-                    style={{ color: accentColor }}
-                    disabled={loading}
-                  >
-                    {isConversationalMode
-                      ? <><MessageCircle className="h-4 w-4" /><span className="hidden sm:inline">Quick Form</span></>
-                      : <><UserPlus className="h-4 w-4" /><span className="hidden sm:inline">Get Started</span></>}
-                  </PromptInputButton>
-                )}
-
-                {/* Voice input */}
+                {/* Voice & Other Actions */}
                 {browserSupportsSpeechRecognition && (
                   <PromptInputButton
+                    type="button"
                     size="sm"
                     variant="ghost"
                     onClick={onToggleMicrophone}
-                    className={`cursor-pointer ${isMicrophoneOn ? 'bg-destructive/10 text-destructive' : ''}`}
-                    disabled={loading}
+                    className={isMicrophoneOn ? 'bg-destructive/10 text-destructive' : ''}
                   >
-                    {isMicrophoneOn
-                      ? <><MicOffIcon className="h-4 w-4" /><span className="hidden sm:inline">Listening…</span></>
-                      : <><MicIcon className="h-4 w-4" /><span className="hidden sm:inline">Voice</span></>}
+                    {isMicrophoneOn ? <MicOffIcon className="h-4 w-4" /> : <MicIcon className="h-4 w-4" />}
                   </PromptInputButton>
                 )}
 
-                {/* New conversation */}
                 <PromptInputButton
+                  type="button"
                   size="sm"
                   variant="ghost"
                   onClick={onNewChat}
-                  className="text-[11px] hover:bg-primary/10 cursor-pointer"
-                  disabled={loading}
                 >
                   <RefreshCw className="h-4 w-4" />
-                  <span className="hidden sm:inline">New Chat</span>
                 </PromptInputButton>
-
               </PromptInputTools>
             </PromptInputToolbar>
           </div>
 
-          {/* shrink-0 keeps the send button from collapsing under flex pressure */}
           <PromptInputSubmit
             size="icon"
             disabled={(!text.trim() && !isMicrophoneOn) || loading}
             status={status}
-            className="h-12 w-12 rounded-xl cursor-pointer shrink-0"
+            className="h-12 w-12 rounded-xl m-1"
             style={{ backgroundColor: accentColor, color: '#ffffff' }}
           >
-            {loading
-              ? <Loader2 className="h-5 w-5 animate-spin" />
-              : <Send className="h-5 w-5" />}
+            {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
           </PromptInputSubmit>
-
         </div>
       </PromptInput>
-
-      {/* Pulsing hint while bot waits for a lead field answer */}
-      {isAwaitingLeadAnswer && (
-        <div className="mt-2 flex items-center gap-2 text-[11px] text-primary animate-pulse">
-          <div className="w-2 h-2 rounded-full bg-primary shrink-0" />
-          Answering a quick question — type your reply above
-        </div>
-      )}
-
-      {isLoadingLeadConfig && (
-        <div className="mt-2 text-[11px] text-muted-foreground flex items-center gap-1">
-          <Loader2 className="h-3 w-3 animate-spin" />
-          Loading form…
-        </div>
-      )}
     </div>
   );
 }
