@@ -904,7 +904,7 @@ function ChatInput({
   };
 
   return (
-    <div className="border-t bg-background p-3 shrink-0 relative">
+    <div className="border-t bg-background p-3 pb-0 shrink-0 relative">
       
       {/* 1. Responsive Picker Container */}
       {showPicker && (
