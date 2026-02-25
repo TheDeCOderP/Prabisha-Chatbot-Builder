@@ -513,14 +513,15 @@ function ChatHeader({
   return (
     <div
       className={[
-        'flex items-stretch overflow-visible z-10 relative shrink-0',
+        'flex items-center justify-between px-4 py-4 shadow-md backdrop-blur-md',
         isMobile || isEmbedded ? 'rounded-none' : 'rounded-t-xl',
       ].join(' ')}
       style={{
-        backgroundColor: t?.headerBgColor || '#1320AA',
+        background: `linear-gradient(135deg, ${t?.headerBgColor || '#1320AA'}, #1e40af)`,
         color: t?.headerTextColor || '#ffffff',
       }}
     >
+
       <div className="max-w-20 shrink-0 p-3">
         <Image
           src={chatbot.avatar || '/icons/logo.png'}
@@ -531,12 +532,25 @@ function ChatHeader({
         />
       </div>
       <div className="grow flex flex-col justify-center py-4 pr-12 min-w-0">
-        <h3 className="font-semibold text-base truncate leading-tight">
-          {chatbot.name || 'Assistant'}
-        </h3>
-        <p className="text-[11px] opacity-90 truncate">
-          {chatbot.description || 'I am here to help you.'}
+
+        {/* Name + Live Indicator */}
+        <div className="flex items-center gap-2">
+          <h3 className="font-semibold text-base truncate leading-tight tracking-tight">
+            {chatbot.name || 'Assistant'}
+          </h3>
+
+          {/* Live Online Dot */}
+          <span className="relative flex h-2.5 w-2.5">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500"></span>
+          </span>
+        </div>
+
+        {/* Subtitle */}
+        <p className="text-[11px] opacity-90 truncate mt-0.5 text-white/90">
+          {chatbot.description || 'Online • Typically replies instantly'}
         </p>
+
       </div>
       <button
         onClick={onClose}
@@ -628,15 +642,15 @@ function ChatMessages({
   const [activeSpeakingId, setActiveSpeakingId] = useState<string | null>(null);
 
   const t = chatbot.theme;
-  const botBg       = t?.botMessageBgColor       || '#f1f5f9';
-  const botText     = t?.botMessageTextColor      || '#0f172a';
-  const userBg      = t?.userMessageBgColor       || '#1320AA';
-  const userText    = t?.userMessageTextColor     || '#ffffff';
-  const suggBg      = t?.quickSuggestionBgColor   || '#ffffff';
-  const suggText    = t?.quickSuggestionTextColor || '#0f172a';
-  const accentColor = t?.inputButtonColor         || '#DD692E';
+  const botBg = t?.botMessageBgColor || '#f1f5f9';
+  const botText = t?.botMessageTextColor || '#0f172a';
+  const userBg = t?.userMessageBgColor || '#1320AA';
+  const userText = t?.userMessageTextColor || '#ffffff';
+  const suggBg = t?.quickSuggestionBgColor || '#ffffff';
+  const suggText = t?.quickSuggestionTextColor || '#0f172a';
+  const accentColor = t?.inputButtonColor || '#DD692E';
 
-  const hasUserMessages     = messages.some(m => m.senderType === 'USER');
+  const hasUserMessages = messages.some(m => m.senderType === 'USER');
   const hasMultipleMessages = messages.length >= 2;
 
   const handleSpeak = async (id: string, content: string) => {
@@ -837,7 +851,7 @@ function ChatMessages({
         )}
 
         {loading && status === 'submitted' && <LoadingDots text="Thinking" />}
-        {loading && status === 'streaming'  && <LoadingDots text="Searching…" small />}
+        {loading && status === 'streaming' && <LoadingDots text="Searching…" small />}
 
         {/* Quick suggestions — only shown before first user message */}
         {!hasUserMessages && quickQuestions.length > 0 && (
@@ -905,18 +919,18 @@ function ChatInput({
 
   return (
     <div className="border-t bg-background p-3 pb-0 shrink-0 relative">
-      
+
       {/* 1. Responsive Picker Container */}
       {showPicker && (
         <div className="absolute bottom-full left-0 w-full z-50 animate-in fade-in slide-in-from-bottom-2">
           <div className="flex flex-col border-t bg-card shadow-2xl">
-            
+
             {/* 2. Custom Picker Header with Close Option */}
             <div className="flex items-center justify-between p-2 border-b bg-muted/50">
               <span className="text-xs font-medium px-2">Select Emoji</span>
-              <Button 
-                variant="ghost" 
-                size="sm" 
+              <Button
+                variant="ghost"
+                size="sm"
                 className="h-8 w-8 p-0 rounded-full"
                 onClick={() => setShowPicker(false)}
               >
@@ -925,10 +939,10 @@ function ChatInput({
             </div>
 
             {/* 3. Dynamic Width/Height Picker */}
-            <Picker 
-              onEmojiClick={onEmojiClick} 
+            <Picker
+              onEmojiClick={onEmojiClick}
               autoFocusSearch={false}
-              width="100%" 
+              width="100%"
               height="60vh"
               previewConfig={{ showPreview: false }} // Hides large emoji preview to save space
               skinTonesDisabled
