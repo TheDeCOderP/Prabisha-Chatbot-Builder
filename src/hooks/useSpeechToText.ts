@@ -46,7 +46,7 @@ export const useSpeechToText = (options?: UseSpeechToTextOptions) => {
 
     try {
       await navigator.mediaDevices.getUserMedia({ audio: true })
-    } catch (error) {
+    } catch (error: any) {
       console.error("Microphone permission denied.", error)
       setIsMicrophoneAvailable(false)
       return
