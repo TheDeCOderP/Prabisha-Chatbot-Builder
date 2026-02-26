@@ -527,7 +527,7 @@ function ChatHeader({
           src={chatbot.avatar || '/icons/logo.png'}
           height={64} width={64}
           alt={chatbot.name || 'Assistant'}
-          className="h-full w-full object-contain"
+          className="h-12 w-12 rounded-full object-cover border border-gray-200 shadow-sm"
           unoptimized
         />
       </div>
@@ -606,9 +606,10 @@ function ChatToggleButton({ onClick, chatbot }: { onClick: () => void; chatbot: 
         alt={chatbot.name || 'Chat'}
         className="rounded-full w-full h-full object-contain"
       />
-      <div className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground text-xs px-2 py-1 rounded-full font-bold animate-pulse">
+      {/* <div className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground text-xs px-2 py-1 rounded-full font-bold animate-pulse">
         Chat
-      </div>
+      </div> */}
+      <span className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-green-500 border-2 border-white" />
     </button>
   );
 }
@@ -696,8 +697,11 @@ function ChatMessages({
         <div className={`relative group min-w-0 ${isUser ? 'ml-auto max-w-[85%]' : 'max-w-[85%]'}`}>
           <div
             className={[
-              'rounded-2xl p-4 shadow-sm animate-in fade-in duration-200',
-              isUser ? 'rounded-tr-none' : 'border rounded-tl-none',
+              'rounded-2xl px-5 py-3.5 text-[14.5px] leading-relaxed',
+              'transition-all duration-200 hover:shadow-[0_8px_24px_rgba(0,0,0,0.08)]',
+              isUser
+                ? 'bg-black text-white rounded-tr-md shadow-[0_4px_16px_rgba(0,0,0,0.15)]'
+                : 'bg-white border border-black/5 rounded-tl-md shadow-[0_4px_16px_rgba(0,0,0,0.05)]',
             ].join(' ')}
             style={{
               backgroundColor: isUser ? userBg : botBg,
@@ -918,7 +922,7 @@ function ChatInput({
   };
 
   return (
-    <div className="border-t bg-background p-3 pb-0 shrink-0 relative">
+      <div className="border-t border-black/5 bg-white/80 backdrop-blur-xl px-4 py-4 shrink-0 relative">
 
       {/* 1. Responsive Picker Container */}
       {showPicker && (
@@ -1017,7 +1021,7 @@ function ChatInput({
             size="icon"
             disabled={(!text.trim() && !isMicrophoneOn) || loading}
             status={status}
-            className="h-12 w-12 rounded-xl m-1"
+            className="h-12 w-12 rounded-full m-1 shadow-lg hover:scale-105 transition-all"
             style={{ backgroundColor: accentColor, color: '#ffffff' }}
           >
             {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
