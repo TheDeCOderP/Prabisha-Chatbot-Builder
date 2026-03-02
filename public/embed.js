@@ -37,6 +37,13 @@
   async function init(userConfig) {
     if (isInitialized) return;
     
+    // check whether parent document forbids microphone via Permissions-Policy
+    if (typeof document !== 'undefined' && document.featurePolicy) {
+      if (!document.featurePolicy.allowsFeature('microphone')) {
+        console.warn('Parent document Permissions-Policy blocks microphone; the embedded chatbot may not be able to access it.');
+      }
+    }
+
     config = { ...defaults, ...userConfig };
     if (!config.chatbotId) {
       console.error('Chatbot ID is required');
@@ -70,7 +77,7 @@
       console.warn('Failed to fetch chatbot config, using local settings');
     }
 
-    createIframe();
+    await createIframe();
     if (config.showButton) {
       createButton();
     }
@@ -83,12 +90,29 @@
     isInitialized = true;
   }
 
-  function createIframe() {
+  async function createIframe() {
     iframe = document.createElement('iframe');
-    const chatbotUrl = `${config.baseUrl}/embed/widget/${config.chatbotId}`;
-    const permissions = "microphone *; camera *; autoplay *; clipboard-write *; encrypted-media *; fullscreen *; geolocation *; gyroscope *; magnetometer *; midi *; payment *; picture-in-picture *; speaker-selection *; usb *; web-share *";
-    iframe.allow = permissions;
-    iframe.setAttribute('allow', permissions);
+    iframe.setAttribute('allow', 'microphone *; camera *; speaker-selection *');
+
+    // Build iframe URL with diagnostic query params so the widget can display
+    // a clear message when the embedding host blocks microphone via policy.
+    const qp = new URLSearchParams();
+    try {
+      if (typeof document !== 'undefined' && document.featurePolicy) {
+        qp.set('parent_policy_blocked', String(!document.featurePolicy.allowsFeature('microphone')));
+      }
+    } catch (e) {}
+
+    try {
+      if (navigator && navigator.permissions && typeof navigator.permissions.query === 'function') {
+        const status = await navigator.permissions.query({ name: 'microphone' });
+        qp.set('parent_permission', status && status.state ? status.state : 'unknown');
+      }
+    } catch (e) {
+      qp.set('parent_permission', 'unknown');
+    }
+
+    const chatbotUrl = `${config.baseUrl}/embed/widget/${config.chatbotId}` + (qp.toString() ? `?${qp.toString()}` : '');
     iframe.src = chatbotUrl;
     iframe.style.cssText = `
       position: fixed;

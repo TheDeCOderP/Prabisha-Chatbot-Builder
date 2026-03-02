@@ -16,6 +16,8 @@ export const useSpeechToText = (options?: UseSpeechToTextOptions) => {
   const [isListening, setIsListening] = useState(false)
   const [transcript, setTranscript] = useState("")
   const [isMicrophoneAvailable, setIsMicrophoneAvailable] = useState(false)
+  const [policyBlocked, setPolicyBlocked] = useState(false)
+  const [policyMessage, setPolicyMessage] = useState<string | null>(null)
 
   // Use correct type instead of `any`
   const recognitionRef = useRef<SpeechRecognition | null>(null)
@@ -46,7 +48,7 @@ export const useSpeechToText = (options?: UseSpeechToTextOptions) => {
 
     try {
       await navigator.mediaDevices.getUserMedia({ audio: true })
-    } catch (error) {
+    } catch (error: any) {
       console.error("Microphone permission denied.", error)
       setIsMicrophoneAvailable(false)
       return
@@ -104,5 +106,7 @@ export const useSpeechToText = (options?: UseSpeechToTextOptions) => {
     resetTranscript,
     isMicrophoneAvailable,
     browserSupportsSpeechRecognition,
+    policyBlocked,
+    policyMessage,
   }
 }

@@ -351,8 +351,27 @@ function ChatBot({
   const {
     transcript, startListening, stopListening,
     resetTranscript, browserSupportsSpeechRecognition,
+    policyBlocked, policyMessage,
   } = useSpeechToText({ continuous: true, lang: 'en-US' });
   const [isMicrophoneOn, setIsMicrophoneOn] = useState(false);
+  const [parentPolicyInfo, setParentPolicyInfo] = useState<{
+    blocked: boolean;
+    permission?: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const blocked = params.get('parent_policy_blocked');
+      const permission = params.get('parent_permission');
+      if (blocked === 'true' || permission === 'denied') {
+        setParentPolicyInfo({ blocked: blocked === 'true', permission: permission || undefined });
+      }
+    } catch (e) {
+      // ignore
+    }
+  }, []);
 
   useEffect(() => {
     if (!isEmbedded) return;
@@ -413,6 +432,11 @@ function ChatBot({
 
   return (
     <div className={positionClass}>
+      {/* show banners if the parent page blocks microphone or if the widget detected a policy denial */}
+      {parentPolicyInfo && (
+        <ErrorBanner error={`Embedding site blocks microphone (parent permission=${parentPolicyInfo.permission || 'unknown'}). Please allow microphone for the iframe on the host page.`} />
+      )}
+      {policyBlocked && policyMessage && <ErrorBanner error={policyMessage} />}
       {isOpen ? (
         <div
           className={[
@@ -513,30 +537,44 @@ function ChatHeader({
   return (
     <div
       className={[
-        'flex items-stretch overflow-visible z-10 relative shrink-0',
+        'flex items-center justify-between px-4 py-4 shadow-md backdrop-blur-md',
         isMobile || isEmbedded ? 'rounded-none' : 'rounded-t-xl',
       ].join(' ')}
       style={{
-        backgroundColor: t?.headerBgColor || '#1320AA',
+        background: `linear-gradient(135deg, ${t?.headerBgColor || '#1320AA'}, #1e40af)`,
         color: t?.headerTextColor || '#ffffff',
       }}
     >
+
       <div className="max-w-20 shrink-0 p-3">
         <Image
           src={chatbot.avatar || '/icons/logo.png'}
           height={64} width={64}
           alt={chatbot.name || 'Assistant'}
-          className="h-full w-full object-contain"
+          className="h-12 w-12 rounded-full object-cover border border-gray-200 shadow-sm"
           unoptimized
         />
       </div>
       <div className="grow flex flex-col justify-center py-4 pr-12 min-w-0">
-        <h3 className="font-semibold text-base truncate leading-tight">
-          {chatbot.name || 'Assistant'}
-        </h3>
-        <p className="text-[11px] opacity-90 truncate">
-          {chatbot.description || 'I am here to help you.'}
+
+        {/* Name + Live Indicator */}
+        <div className="flex items-center gap-2">
+          <h3 className="font-semibold text-base truncate leading-tight tracking-tight">
+            {chatbot.name || 'Assistant'}
+          </h3>
+
+          {/* Live Online Dot */}
+          <span className="relative flex h-2.5 w-2.5">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500"></span>
+          </span>
+        </div>
+
+        {/* Subtitle */}
+        <p className="text-[11px] opacity-90 truncate mt-0.5 text-white/90">
+          {chatbot.description || 'Online • Typically replies instantly'}
         </p>
+
       </div>
       <button
         onClick={onClose}
@@ -592,9 +630,10 @@ function ChatToggleButton({ onClick, chatbot }: { onClick: () => void; chatbot: 
         alt={chatbot.name || 'Chat'}
         className="rounded-full w-full h-full object-contain"
       />
-      <div className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground text-xs px-2 py-1 rounded-full font-bold animate-pulse">
+      {/* <div className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground text-xs px-2 py-1 rounded-full font-bold animate-pulse">
         Chat
-      </div>
+      </div> */}
+      <span className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-green-500 border-2 border-white" />
     </button>
   );
 }
@@ -628,15 +667,15 @@ function ChatMessages({
   const [activeSpeakingId, setActiveSpeakingId] = useState<string | null>(null);
 
   const t = chatbot.theme;
-  const botBg       = t?.botMessageBgColor       || '#f1f5f9';
-  const botText     = t?.botMessageTextColor      || '#0f172a';
-  const userBg      = t?.userMessageBgColor       || '#1320AA';
-  const userText    = t?.userMessageTextColor     || '#ffffff';
-  const suggBg      = t?.quickSuggestionBgColor   || '#ffffff';
-  const suggText    = t?.quickSuggestionTextColor || '#0f172a';
-  const accentColor = t?.inputButtonColor         || '#DD692E';
+  const botBg = t?.botMessageBgColor || '#f1f5f9';
+  const botText = t?.botMessageTextColor || '#0f172a';
+  const userBg = t?.userMessageBgColor || '#1320AA';
+  const userText = t?.userMessageTextColor || '#ffffff';
+  const suggBg = t?.quickSuggestionBgColor || '#ffffff';
+  const suggText = t?.quickSuggestionTextColor || '#0f172a';
+  const accentColor = t?.inputButtonColor || '#DD692E';
 
-  const hasUserMessages     = messages.some(m => m.senderType === 'USER');
+  const hasUserMessages = messages.some(m => m.senderType === 'USER');
   const hasMultipleMessages = messages.length >= 2;
 
   const handleSpeak = async (id: string, content: string) => {
@@ -682,8 +721,11 @@ function ChatMessages({
         <div className={`relative group min-w-0 ${isUser ? 'ml-auto max-w-[85%]' : 'max-w-[85%]'}`}>
           <div
             className={[
-              'rounded-2xl p-4 shadow-sm animate-in fade-in duration-200',
-              isUser ? 'rounded-tr-none' : 'border rounded-tl-none',
+              'rounded-2xl px-5 py-3.5 text-[14.5px] leading-relaxed',
+              'transition-all duration-200 hover:shadow-[0_8px_24px_rgba(0,0,0,0.08)]',
+              isUser
+                ? 'bg-black text-white rounded-tr-md shadow-[0_4px_16px_rgba(0,0,0,0.15)]'
+                : 'bg-white border border-black/5 rounded-tl-md shadow-[0_4px_16px_rgba(0,0,0,0.05)]',
             ].join(' ')}
             style={{
               backgroundColor: isUser ? userBg : botBg,
@@ -837,7 +879,7 @@ function ChatMessages({
         )}
 
         {loading && status === 'submitted' && <LoadingDots text="Thinking" />}
-        {loading && status === 'streaming'  && <LoadingDots text="Searching…" small />}
+        {loading && status === 'streaming' && <LoadingDots text="Searching…" small />}
 
         {/* Quick suggestions — only shown before first user message */}
         {!hasUserMessages && quickQuestions.length > 0 && (
@@ -904,19 +946,19 @@ function ChatInput({
   };
 
   return (
-    <div className="border-t bg-background p-3 pb-0 shrink-0 relative">
-      
+      <div className="border-t border-black/5 bg-white/80 backdrop-blur-xl px-4 py-4 shrink-0 relative">
+
       {/* 1. Responsive Picker Container */}
       {showPicker && (
         <div className="absolute bottom-full left-0 w-full z-50 animate-in fade-in slide-in-from-bottom-2">
           <div className="flex flex-col border-t bg-card shadow-2xl">
-            
+
             {/* 2. Custom Picker Header with Close Option */}
             <div className="flex items-center justify-between p-2 border-b bg-muted/50">
               <span className="text-xs font-medium px-2">Select Emoji</span>
-              <Button 
-                variant="ghost" 
-                size="sm" 
+              <Button
+                variant="ghost"
+                size="sm"
                 className="h-8 w-8 p-0 rounded-full"
                 onClick={() => setShowPicker(false)}
               >
@@ -925,10 +967,10 @@ function ChatInput({
             </div>
 
             {/* 3. Dynamic Width/Height Picker */}
-            <Picker 
-              onEmojiClick={onEmojiClick} 
+            <Picker
+              onEmojiClick={onEmojiClick}
               autoFocusSearch={false}
-              width="100%" 
+              width="100%"
               height="60vh"
               previewConfig={{ showPreview: false }} // Hides large emoji preview to save space
               skinTonesDisabled
@@ -1003,7 +1045,7 @@ function ChatInput({
             size="icon"
             disabled={(!text.trim() && !isMicrophoneOn) || loading}
             status={status}
-            className="h-12 w-12 rounded-xl m-1"
+            className="h-12 w-12 rounded-full m-1 shadow-lg hover:scale-105 transition-all"
             style={{ backgroundColor: accentColor, color: '#ffffff' }}
           >
             {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}

@@ -28,7 +28,10 @@ export async function GET() {
     const iframe = document.createElement('iframe');
     iframe.id = 'chatbot-iframe-' + config.chatbotId;
     iframe.src = \`${process.env.NEXT_PUBLIC_APP_URL}/embed/widget/\${config.chatbotId}\`;
-    
+    // grant features to the embedded chatbot frame; wildcards are not supported so list explicitly
+    const permissions = "microphone; camera; autoplay; clipboard-write; encrypted-media; fullscreen; geolocation; gyroscope; magnetometer; midi; payment; picture-in-picture; speaker-selection; usb; web-share";
+    iframe.allow = permissions;
+    iframe.setAttribute('allow', permissions);    
     // Initial styles
     iframe.style.cssText = \`
       border: none;
