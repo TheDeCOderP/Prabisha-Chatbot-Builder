@@ -563,6 +563,32 @@ function appendReadMoreSection(
   return htmlResponse + readMoreSection;
 }
 
+type IntentType = 'GREETING' | 'FEATURE' | 'GENERAL';
+
+function detectIntent(message: string): IntentType {
+  const text = message.trim().toLowerCase();
+
+  // Greeting detection
+  const greetings = ['hi', 'hello', 'hey', 'good morning', 'good evening'];
+  if (greetings.some(g => text === g || text.startsWith(g + ' '))) {
+    return 'GREETING';
+  }
+
+  // Feature / knowledge style questions
+  if (
+    text.includes('feature') ||
+    text.includes('pricing') ||
+    text.includes('price') ||
+    text.includes('how') ||
+    text.includes('what') ||
+    text.includes('does it')
+  ) {
+    return 'FEATURE';
+  }
+
+  return 'GENERAL';
+}
+
 // ─── generateRAGResponse ──────────────────────────────────────────────────────
 export async function generateRAGResponse(
   chatbot: any,
