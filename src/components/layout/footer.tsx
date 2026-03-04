@@ -33,7 +33,7 @@ export default function Footer() {
       {/* Background Pattern removed (was hardcoded color). Keep node hidden to avoid deletion diff. */}
       <div className="hidden" />
 
-      <div className="relative container mx-auto px-6 py-16">
+      <div className="relative p-6">
         {/* Main Footer Content */}
         <div className="grid lg:grid-cols-6 md:grid-cols-2 gap-12 mb-16">
           {/* Brand Section */}
