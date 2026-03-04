@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useState } from "react";
-import { Menu, X, ChevronDown, ChevronsRight } from "lucide-react";
+import { Menu, X, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   NavigationMenu,
@@ -19,7 +19,6 @@ import ThemeToggle from "../features/theme-toggle";
 import { signIn } from "next-auth/react";
 
 /* ---------------- TYPES ---------------- */
-
 interface SubItem {
   title: string;
   href: string;
@@ -31,7 +30,6 @@ interface MenuItem {
 }
 
 /* ---------------- MOBILE MENU ITEM ---------------- */
-
 const MobileMenuItem = ({
   item,
   onCloseMenu,
@@ -41,21 +39,16 @@ const MobileMenuItem = ({
 }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
 
-  const toggleCollapse = (e: React.MouseEvent) => {
-    e.preventDefault();
-    setIsCollapsed((prev) => !prev);
-  };
-
   return (
-    <div className="border-b last:border-b-0">
+    <div className="border-b border-gray-50 last:border-b-0">
       <div
-        className="flex items-center justify-between p-3 cursor-pointer select-none hover:bg-accent/50"
-        onClick={toggleCollapse}
+        className="flex items-center justify-between p-4 cursor-pointer select-none hover:bg-gray-50"
+        onClick={() => setIsCollapsed((prev) => !prev)}
       >
-        <span className="text-base font-semibold">{item.title}</span>
+        <span className="text-sm font-semibold text-gray-700">{item.title}</span>
         <ChevronDown
           className={cn(
-            "h-4 w-4 transition-transform",
+            "h-4 w-4 transition-transform text-gray-400",
             isCollapsed && "rotate-180"
           )}
         />
@@ -67,14 +60,14 @@ const MobileMenuItem = ({
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            className="overflow-hidden"
+            className="overflow-hidden bg-gray-50/50"
           >
-            <div className="py-2 pl-6 space-y-2 bg-accent/20">
+            <div className="py-2 pl-8 space-y-3 pb-4">
               {item.items.map((sub) => (
                 <Link
                   key={sub.title}
                   href={sub.href}
-                  className="block text-sm text-muted-foreground hover:text-primary"
+                  className="block text-sm text-gray-500 hover:text-black transition-colors"
                   onClick={onCloseMenu}
                 >
                   {sub.title}
@@ -89,16 +82,8 @@ const MobileMenuItem = ({
 };
 
 /* ---------------- DESKTOP LIST ITEM ---------------- */
-
-const ListItem = ({
-  title,
-  href,
-}: {
-  title: string;
-  href: string;
-}) => {
+const ListItem = ({ title, href }: { title: string; href: string }) => {
   const isExternal = href.startsWith("http");
-
   return (
     <li>
       <NavigationMenuLink asChild>
@@ -106,7 +91,7 @@ const ListItem = ({
           href={href}
           target={isExternal ? "_blank" : "_self"}
           rel={isExternal ? "noopener noreferrer" : undefined}
-          className="block rounded-md p-3 text-sm hover:bg-accent"
+          className="block rounded-lg p-3 text-sm transition-colors hover:bg-gray-50 hover:text-blue-600"
         >
           {title}
         </Link>
@@ -116,10 +101,8 @@ const ListItem = ({
 };
 
 /* ---------------- HEADER ---------------- */
-
 export default function Header() {
   const [isOpen, setIsOpen] = useState(false);
-  const [isDesktopExpanded, setIsDesktopExpanded] = useState(false);
 
   const handleLogin = async (callbackUrl = "/dashboard") => {
     try {
@@ -178,82 +161,73 @@ export default function Header() {
   ];
 
   return (
-    <nav className="fixed top-4 left-4 right-4 z-50">
-      <div className="flex items-center justify-between">
-        {/* LEFT */}
-        <div className="flex gap-6 p-4 border bg-background rounded-full items-center">
-          <Link href="/">
-            <Image src="/icons/logo1.png" alt="logo" width={40} height={40} />
+    <nav className="fixed top-0 w-full bg-white/80 backdrop-blur-md z-50 border-b border-gray-100">
+      <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
+        
+        {/* LOGO SECTION - Restored your original logo */}
+        <div className="flex items-center gap-2">
+          <Link href="/" className="flex items-center gap-3">
+            <Image 
+              src="/icons/logo1.png" 
+              alt="logo" 
+              width={40} 
+              height={40} 
+              className="object-contain"
+            />
+            <span className="text-xl font-bold tracking-tight text-[#111827] hidden sm:block">
+              Chatbot Builder
+            </span>
           </Link>
-
-          <span className="hidden lg:block font-bold text-primary">Chatbot Builder</span>
-
-          {/* CHEVRON */}
-          <ChevronsRight
-            onClick={() => setIsDesktopExpanded((p) => !p)}
-            className={cn(
-              "hidden lg:block h-5 w-5 cursor-pointer transition-transform",
-              isDesktopExpanded ? "rotate-180" : "rotate-0"
-            )}
-          />
-
-          {/* DESKTOP NAV */}
-          <AnimatePresence initial={false}>
-            {isDesktopExpanded && (
-              <motion.div
-                className="hidden lg:flex"
-                initial={{ width: 0, opacity: 0 }}
-                animate={{ width: "auto", opacity: 1 }}
-                exit={{ width: 0, opacity: 0 }}
-                transition={{ duration: 0.25 }}
-              >
-                <NavigationMenu>
-                  <NavigationMenuList>
-                    {menuItems.map((item) => (
-                      <NavigationMenuItem key={item.title}>
-                        <NavigationMenuTrigger>
-                          {item.title}
-                        </NavigationMenuTrigger>
-                        <NavigationMenuContent>
-                          <ul className="grid w-[500px] grid-cols-2 gap-3 p-4">
-                            {item.items.map((sub) => (
-                              <ListItem
-                                key={sub.title}
-                                title={sub.title}
-                                href={sub.href}
-                              />
-                            ))}
-                          </ul>
-                        </NavigationMenuContent>
-                      </NavigationMenuItem>
-                    ))}
-                  </NavigationMenuList>
-                </NavigationMenu>
-              </motion.div>
-            )}
-          </AnimatePresence>
         </div>
 
-        {/* RIGHT */}
-        <div className="flex items-center gap-2 p-4 border bg-background rounded-full">
+        {/* DESKTOP NAV (SHADCN) */}
+        <div className="hidden lg:flex items-center">
+          <NavigationMenu>
+            <NavigationMenuList className="gap-2">
+              {menuItems.map((item) => (
+                <NavigationMenuItem key={item.title}>
+                  <NavigationMenuTrigger className="bg-transparent text-gray-500 hover:text-black font-medium text-[14px] transition-colors data-[state=open]:bg-transparent">
+                    {item.title}
+                  </NavigationMenuTrigger>
+                  <NavigationMenuContent>
+                    <ul className="grid w-[400px] gap-2 p-4 md:w-[500px] md:grid-cols-2 lg:w-[600px]">
+                      {item.items.map((sub) => (
+                        <ListItem key={sub.title} title={sub.title} href={sub.href} />
+                      ))}
+                    </ul>
+                  </NavigationMenuContent>
+                </NavigationMenuItem>
+              ))}
+            </NavigationMenuList>
+          </NavigationMenu>
+        </div>
+
+        {/* ACTIONS */}
+        <div className="flex items-center gap-3">
           <ThemeToggle />
+          
+          <button 
+            onClick={() => handleLogin()}
+            className="hidden md:block text-sm font-semibold px-4 text-gray-600 hover:text-black transition-colors"
+          >
+            Sign In
+          </button>
+          
+          <button 
+            onClick={() => handleLogin()}
+            className="bg-[#111827] text-white px-6 py-2.5 rounded-full text-sm font-bold shadow-lg shadow-black/10 hover:bg-black transition-all active:scale-95"
+          >
+            Get Started
+          </button>
 
-          <div className="hidden lg:flex gap-2">
-            <Button variant="ghost" asChild onClick={() => handleLogin()}>
-              Login
-            </Button>
-            <Button asChild className="rounded-full" onClick={() => handleLogin()}>
-              Get Started
-            </Button>
-          </div>
-
+          {/* MOBILE TOGGLE */}
           <Button
             size="icon"
             variant="ghost"
-            className="lg:hidden"
-            onClick={() => setIsOpen((p) => !p)}
+            className="lg:hidden ml-1"
+            onClick={() => setIsOpen(!isOpen)}
           >
-            {isOpen ? <X /> : <Menu />}
+            {isOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
           </Button>
         </div>
       </div>
@@ -262,18 +236,28 @@ export default function Header() {
       <AnimatePresence>
         {isOpen && (
           <motion.div
-            initial={{ height: 0 }}
-            animate={{ height: "auto" }}
-            exit={{ height: 0 }}
-            className="lg:hidden mt-2 bg-background border rounded-xl overflow-hidden"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            className="lg:hidden absolute top-20 left-0 w-full bg-white border-b border-gray-100 shadow-xl overflow-hidden"
           >
-            {menuItems.map((item) => (
-              <MobileMenuItem
-                key={item.title}
-                item={item}
-                onCloseMenu={() => setIsOpen(false)}
-              />
-            ))}
+            <div className="flex flex-col p-2 max-h-[80vh] overflow-y-auto">
+              {menuItems.map((item) => (
+                <MobileMenuItem
+                  key={item.title}
+                  item={item}
+                  onCloseMenu={() => setIsOpen(false)}
+                />
+              ))}
+              <div className="p-4 pt-2">
+                 <Button 
+                   className="w-full rounded-full bg-[#111827]" 
+                   onClick={() => handleLogin()}
+                 >
+                    Get Started
+                 </Button>
+              </div>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

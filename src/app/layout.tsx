@@ -1,6 +1,7 @@
 import Script from "next/script";
 import type { Metadata } from "next";
 import { Poppins } from "next/font/google";
+import { GeistSans } from 'geist/font/sans';
 import "./globals.css";
 import { Toaster } from "sonner";
 import { SessionProvider } from "@/providers/session-provider";
