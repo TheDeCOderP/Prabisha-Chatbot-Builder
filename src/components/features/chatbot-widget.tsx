@@ -612,6 +612,9 @@ function ChatBot({
   const [isClosing, setIsClosing] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const isEmbedded = typeof window !== 'undefined' && window.self !== window.top;
+  const isDashboardPreview =
+    typeof window !== 'undefined' &&
+    window.location.pathname.includes('/chatbots/');
 
   const {
     transcript, startListening, stopListening,
@@ -623,6 +626,16 @@ function ChatBot({
     blocked: boolean;
     permission?: string;
   } | null>(null);
+
+  const micAllowed =
+    browserSupportsSpeechRecognition &&
+    !policyBlocked &&
+    (
+      isDashboardPreview // ✅ ignore parent mic restriction in dashboard
+        ? true
+        : (!parentPolicyInfo?.blocked &&
+          parentPolicyInfo?.permission !== 'denied')
+    );
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -702,10 +715,7 @@ function ChatBot({
 
   return (
     <div className={positionClass} dir={dir}>
-      {parentPolicyInfo && (
-        <ErrorBanner error={`Embedding site blocks microphone (parent permission=${parentPolicyInfo.permission || 'unknown'}). Please allow microphone for the iframe on the host page.`} />
-      )}
-      {policyBlocked && policyMessage && <ErrorBanner error={policyMessage} />}
+
       {isOpen ? (
         <div
           className={[
@@ -755,30 +765,21 @@ function ChatBot({
             t={t}
           />
 
-          {error && <ErrorBanner error={error} />}
+          {error && !isDashboardPreview && (
+            <ErrorBanner error={error} />
+          )}
 
           <ChatInput
             text={text}
             setText={setText}
             loading={loading}
             isMicrophoneOn={isMicrophoneOn}
-            browserSupportsSpeechRecognition={
-              browserSupportsSpeechRecognition &&
-              !policyBlocked &&
-              !parentPolicyInfo?.blocked &&
-              parentPolicyInfo?.permission !== 'denied'
-            }
+            browserSupportsSpeechRecognition={micAllowed}
             onSubmit={handleSubmit}
             onNewChat={handleNewChat}
             status={status}
             inputRef={inputRef}
             onToggleMicrophone={() => {
-              const micAllowed =
-                browserSupportsSpeechRecognition &&
-                !policyBlocked &&
-                !parentPolicyInfo?.blocked &&
-                parentPolicyInfo?.permission !== 'denied';
-
               if (micAllowed) {
                 setIsMicrophoneOn(p => !p);
               }
@@ -1250,8 +1251,8 @@ function ChatInput({
           await onSubmit(e);
         }}
       >
-      <div className="flex items-stretch gap-2 w-full">
-         <div className="flex flex-col flex-1 min-w-0 w-full">
+        <div className="flex items-stretch gap-2 w-full">
+          <div className="flex flex-col flex-1 min-w-0 w-full">
             <PromptInputTextarea
               ref={inputRef}
               value={text}
@@ -1325,3 +1326,6 @@ function ChatInput({
     </div>
   );
 }
+
+
+
