@@ -77,15 +77,15 @@ export default function Footer() {
                 { name: "Contact", href: "https://prabisha.com/contact/" },
               ],
             },
-            {
-              title: "Resources",
-              links: [
-                { name: "Privacy Policy", href: "https://www.prishatheexplorer.com/privacy-policy/" },
-                { name: "Terms of Service", href: "https://prishatheexplorer.com/terms-of-service/" },
-                { name: "Cookie Policy", href: "/cookie-policy" },
-                { name: "Help Center", href: "/help-center" },
-              ],
-            },
+            // {
+            //   title: "Resources",
+            //   links: [
+            //     { name: "Privacy Policy", href: "https://www.prishatheexplorer.com/privacy-policy/" },
+            //     { name: "Terms of Service", href: "https://prishatheexplorer.com/terms-of-service/" },
+            //     { name: "Cookie Policy", href: "/cookie-policy" },
+            //     { name: "Help Center", href: "/help-center" },
+            //   ],
+            // },
           ].map((section, index) => (
             <div key={index} className="space-y-6">
               <h3 className="font-bold text-xl text-foreground relative">
