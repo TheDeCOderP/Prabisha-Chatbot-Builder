@@ -600,19 +600,44 @@ type IntentType = 'GREETING' | 'FEATURE' | 'GENERAL';
 function detectIntent(message: string): IntentType {
   const text = message.trim().toLowerCase();
 
-  const greetings = ['hi', 'hello', 'hey', 'good morning', 'good evening'];
+  // Greeting detection
+  const greetings = [
+    'hi',
+    'hello',
+    'hey',
+    'good morning',
+    'good evening',
+    'good afternoon'
+  ];
+
   if (greetings.some(g => text === g || text.startsWith(g + ' '))) {
     return 'GREETING';
   }
 
-  if (
-    text.includes('feature') ||
-    text.includes('pricing') ||
-    text.includes('price') ||
-    text.includes('how') ||
-    text.includes('what') ||
-    text.includes('does it')
-  ) {
+  // Feature / product info queries
+  const featureKeywords = [
+    'feature',
+    'features',
+    'pricing',
+    'price',
+    'plan',
+    'plans',
+    'cost',
+    'how',
+    'what',
+    'use case',
+    'use cases',
+    'example',
+    'examples',
+    'capability',
+    'capabilities',
+    'integration',
+    'integrations',
+    'benefits',
+    'advantages'
+  ];
+
+  if (featureKeywords.some(keyword => text.includes(keyword))) {
     return 'FEATURE';
   }
 

@@ -1148,9 +1148,17 @@ function ChatMessages({
         {loading && status === 'streaming' && <LoadingDots text={t('searching')} small />}
 
         {/* Quick suggestions — intern's pill style, with i18n disabled label */}
-        {!hasUserMessages && quickQuestions.length > 0 && (
+        {!hasUserMessages && (
           <div className="mt-6 flex flex-col gap-3">
-            {quickQuestions.map((q, i) => (
+            {(quickQuestions.length > 0
+              ? quickQuestions
+              : [
+                "What services do you offer?",
+                "How can I contact support?",
+                "How does the AI avatar work?",
+                "How do I get started?"
+              ]
+            ).map((q, i) => (
               <button
                 key={i}
                 onClick={() => onQuickQuestion(q)}
