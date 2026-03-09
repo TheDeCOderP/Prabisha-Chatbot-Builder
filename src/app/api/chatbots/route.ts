@@ -196,7 +196,7 @@ export async function POST(request: NextRequest) {
           workspaceId: workspaceId,
           // Default chatbot settings
           greeting: "Hi there! How can I help you today?",
-          model: "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+          model: "gemini-1.5-flash",
           max_tokens: 500,
           temperature: 0.7,
           suggestions: ["How can I contact support?", "What are your business hours?", "Can I schedule a demo?"]
