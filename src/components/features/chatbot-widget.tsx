@@ -7,7 +7,6 @@ import i18n from 'i18next';
 import { initReactI18next, useTranslation } from 'react-i18next';
 import {
   Loader2,
-  Zap,
   XIcon,
   MicIcon,
   MicOffIcon,
@@ -19,7 +18,6 @@ import {
   Volume2,
   MessageCircle,
   SmilePlus,
-  ChevronDown,
 } from 'lucide-react';
 import { Message } from '@/types/chat';
 import {
@@ -39,9 +37,10 @@ import { useTextToSpeech } from '@/hooks/useTextToSpeech';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { EmojiClickData } from 'emoji-picker-react';
+import type { MultilingualSuggestion } from '@/hooks/useChatbot'
 
 // ─────────────────────────────────────────────────────────────────────────────
-// i18n — isolated instance (won't collide with your app's i18n)
+// i18n — isolated instance
 // ─────────────────────────────────────────────────────────────────────────────
 
 const chatbotI18n = i18n.createInstance();
@@ -198,29 +197,54 @@ chatbotI18n.use(initReactI18next).init({
 interface ChatbotWidgetProps {
   chatbotId: string;
   initialChatbotData?: any;
-  /** Called whenever the user picks a new language; send this to your backend */
   onLanguageChange?: (languageCode: string) => void;
 }
 
 const LANGUAGES = [
   { name: 'English', code: 'en', img: '/flags/en.svg', dir: 'ltr' },
-  { name: '日本語', code: 'ja', img: '/flags/ja.svg', dir: 'ltr' },
+  { name: '日本語',  code: 'ja', img: '/flags/ja.svg', dir: 'ltr' },
   { name: 'हिन्दी', code: 'hi', img: '/flags/hi.svg', dir: 'ltr' },
   { name: 'Français', code: 'fr', img: '/flags/fr.svg', dir: 'ltr' },
   { name: 'Español', code: 'es', img: '/flags/es.svg', dir: 'ltr' },
   { name: 'العربية', code: 'ar', img: '/flags/ar.svg', dir: 'rtl' },
 ] as const;
 
+const DEFAULT_SUGGESTIONS: MultilingualSuggestion[] = [
+  { en: "What services do you offer?",  fr: "Quels services proposez-vous ?",   ar: "ما الخدمات التي تقدمونها؟",    es: "¿Qué servicios ofrecen?",          ja: "どのようなサービスを提供していますか？", hi: "आप कौन सी सेवाएं प्रदान करते हैं?" },
+  { en: "How can I contact support?",   fr: "Comment contacter le support ?",    ar: "كيف يمكنني التواصل مع الدعم؟", es: "¿Cómo puedo contactar al soporte?", ja: "サポートに連絡するには？",              hi: "सहायता से कैसे संपर्क करें?" },
+  { en: "How do I get started?",        fr: "Comment commencer ?",               ar: "كيف أبدأ؟",                     es: "¿Cómo empiezo?",                   ja: "どうすれば始められますか？",            hi: "मैं कैसे शुरू करूं?" },
+];
+
 type LanguageCode = typeof LANGUAGES[number]['code'];
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Utility
+// Utilities
 // ─────────────────────────────────────────────────────────────────────────────
 
 const sanitizeHtml = (html: string): string => {
   const clean = DOMPurify.sanitize(html);
   return clean.replace(/<a /g, '<a target="_blank" rel="noopener noreferrer" ');
 };
+
+function resolveSuggestion(
+  item: MultilingualSuggestion | string,
+  lang: LanguageCode
+): string | null {
+  if (typeof item === 'string') return item || null;
+
+  const direct = item[lang]?.trim();
+  if (direct) return direct;
+
+  const english = item['en']?.trim();
+  if (english) return english;
+
+  for (const l of LANGUAGES) {
+    const fallback = item[l.code]?.trim();
+    if (fallback) return fallback;
+  }
+
+  return null;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared small components
@@ -410,7 +434,6 @@ export default function ChatbotWidget({ chatbotId, initialChatbotData, onLanguag
     onLanguageChange?.(code);
   };
 
-  // ── Lead generation ───────────────────────────────────────────────────────
   const {
     activeLeadForm,
     isLeadFormVisible,
@@ -430,7 +453,6 @@ export default function ChatbotWidget({ chatbotId, initialChatbotData, onLanguag
     onLeadCollected: (data) => console.log('Lead collected:', data),
   });
 
-  // ── Chat ──────────────────────────────────────────────────────────────────
   const {
     chatbot,
     isLoadingChatbot,
@@ -464,10 +486,9 @@ export default function ChatbotWidget({ chatbotId, initialChatbotData, onLanguag
       console.log('Conversational lead submitted:', data);
       markLeadAsSubmitted();
     },
+    // Pass selectedLang so the hook re-resolves the greeting when language changes
     language: selectedLang,
   });
-
-  // ── Effects ───────────────────────────────────────────────────────────────
 
   useEffect(() => {
     const handler = (e: MessageEvent) => {
@@ -504,8 +525,6 @@ export default function ChatbotWidget({ chatbotId, initialChatbotData, onLanguag
     shouldShowLeadForm, activeLeadForm, isLeadFormVisible, loading,
     isConversationalMode, startLeadCollection, showLeadForm,
   ]);
-
-  // ── Guards ────────────────────────────────────────────────────────────────
 
   if (!isInitialized || isLoadingChatbot) return <LoadingSpinner />;
   if (chatbotError) return <ErrorDisplay error="Failed to load chatbot" onRetry={() => window.location.reload()} />;
@@ -569,7 +588,7 @@ interface ChatBotProps {
   loading: boolean;
   error: string;
   hasLoadedInitialMessages: boolean;
-  quickQuestions: string[];
+  quickQuestions: MultilingualSuggestion[];
   conversationId: string | null;
   mode: 'streaming' | 'standard';
   setMode: (mode: 'streaming' | 'standard') => void;
@@ -630,12 +649,9 @@ function ChatBot({
   const micAllowed =
     browserSupportsSpeechRecognition &&
     !policyBlocked &&
-    (
-      isDashboardPreview // ✅ ignore parent mic restriction in dashboard
-        ? true
-        : (!parentPolicyInfo?.blocked &&
-          parentPolicyInfo?.permission !== 'denied')
-    );
+    (isDashboardPreview
+      ? true
+      : (!parentPolicyInfo?.blocked && parentPolicyInfo?.permission !== 'denied'));
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -646,7 +662,7 @@ function ChatBot({
       if (blocked === 'true' || permission === 'denied') {
         setParentPolicyInfo({ blocked: blocked === 'true', permission: permission || undefined });
       }
-    } catch (e) { /* ignore */ }
+    } catch { /* ignore */ }
   }, []);
 
   useEffect(() => {
@@ -660,10 +676,24 @@ function ChatBot({
   }, [isEmbedded]);
 
   useEffect(() => {
-    const check = () => setIsMobile(window.innerWidth < 768);
-    check();
-    window.addEventListener('resize', check);
-    return () => window.removeEventListener('resize', check);
+    if (typeof window === 'undefined') return;
+
+    const checkMobile = () => {
+      const params = new URLSearchParams(window.location.search);
+      const isMobileParam = params.get('is_mobile');
+
+      if (isMobileParam !== null) {
+        // Use the value passed from the parent script
+        setIsMobile(isMobileParam === 'true');
+      } else {
+        // Fallback for direct access (non-embedded)
+        setIsMobile(window.innerWidth < 768);
+      }
+    };
+
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
   useEffect(() => {
@@ -686,13 +716,11 @@ function ChatBot({
     else showLeadForm();
   };
 
-  // Get RTL direction for current language
   const currentLangMeta = LANGUAGES.find(l => l.code === selectedLang);
   const dir = currentLangMeta?.dir ?? 'ltr';
 
-  // ── Intern's shell sizing/color approach ──────────────────────────────────
   const primaryLight = chatbot.theme?.primaryLight || '#E6F0FF';
-  const borderColor = chatbot.theme?.borderColor || '#D6E4FF';
+  const borderColor  = chatbot.theme?.borderColor  || '#D6E4FF';
 
   const shellClass = [
     isMobile || isEmbedded
@@ -715,7 +743,6 @@ function ChatBot({
 
   return (
     <div className={positionClass} dir={dir}>
-
       {isOpen ? (
         <div
           className={[
@@ -723,10 +750,7 @@ function ChatBot({
             'transition-all duration-300 ease-out',
             isClosing ? 'animate-out slide-out-to-bottom-full' : 'animate-in slide-in-from-bottom-full',
           ].join(' ')}
-          style={{
-            backgroundColor: primaryLight,
-            border: `1px solid ${borderColor}`,
-          }}
+          style={{ backgroundColor: primaryLight, border: `1px solid ${borderColor}` }}
         >
           <ChatHeader
             onClose={handleClose}
@@ -763,11 +787,10 @@ function ChatBot({
             leadCollectionStatus={leadCollectionStatus}
             onLeadAction={!hasSubmittedLead && activeLeadForm ? handleLeadAction : undefined}
             t={t}
+            selectedLang={selectedLang}
           />
 
-          {error && !isDashboardPreview && (
-            <ErrorBanner error={error} />
-          )}
+          {error && !isDashboardPreview && <ErrorBanner error={error} />}
 
           <ChatInput
             text={text}
@@ -779,11 +802,7 @@ function ChatBot({
             onNewChat={handleNewChat}
             status={status}
             inputRef={inputRef}
-            onToggleMicrophone={() => {
-              if (micAllowed) {
-                setIsMicrophoneOn(p => !p);
-              }
-            }}
+            onToggleMicrophone={() => { if (micAllowed) setIsMicrophoneOn(p => !p); }}
             hasLeadForm={!hasSubmittedLead && !!activeLeadForm}
             onLeadAction={handleLeadAction}
             isLoadingLeadConfig={isLoadingLeadConfig}
@@ -814,16 +833,11 @@ function ChatBot({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ChatHeader — intern's redesigned version + i18n labels
+// ChatHeader
 // ─────────────────────────────────────────────────────────────────────────────
 
 function ChatHeader({
-  onClose,
-  chatbot,
-  isMobile,
-  isEmbedded,
-  closeLabel,
-  liveLabel,
+  onClose, chatbot, isMobile, isEmbedded, closeLabel, liveLabel,
 }: {
   onClose: () => void;
   chatbot: any;
@@ -832,8 +846,8 @@ function ChatHeader({
   closeLabel: string;
   liveLabel: string;
 }) {
-  const headerBg = chatbot?.theme?.primaryColor || '#111CA8';
-  const headerText = chatbot?.theme?.headerTextColor || '#ffffff';
+  const headerBg    = chatbot?.theme?.primaryColor     || '#111CA8';
+  const headerText  = chatbot?.theme?.headerTextColor  || '#ffffff';
   const accentColor = chatbot?.theme?.inputButtonColor || '#DF6A2E';
 
   return (
@@ -844,12 +858,10 @@ function ChatHeader({
       ].join(' ')}
       style={{ backgroundColor: headerBg, color: headerText }}
     >
-      {/* Left Section */}
       <div className="flex items-center gap-4 min-w-0">
         <Image
           src={chatbot.avatar || '/icons/logo.png'}
-          height={48}
-          width={48}
+          height={48} width={48}
           alt={chatbot.name || 'Assistant'}
           className="h-12 w-12 rounded-xl object-cover border border-black/10"
           unoptimized
@@ -859,7 +871,6 @@ function ChatHeader({
             <h3 className="text-base font-semibold truncate">
               {chatbot.name || 'Customer Support'}
             </h3>
-            {/* Live Indicator */}
             <span className="flex items-center gap-1.5">
               <span className="relative flex h-2.5 w-2.5">
                 <span
@@ -868,9 +879,7 @@ function ChatHeader({
                 />
                 <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-green-500 shadow-[0_0_6px_rgba(34,197,94,0.6)]" />
               </span>
-              <span className="text-xs font-semibold truncate tracking-wide">
-                {liveLabel}
-              </span>
+              <span className="text-xs font-semibold truncate tracking-wide">{liveLabel}</span>
               <style jsx>{`
                 @keyframes softPulse {
                   0%   { transform: scale(1);   opacity: 0.5; }
@@ -880,20 +889,22 @@ function ChatHeader({
               `}</style>
             </span>
           </div>
+          {/* description is always a plain string — no change needed */}
           <p className="text-xs font-semibold truncate mt-0.5" style={{ color: accentColor }}>
             {chatbot.description || 'Typically replies instantly'}
           </p>
         </div>
       </div>
 
-      {/* Close Button */}
-      <button
-        onClick={onClose}
-        className="h-9 w-9 rounded-full bg-[#DF6A2E] text-white flex items-center justify-center hover:opacity-90 transition cursor-pointer"
-        aria-label={closeLabel}
-      >
-        <XIcon size={16} strokeWidth={2.5} />
-      </button>
+      { isMobile && (
+        <button
+          onClick={onClose}
+          className="border-2 border-solid border-white h-9 w-9 rounded-full bg-[#DF6A2E] text-white flex items-center justify-center hover:opacity-90 transition cursor-pointer"
+          aria-label={closeLabel}
+        >
+          <XIcon size={16} strokeWidth={5} />
+        </button>
+      )}
     </div>
   );
 }
@@ -921,8 +932,7 @@ function ChatToggleButton({ onClick, chatbot, openLabel }: { onClick: () => void
       className="fixed bottom-6 right-6 rounded-full shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-110 active:scale-95 cursor-pointer"
       aria-label={openLabel}
       style={{
-        width: `${size}px`,
-        height: `${size}px`,
+        width: `${size}px`, height: `${size}px`,
         backgroundColor: chatbot.theme?.widgetBgColor || '#FFFFFF',
         border: `3px solid ${chatbot.theme?.widgetColor || '#111CA8'}`,
       }}
@@ -946,7 +956,7 @@ interface ChatMessagesProps {
   messages: Message[];
   loading: boolean;
   status: 'submitted' | 'streaming' | 'ready' | 'error';
-  quickQuestions: string[];
+  quickQuestions: MultilingualSuggestion[];
   onQuickQuestion: (q: string) => void;
   chatContainerRef: React.RefObject<HTMLDivElement | null>;
   messagesEndRef: React.RefObject<HTMLDivElement | null>;
@@ -957,24 +967,25 @@ interface ChatMessagesProps {
   leadCollectionStatus: 'idle' | 'collecting' | 'submitting' | 'done' | 'error';
   onLeadAction?: () => void;
   t: (key: string) => string;
+  selectedLang: LanguageCode;
 }
 
 function ChatMessages({
   messages, loading, status, quickQuestions, onQuickQuestion,
   chatContainerRef, messagesEndRef, formatTime, chatbot,
-  hasSubmittedLead, isConversationalMode, leadCollectionStatus, onLeadAction, t,
+  hasSubmittedLead, isConversationalMode, leadCollectionStatus, onLeadAction, t, selectedLang,
 }: ChatMessagesProps) {
   const { speak, stop, isPlaying } = useTextToSpeech();
   const [activeSpeakingId, setActiveSpeakingId] = useState<string | null>(null);
 
   const th = chatbot.theme;
-  const botBg = th?.botMessageBgColor || '#FFFFFF';
-  const botText = th?.botMessageTextColor || '#1E293B';
-  const userBg = th?.userMessageBgColor || '#111CA8';
-  const userText = th?.userMessageTextColor || '#ffffff';
+  const botBg    = th?.botMessageBgColor   || '#FFFFFF';
+  const botText  = th?.botMessageTextColor || '#1E293B';
+  const userBg   = th?.userMessageBgColor  || '#111CA8';
+  const userText = th?.userMessageTextColor|| '#ffffff';
   const accentColor = th?.inputButtonColor || '#DF6A2E';
 
-  const hasUserMessages = messages.some(m => m.senderType === 'USER');
+  const hasUserMessages  = messages.some(m => m.senderType === 'USER');
   const hasMultipleMessages = messages.length >= 2;
 
   const handleSpeak = async (id: string, content: string) => {
@@ -986,8 +997,7 @@ function ChatMessages({
     <div className={`shrink-0 flex flex-col items-center ${small ? '' : 'w-12'}`}>
       <Image
         src={chatbot.icon || '/icons/logo1.png'}
-        height={small ? 32 : 50}
-        width={small ? 32 : 50}
+        height={small ? 32 : 50} width={small ? 32 : 50}
         alt={chatbot.name || 'Assistant'}
         className={`${small ? 'p-0.5' : 'p-1'} rounded-full bg-primary/10`}
       />
@@ -999,9 +1009,7 @@ function ChatMessages({
     </div>
   );
 
-  const MessageBubble = ({
-    message, isUser, index,
-  }: { message: Message; isUser: boolean; index: number }) => {
+  const MessageBubble = ({ message, isUser, index }: { message: Message; isUser: boolean; index: number }) => {
     const id = `msg-${index}`;
     const isSpeaking = activeSpeakingId === id && isPlaying;
 
@@ -1042,9 +1050,7 @@ function ChatMessages({
                   ].join(' ')}
                   title={isSpeaking ? 'Stop reading' : 'Read aloud'}
                 >
-                  {isSpeaking
-                    ? <VolumeX className="h-3.5 w-3.5" />
-                    : <Volume2 className="h-3.5 w-3.5" />}
+                  {isSpeaking ? <VolumeX className="h-3.5 w-3.5" /> : <Volume2 className="h-3.5 w-3.5" />}
                 </button>
               )}
             </div>
@@ -1145,29 +1151,27 @@ function ChatMessages({
         )}
 
         {loading && status === 'submitted' && <LoadingDots text={t('thinking')} />}
-        {loading && status === 'streaming' && <LoadingDots text={t('searching')} small />}
+        {loading && status === 'streaming'  && <LoadingDots text={t('searching')} small />}
 
-        {/* Quick suggestions — intern's pill style, with i18n disabled label */}
+        {/* Quick suggestions — shown only before any user message */}
         {!hasUserMessages && (
           <div className="mt-6 flex flex-col gap-3">
-            {(quickQuestions.length > 0
-              ? quickQuestions
-              : [
-                "What services do you offer?",
-                "How can I contact support?",
-                "How does the AI avatar work?",
-                "How do I get started?"
-              ]
-            ).map((q, i) => (
-              <button
-                key={i}
-                onClick={() => onQuickQuestion(q)}
-                disabled={loading}
-                className="w-full py-3 px-6 rounded-full border-2 border-black bg-white text-black text-sm font-medium transition-colors hover:bg-black hover:text-white disabled:opacity-50 cursor-pointer"
-              >
-                {q}
-              </button>
-            ))}
+            {(quickQuestions.length > 0 ? quickQuestions : DEFAULT_SUGGESTIONS)
+              .map((item, i) => {
+                // resolveSuggestion handles both multilingual objects and legacy strings
+                const label = resolveSuggestion(item, selectedLang);
+                if (!label) return null;
+                return (
+                  <button
+                    key={i}
+                    onClick={() => onQuickQuestion(label)}
+                    disabled={loading}
+                    className="w-full py-3 px-6 rounded-full border-2 border-black bg-white text-black text-sm font-medium transition-colors hover:bg-black hover:text-white disabled:opacity-50 cursor-pointer"
+                  >
+                    {label}
+                  </button>
+                );
+              })}
           </div>
         )}
 
@@ -1178,7 +1182,7 @@ function ChatMessages({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ChatInput — intern's styling + your LanguageSelector & i18n
+// ChatInput
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface ChatInputProps {
@@ -1211,8 +1215,8 @@ function ChatInput({
   selectedLang, onLanguageChange, t,
 }: ChatInputProps) {
   const accentColor = chatbot?.theme?.inputButtonColor || '#DD692E';
-  const inputBg = chatbot?.theme?.inputBgColor || '#FFF4E6';
-  const borderColor = chatbot?.theme?.borderColor || '#D6E4FF';
+  const inputBg     = chatbot?.theme?.inputBgColor     || '#FFF4E6';
+  const borderColor = chatbot?.theme?.borderColor      || '#D6E4FF';
   const [showPicker, setShowPicker] = useState(false);
 
   const onEmojiClick = (emojiData: EmojiClickData) => {
@@ -1224,15 +1228,13 @@ function ChatInput({
       className="border-t px-4 py-4 shrink-0 relative transition-all duration-200"
       style={{ backgroundColor: inputBg, borderColor }}
     >
-      {/* Emoji picker */}
       {showPicker && (
         <div className="absolute bottom-full left-0 w-full z-50 animate-in fade-in slide-in-from-bottom-2">
           <div className="flex flex-col border-t bg-card shadow-2xl">
             <div className="flex items-center justify-between p-2 border-b bg-muted/50">
               <span className="text-xs font-medium px-2">{t('selectEmoji')}</span>
               <Button
-                variant="ghost"
-                size="sm"
+                variant="ghost" size="sm"
                 className="h-8 w-8 p-0 rounded-full cursor-pointer"
                 onClick={() => setShowPicker(false)}
               >
@@ -1273,45 +1275,32 @@ function ChatInput({
 
             <PromptInputToolbar>
               <PromptInputTools>
-                {/* Emoji toggle */}
                 <PromptInputButton
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    setShowPicker(!showPicker);
-                  }}
-                 className={`${showPicker ? 'bg-muted' : ''} cursor-pointer`}
+                  type="button" size="sm" variant="ghost"
+                  onClick={(e) => { e.preventDefault(); setShowPicker(!showPicker); }}
+                  className={`${showPicker ? 'bg-muted' : ''} cursor-pointer`}
                 >
                   <SmilePlus className="h-4 w-4" />
                 </PromptInputButton>
 
-                {/* Microphone */}
                 {browserSupportsSpeechRecognition && (
                   <PromptInputButton
-                    type="button"
-                    size="sm"
-                    variant="ghost"
+                    type="button" size="sm" variant="ghost"
                     onClick={onToggleMicrophone}
-                  className={`cursor-pointer ${isMicrophoneOn ? 'bg-destructive/10 text-destructive' : ''}`}
+                    className={`cursor-pointer ${isMicrophoneOn ? 'bg-destructive/10 text-destructive' : ''}`}
                   >
                     {isMicrophoneOn ? <MicOffIcon className="h-4 w-4" /> : <MicIcon className="h-4 w-4" />}
                   </PromptInputButton>
                 )}
 
-                {/* New chat */}
                 <PromptInputButton
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                 className={`rounded-full cursor-pointer ${isMicrophoneOn ? 'bg-red-100 text-red-600' : 'hover:bg-gray-100'}`}
+                  type="button" size="sm" variant="ghost"
+                  className={`rounded-full cursor-pointer ${isMicrophoneOn ? 'bg-red-100 text-red-600' : 'hover:bg-gray-100'}`}
                   onClick={onNewChat}
                 >
                   <RefreshCw className="h-4 w-4" />
                 </PromptInputButton>
 
-                {/* Language selector */}
                 <LanguageSelector
                   currentLang={selectedLang}
                   onChange={onLanguageChange}
@@ -1334,6 +1323,3 @@ function ChatInput({
     </div>
   );
 }
-
-
-

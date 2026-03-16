@@ -32,11 +32,12 @@
   let config = { ...defaults };
   let iframe = null;
   let button = null;
+  let closeBtn = null;
   let isInitialized = false;
 
   async function init(userConfig) {
     if (isInitialized) return;
-    
+
     // check whether parent document forbids microphone via Permissions-Policy
     if (typeof document !== 'undefined' && document.featurePolicy) {
       if (!document.featurePolicy.allowsFeature('microphone')) {
@@ -55,20 +56,18 @@
       const response = await fetch(`${config.baseUrl}/api/chatbots/${config.chatbotId}`);
       if (response.ok) {
         const dbConfig = await response.json();
-        // Update config with database values if they exist
         config.buttonColor = dbConfig.iconBgColor || config.buttonColor;
         config.buttonTextColor = dbConfig.iconColor || config.buttonTextColor;
         config.iconUrl = dbConfig.icon;
         config.iconShape = dbConfig.iconShape;
         config.iconSize = dbConfig.iconSize;
         config.iconBorder = dbConfig.iconBorder;
-        
-        // Store widget sizes for responsive behavior
+
         if (dbConfig.theme) {
           config.widgetSize = dbConfig.theme.widgetSize || 70;
           config.widgetSizeMobile = dbConfig.theme.widgetSizeMobile || 60;
         }
-        
+
         if (dbConfig.popup_onload !== undefined && userConfig.autoOpen === undefined) {
           config.autoOpen = dbConfig.popup_onload;
         }
@@ -78,6 +77,8 @@
     }
 
     await createIframe();
+    createCloseButton();
+
     if (config.showButton) {
       createButton();
     }
@@ -94,9 +95,12 @@
     iframe = document.createElement('iframe');
     iframe.setAttribute('allow', 'microphone *; camera *; speaker-selection *');
 
-    // Build iframe URL with diagnostic query params so the widget can display
-    // a clear message when the embedding host blocks microphone via policy.
+    // Build iframe URL with diagnostic query params
     const qp = new URLSearchParams();
+
+    const isActualMobile = window.innerWidth < 768;
+    qp.set('is_mobile', String(isActualMobile));
+
     try {
       if (typeof document !== 'undefined' && document.featurePolicy) {
         qp.set('parent_policy_blocked', String(!document.featurePolicy.allowsFeature('microphone')));
@@ -119,13 +123,12 @@
       z-index: 999999;
       bottom: 90px;
       right: 20px;
-      width: 280px;
+      width: 380px;
       max-width: calc(100% - 40px);
       height: 600px;
       max-height: 80vh;
       border: none;
       border-radius: 12px;
-      overflow: hidden;
       box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
       display: none;
       transition: all 0.3s ease;
@@ -136,10 +139,85 @@
     document.body.appendChild(iframe);
   }
 
+  // ─── Parent-side close button ───────────────────────────────────────────────
+  function createCloseButton() {
+    // 1. Detect mobile state
+    if(window.innerWidth <= 768) {
+      return; // Don't create close button on mobile, rely on in-iframe controls
+    }
+
+    closeBtn = document.createElement('button');
+    closeBtn.setAttribute('aria-label', 'Close chat');
+    closeBtn.style.cssText = `
+      position: fixed;
+      z-index: 9999999;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background-color: #DF6A2E;
+      color: white;
+      border: 2px solid white; /* Added border to make the 'clip' look cleaner */
+      cursor: pointer;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+      padding: 0;
+      transition: opacity 0.15s ease, transform 0.2s ease;
+    `;
+    closeBtn.innerHTML = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
+        fill="none" stroke="currentColor" stroke-width="2.5"
+        stroke-linecap="round" stroke-linejoin="round">
+        <line x1="18" y1="6" x2="6" y2="18"/>
+        <line x1="6" y1="6" x2="18" y2="18"/>
+      </svg>`;
+    
+    closeBtn.onmouseenter = () => { closeBtn.style.transform = 'scale(1.1)'; };
+    closeBtn.onmouseleave = () => { closeBtn.style.transform = 'scale(1)'; };
+    closeBtn.onclick = closeChat;
+    document.body.appendChild(closeBtn);
+  }
+
+  function positionCloseButton() {
+    if (!iframe || !closeBtn || iframe.style.display === 'none') return;
+    
+    const rect = iframe.getBoundingClientRect();
+    const btnSize = 36; // Matches the width/height in CSS
+    const offset = btnSize / 2;
+
+    // Logic to handle both left and right positions
+    if (config.position.includes('right')) {
+        closeBtn.style.right = (window.innerWidth - rect.right - offset) + 'px';
+        closeBtn.style.left = 'auto';
+    } else {
+        closeBtn.style.left = (rect.left - offset) + 'px';
+        closeBtn.style.right = 'auto';
+    }
+
+    closeBtn.style.top = (rect.top - offset) + 'px';
+    
+    // Hide close button if we are in full-screen mobile mode
+    if (window.innerWidth <= 480) {
+      closeBtn.style.display = 'none';
+    } else {
+      closeBtn.style.display = 'flex';
+    }
+  }
+
+  function positionCloseButton() {
+    if (!iframe || !closeBtn) return;
+    const rect = iframe.getBoundingClientRect();
+    // Place button centred on the top-right corner of the iframe
+    closeBtn.style.top  = (rect.top  - 20) + 'px';
+    closeBtn.style.left = (rect.right - 20) + 'px';
+  }
+  // ────────────────────────────────────────────────────────────────────────────
+
   function createButton() {
     button = document.createElement('div');
     button.id = 'chatbot-button';
-    
+
     const iconContainer = document.createElement('div');
     iconContainer.style.cssText = `
       width: 100%;
@@ -160,22 +238,21 @@
         padding: 4px;
         object-fit: contain;
       `;
-      
+
       const shape = (config.iconShape || '').toUpperCase();
       if (shape === 'ROUND') img.style.borderRadius = '50%';
       else if (shape === 'ROUNDED_SQUARE' || shape === 'SQUARE') img.style.borderRadius = '12px';
-      
+
       const border = (config.iconBorder || '').toUpperCase();
       if (border === 'ROUND') img.style.border = '2px solid currentColor';
       else if (border === 'ROUNDED_FLAT') img.style.border = '1px solid rgba(255,255,255,0.3)';
-      
+
       iconContainer.appendChild(img);
     } else {
       iconContainer.innerHTML = '💬';
     }
     button.appendChild(iconContainer);
 
-    // Use responsive size based on screen width
     const isMobile = window.innerWidth < 768;
     const buttonSize = isMobile && config.widgetSizeMobile ? config.widgetSizeMobile : (config.widgetSize || 70);
 
@@ -199,7 +276,7 @@
     `;
 
     applyPosition(button, false);
-    
+
     button.onclick = toggleChat;
     button.onmouseenter = () => {
       button.style.transform = 'scale(1.1)';
@@ -209,7 +286,7 @@
       button.style.transform = 'scale(1)';
       button.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.15)';
     };
-    
+
     document.body.appendChild(button);
   }
 
@@ -217,7 +294,7 @@
     const pos = config.position;
     const margin = '20px';
     const iframeMargin = '90px';
-    
+
     el.style.bottom = 'auto';
     el.style.top = 'auto';
     el.style.left = 'auto';
@@ -226,9 +303,9 @@
     const offset = isIframe ? iframeMargin : margin;
 
     if (pos.includes('bottom')) el.style.bottom = offset;
-    if (pos.includes('top')) el.style.top = offset;
-    if (pos.includes('right')) el.style.right = margin;
-    if (pos.includes('left')) el.style.left = margin;
+    if (pos.includes('top'))    el.style.top    = offset;
+    if (pos.includes('right'))  el.style.right  = margin;
+    if (pos.includes('left'))   el.style.left   = margin;
   }
 
   function updateIframeDimensions() {
@@ -253,25 +330,17 @@
     }
   }
 
-  window.addEventListener('resize', updateIframeDimensions);
-  
-  // Also update button size on resize if mobile size is different
   window.addEventListener('resize', () => {
+    updateIframeDimensions();
+    positionCloseButton();
+
     if (button && config.widgetSize && config.widgetSizeMobile) {
       const isMobile = window.innerWidth < 768;
       const size = isMobile ? config.widgetSizeMobile : config.widgetSize;
-      button.style.width = `${size}px`;
+      button.style.width  = `${size}px`;
       button.style.height = `${size}px`;
     }
   });
-
-  function getButtonSize() {
-    switch(config.buttonSize) {
-      case 'small': return '50px';
-      case 'large': return '80px';
-      default: return '70px';
-    }
-  }
 
   function toggleChat() {
     if (iframe.style.display === 'none') {
@@ -284,21 +353,24 @@
   function openChat() {
     updateIframeDimensions();
     iframe.style.display = 'block';
-    
-    // Logic to hide the button on mobile when chat is open
-    const isMobile = window.innerWidth <= 480;
-    if (button && isMobile) {
-      button.style.display = 'none';
+
+    // Show parent-side close button and position it over the iframe corner
+    if (closeBtn) {
+      closeBtn.style.display = 'flex';
+      // Use rAF so the iframe has its final position before we read getBoundingClientRect
+      requestAnimationFrame(positionCloseButton);
     }
+
+    // Hide toggle button on mobile
+    const isMobile = window.innerWidth <= 480;
+    if (button && isMobile) button.style.display = 'none';
   }
 
   function closeChat() {
     iframe.style.display = 'none';
-    
-    // Always show the button again when the chat is closed
-    if (button) {
-      button.style.display = 'flex';
-    }
+
+    if (closeBtn) closeBtn.style.display = 'none';
+    if (button)   button.style.display   = 'flex';
   }
 
   function setupMessageListener() {
@@ -309,31 +381,32 @@
         closeChat();
       }
       if (event.data.type === 'chatbot-resize') {
-        if (event.data.width) iframe.style.width = event.data.width;
+        if (event.data.width)  iframe.style.width  = event.data.width;
         if (event.data.height) iframe.style.height = event.data.height;
+        positionCloseButton();
       }
       // Listen for theme updates from admin panel
       if (event.data.type === 'theme-update' && event.data.theme) {
         const theme = event.data.theme;
-        
-        // Update button size if changed
+
         if (theme.widgetSize && button) {
           const isMobile = window.innerWidth < 768;
           const size = isMobile && theme.widgetSizeMobile ? theme.widgetSizeMobile : theme.widgetSize;
-          button.style.width = `${size}px`;
+          button.style.width  = `${size}px`;
           button.style.height = `${size}px`;
         }
-        
-        // Update button color if changed
+
         if (theme.widgetColor && button) {
           button.style.backgroundColor = theme.widgetColor;
         }
-        
-        // Update button position if changed
+
         if (theme.widgetPosition && button) {
           config.position = theme.widgetPosition.toLowerCase().replace(/([A-Z])/g, '-$1').toLowerCase();
           applyPosition(button, false);
-          if (iframe) applyPosition(iframe, true);
+          if (iframe) {
+            applyPosition(iframe, true);
+            positionCloseButton();
+          }
         }
       }
     });
@@ -341,15 +414,11 @@
 
   // Handle API commands
   const processCommand = (args) => {
-    const cmd = args[0];
+    const cmd    = args[0];
     const params = args[1];
-    if (cmd === 'init') {
-      init(params);
-    } else if (cmd === 'open') {
-      openChat();
-    } else if (cmd === 'close') {
-      closeChat();
-    }
+    if (cmd === 'init')  init(params);
+    else if (cmd === 'open')  openChat();
+    else if (cmd === 'close') closeChat();
   };
 
   // Process queue
@@ -368,10 +437,10 @@
     if (chatbotId) {
       init({
         chatbotId,
-        baseUrl: script.getAttribute('data-base-url') || defaultBaseUrl,
-        showButton: script.getAttribute('data-show-button') !== 'false',
-        autoOpen: script.getAttribute('data-auto-open') === 'true',
-        position: script.getAttribute('data-position') || 'bottom-right'
+        baseUrl:     script.getAttribute('data-base-url')    || defaultBaseUrl,
+        showButton:  script.getAttribute('data-show-button') !== 'false',
+        autoOpen:    script.getAttribute('data-auto-open')   === 'true',
+        position:    script.getAttribute('data-position')    || 'bottom-right',
       });
     }
   }
