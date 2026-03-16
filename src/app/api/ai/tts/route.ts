@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
     const { text } = await request.json();
     const cleanText = text.replace(/<[^>]*>?/gm, '');
 
-    const response = await ai.models.generateContent({
+    const response = await ai.models.generateContentStream({
       model: "gemini-2.5-flash-preview-tts",
       contents: [{ role: 'user', parts: [{ text: cleanText }] }],
       config: {
@@ -39,16 +39,29 @@ export async function POST(request: NextRequest) {
       }
     });
 
-    const audioPart = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
-    if (!audioPart?.inlineData?.data) throw new Error("No audio data");
+    const readableStream = new ReadableStream({
+      async start(controller) {
+        try {
+          for await (const chunk of response) {
+            const audioPart = chunk.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
+            if (audioPart?.inlineData?.data) {
+              const pcmBuffer = Buffer.from(audioPart.inlineData.data, 'base64');
+              controller.enqueue(new Uint8Array(pcmBuffer));
+            }
+          }
+          controller.close();
+        } catch (error) {
+          console.error("Streaming error:", error);
+          controller.error(error);
+        }
+      },
+    });
 
-    // Convert Base64 PCM to Buffer, add WAV header, then back to Base64
-    const pcmBuffer = Buffer.from(audioPart.inlineData.data, 'base64');
-    const wavBuffer = encodeWAV(pcmBuffer, 24000); // Gemini TTS defaults to 24kHz
-
-    return NextResponse.json({ 
-      audioBase64: wavBuffer.toString('base64'),
-      mimeType: 'audio/wav' 
+    return new Response(readableStream, {
+      headers: {
+        'Content-Type': 'audio/pcm',
+        'X-Sample-Rate': '24000',
+      },
     });
 
   } catch (error: any) {
