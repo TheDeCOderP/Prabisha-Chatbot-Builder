@@ -27,7 +27,7 @@ interface ChatProps {
   showPreviewControls?: boolean
 
   // Suggestions — accepts legacy string[] or new multilingual object[]
-  suggestions?: Array<string | Record<string, string>>
+  suggestions?: MultilingualSuggestion[]
 
   // Theme object prop
   theme?: any
@@ -93,7 +93,7 @@ const resolveGreeting = (
  * string for the current browser language.
  */
 const resolveLocalizedSuggestion = (
-  suggestion: string | Record<string, string>,
+  suggestion: string | MultilingualSuggestion,
   lang: string
 ): string => {
   if (typeof suggestion === 'string') return suggestion
@@ -246,10 +246,10 @@ export default function ChatPreview({
 
   // ─── Normalise suggestions ────────────────────────────────────────────────
 
-  const suggestions: Array<string | Record<string, string>> =
+  const suggestions: MultilingualSuggestion[] =
     propSuggestions.length > 0
       ? propSuggestions
-      : ((chatbot?.suggestions as Array<string | Record<string, string>>) || [])
+      : ((chatbot?.suggestions as MultilingualSuggestion[]) || [])
 
   // ─── Enum helpers ─────────────────────────────────────────────────────────
 
