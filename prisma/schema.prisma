@@ -77,7 +77,7 @@ model Chatbot {
   serialNo     Int?                            
   name        String
   description String?
-  suggestions String[]
+  suggestions Json[] @default([]) @db.Json
 
   icon        String?
   iconSize    Int?
@@ -92,14 +92,14 @@ model Chatbot {
   avatarBorder  BorderType @default(FLAT)
   avatarBgColor String?
 
-  popup_onload Boolean @default(false)
+  popup_onload  Boolean @default(false)
 
-  greeting  String @default("Hi there! How can I help you today?")
-  directive String @db.Text
+  greeting      Json[] @default([]) @db.Json
+  directive     String @db.Text
 
-  model       String @default("meta-llama/Llama-3.3-70B-Instruct-Turbo")
-  max_tokens  Int    @default(500)
-  temperature Float  @default(0.7)
+  model         String @default("meta-llama/Llama-3.3-70B-Instruct-Turbo")
+  max_tokens    Int    @default(500)
+  temperature   Float  @default(0.7)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

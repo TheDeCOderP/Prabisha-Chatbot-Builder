@@ -164,11 +164,6 @@ export default function AppSidebar({ ...props }: React.ComponentProps<typeof Sid
             title: "AI Model",
             url: `/chatbots/${id}/models`,
           },
-          {
-            icon: Settings2,
-            title: "Settings",
-            url: `/chatbots/${id}/settings`,
-          },
         ],
       },
     ],

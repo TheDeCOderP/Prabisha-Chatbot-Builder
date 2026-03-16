@@ -1,5 +1,7 @@
 "use client";
+
 import DOMPurify from 'dompurify';
+
 import { useState, useRef, useEffect } from "react";
 
 import { Card } from "@/components/ui/card"
@@ -7,6 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { RefreshCw, Monitor, Smartphone, Send, Loader2, Lightbulb } from "lucide-react"
 import { Chatbot, ShapeType, BorderType } from "../../../generated/prisma/browser";
+import { MultilingualSuggestion, getLocalizedText } from "@/providers/chatbot-provider";
 
 interface Message {
   role: "user" | "assistant"
@@ -16,18 +19,19 @@ interface Message {
 interface ChatProps {
   id: string
   name?: string
-  greeting?: string
+  // greeting now accepts multilingual object, legacy string, or undefined
+  greeting?: MultilingualSuggestion | string
   directive?: string
   initialMessages?: Message[]
   onSendMessage?: (message: string, messages: Message[]) => Promise<string | void>
   showPreviewControls?: boolean
-  
-  // New props for suggestions
-  suggestions?: string[]
-  
+
+  // Suggestions — accepts legacy string[] or new multilingual object[]
+  suggestions?: Array<string | Record<string, string>>
+
   // Theme object prop
   theme?: any
-  
+
   // Legacy theme props that can override database values
   avatar?: string | null
   icon?: string | null
@@ -44,12 +48,82 @@ interface ChatProps {
   borderRadius?: string
   autoOpenChat?: boolean
   autoGreeting?: boolean
-  
+
   // Optional: If you want to disable database fetching
   useDbConfig?: boolean
 }
 
 const sanitizedHTML = (html: string) => DOMPurify.sanitize(html);
+
+// ─── Phone dimensions (natural / unscaled) ────────────────────────────────
+const PHONE_W = 375;
+const PHONE_H = 667;
+
+// ─── Localisation helpers ─────────────────────────────────────────────────
+
+/**
+ * Detect the user's preferred language code (e.g. "en", "fr", "ar").
+ * Falls back to "en" in non-browser environments.
+ */
+const getBrowserLang = (): string =>
+  typeof navigator !== 'undefined' ? navigator.language.split('-')[0] : 'en'
+
+/**
+ * Resolve a greeting value (multilingual object, legacy plain string, or
+ * undefined) to a display string for the current browser language.
+ */
+const resolveGreeting = (
+  value: MultilingualSuggestion | string | undefined | null,
+  lang: string
+): string => {
+  if (!value) return 'How can I help you today?'
+  if (typeof value === 'string') return value   // legacy plain string
+
+  // Multilingual object — same priority as getLocalizedText from provider
+  return (
+    (value as MultilingualSuggestion)[lang]?.trim() ||
+    (value as MultilingualSuggestion)['en']?.trim() ||
+    Object.values(value as MultilingualSuggestion).find(v => v?.trim()) ||
+    'How can I help you today?'
+  )
+}
+
+/**
+ * Resolve a suggestion (legacy string or multilingual object) to a display
+ * string for the current browser language.
+ */
+const resolveLocalizedSuggestion = (
+  suggestion: string | Record<string, string>,
+  lang: string
+): string => {
+  if (typeof suggestion === 'string') return suggestion
+  return (
+    suggestion[lang] ||
+    suggestion['en'] ||
+    Object.values(suggestion).find(v => typeof v === 'string' && v.trim()) ||
+    ''
+  )
+}
+
+/**
+ * Normalise the DB greeting field.
+ * DB stores Json[] → take index [0]; plain string → return as-is; object → return as-is.
+ */
+const normaliseDbGreeting = (
+  raw: any
+): MultilingualSuggestion | string | null => {
+  if (!raw) return null
+  if (Array.isArray(raw)) {
+    if (raw.length === 0) return null
+    const first = raw[0]
+    if (typeof first === 'object' && first !== null) return first as MultilingualSuggestion
+    if (typeof first === 'string') return first
+    return null
+  }
+  if (typeof raw === 'object') return raw as MultilingualSuggestion
+  if (typeof raw === 'string') return raw
+  return null
+}
 
 export default function ChatPreview({
   id,
@@ -59,14 +133,11 @@ export default function ChatPreview({
   initialMessages = [],
   onSendMessage,
   showPreviewControls = false,
-  
-  // New suggestions prop
+
   suggestions: propSuggestions = [],
-  
-  // Theme object prop
+
   theme: propTheme,
-  
-  // Legacy theme props with default values
+
   avatar: propAvatar,
   icon: propIcon,
   iconShape: propIconShape,
@@ -82,8 +153,7 @@ export default function ChatPreview({
   borderRadius: propBorderRadius,
   autoOpenChat: propAutoOpenChat,
   autoGreeting: propAutoGreeting,
-  
-  // Database config
+
   useDbConfig = true,
 }: ChatProps) {
   const [chatbot, setChatbot] = useState<Chatbot | null>(null);
@@ -95,8 +165,42 @@ export default function ChatPreview({
   const chatAreaRef = useRef<HTMLDivElement>(null)
   const [showSuggestions, setShowSuggestions] = useState(true)
   const [liveTheme, setLiveTheme] = useState<any>(null)
-  
-  // Colors mapping for default colors
+  const [previewMode, setPreviewMode] = useState<"desktop" | "mobile">("desktop")
+
+  const phoneWrapRef = useRef<HTMLDivElement>(null);
+
+  // Detect browser language once on mount
+  const userLang = getBrowserLang()
+
+  useEffect(() => {
+    if (previewMode !== "mobile") return;
+
+    const el = phoneWrapRef.current;
+    if (!el) return;
+
+    const applyScale = () => {
+      const parent = el.parentElement;
+      if (!parent) return;
+      const availW = parent.clientWidth - 32;
+      const availH = parent.clientHeight - 32;
+      const scale = Math.min(availW / PHONE_W, availH / PHONE_H, 1);
+      el.style.transform = `scale(${scale})`;
+      const shrinkX = (PHONE_W * scale - PHONE_W) / 2;
+      const shrinkY = (PHONE_H * scale - PHONE_H) / 2;
+      el.style.margin = `${shrinkY}px ${shrinkX}px`;
+    };
+
+    applyScale();
+    const ro = new ResizeObserver(applyScale);
+    const parent = el.parentElement;
+    if (parent) ro.observe(parent);
+
+    return () => {
+      ro.disconnect();
+      if (el) { el.style.transform = ""; el.style.margin = ""; }
+    };
+  }, [previewMode]);
+
   const colorMap: Record<string, string> = {
     blue: "#3b82f6",
     black: "#000000",
@@ -105,230 +209,203 @@ export default function ChatPreview({
     red: "#dc2626",
     orange: "#ea580c",
   }
-  
-  // Get effective values (props override database)
-  const name = propName || chatbot?.name || "Chatbot";
-  const greeting = propGreeting || chatbot?.greeting || "How can I help you today?";
-  const directive = propDirective || chatbot?.directive || "You are a helpful assistant.";
-  const avatar = propAvatar ?? chatbot?.avatar ?? null;
-  const icon = propIcon ?? chatbot?.icon ?? null;
-  const iconSize = propIconSize || chatbot?.iconSize || 50;
-  const iconColor = propIconColor || chatbot?.iconColor || "blue";
-  const iconShape = propIconShape || getShapeTypeValue(chatbot?.iconShape) || "circle";
-  const iconBorder = propIconBorder || getBorderTypeValue(chatbot?.iconBorder) || "flat";
+
+  // ─── Resolved config values ───────────────────────────────────────────────
+
+  const name        = propName      || chatbot?.name      || "Chatbot";
+  const directive   = propDirective || chatbot?.directive || "You are a helpful assistant.";
+  const avatar      = propAvatar    ?? chatbot?.avatar    ?? null;
+  const icon        = propIcon      ?? chatbot?.icon      ?? null;
+  const iconSize    = propIconSize  || chatbot?.iconSize  || 50;
+  const iconColor   = propIconColor || chatbot?.iconColor || "blue";
+  const iconShape   = propIconShape || getShapeTypeValue(chatbot?.iconShape) || "circle";
+  const iconBorder  = propIconBorder|| getBorderTypeValue(chatbot?.iconBorder) || "flat";
   const iconBgColor = propIconBgColor || chatbot?.iconBgColor || undefined;
-  const avatarSize = propAvatarSize || chatbot?.avatarSize || 50;
+  const avatarSize  = propAvatarSize  || chatbot?.avatarSize  || 50;
   const avatarColor = propAvatarColor || chatbot?.avatarColor || "blue";
-  const avatarBorder = propAvatarBorder || getBorderTypeValue(chatbot?.avatarBorder) || "flat";
+  const avatarBorder  = propAvatarBorder  || getBorderTypeValue(chatbot?.avatarBorder) || "flat";
   const avatarBgColor = propAvatarBgColor || chatbot?.avatarBgColor || undefined;
-  const color = propColor || iconColor || avatarColor || "blue";
+  const color        = propColor       || iconColor || avatarColor || "blue";
   const borderRadius = propBorderRadius || getBorderRadiusFromBorderType(iconBorder) || "regular";
   const autoOpenChat = propAutoOpenChat ?? chatbot?.popup_onload ?? false;
   const autoGreeting = propAutoGreeting || false;
-  
-  // Get theme colors from theme object (prioritize liveTheme for live updates)
-  const themeColors = liveTheme || propTheme || (chatbot as any)?.theme || {};
-  const headerBgColor = themeColors.headerBgColor || "#1320AA";
-  const headerTextColor = themeColors.headerTextColor || "#ffffff";
-  const botMessageBgColor = themeColors.botMessageBgColor || "#f1f5f9";
-  const botMessageTextColor = themeColors.botMessageTextColor || "#0f172a";
-  const userMessageBgColor = themeColors.userMessageBgColor || "#1320AA";
-  const userMessageTextColor = themeColors.userMessageTextColor || "#ffffff";
-  const closeButtonBgColor = themeColors.closeButtonBgColor || "#DD692E";
-  const closeButtonColor = themeColors.closeButtonColor || "#000000";
-  const quickSuggestionBgColor = themeColors.quickSuggestionBgColor || "#ffffff";
-  const quickSuggestionTextColor = themeColors.quickSuggestionTextColor || "#0f172a";
-  
-  // Get widget size from live theme
-  const widgetSize = themeColors.widgetSize || 70;
-  const widgetSizeMobile = themeColors.widgetSizeMobile || 60;
-  
-  // Get suggestions (props override database)
-  const suggestions = propSuggestions.length > 0 ? propSuggestions : (chatbot?.suggestions as string[] || []);
 
-  // Helper function to convert ShapeType to string
+  // ─── Resolve greeting to a plain string for the user's language ──────────
+  //
+  // Priority:
+  //   1. propGreeting (multilingual object or legacy string) from parent
+  //   2. chatbot.greeting from DB (stored as Json[] → normalise to object first)
+  //   3. Hardcoded fallback
+  //
+  const rawGreeting: MultilingualSuggestion | string | null =
+    propGreeting
+      ? (typeof propGreeting === 'string' ? propGreeting : propGreeting)
+      : normaliseDbGreeting((chatbot as any)?.greeting)
+
+  const greetingText: string = resolveGreeting(rawGreeting, userLang)
+
+  // ─── Normalise suggestions ────────────────────────────────────────────────
+
+  const suggestions: Array<string | Record<string, string>> =
+    propSuggestions.length > 0
+      ? propSuggestions
+      : ((chatbot?.suggestions as Array<string | Record<string, string>>) || [])
+
+  // ─── Enum helpers ─────────────────────────────────────────────────────────
+
   function getShapeTypeValue(shape: ShapeType | null | undefined): string {
     if (!shape) return "circle";
     switch (shape) {
-      case ShapeType.ROUND: return "circle";
-      case ShapeType.SQUARE: return "square";
+      case ShapeType.ROUND:          return "circle";
+      case ShapeType.SQUARE:         return "square";
       case ShapeType.ROUNDED_SQUARE: return "rounded";
-      default: return "circle";
+      default:                       return "circle";
     }
   }
 
-  // Helper function to convert BorderType to string
   function getBorderTypeValue(border: BorderType | null | undefined): string {
     if (!border) return "flat";
     switch (border) {
-      case BorderType.FLAT: return "flat";
-      case BorderType.ROUND: return "rounded";
+      case BorderType.FLAT:         return "flat";
+      case BorderType.ROUND:        return "rounded";
       case BorderType.ROUNDED_FLAT: return "very-rounded";
-      default: return "flat";
+      default:                      return "flat";
     }
   }
 
-  // Helper function to convert BorderType to borderRadius
   function getBorderRadiusFromBorderType(borderType: string): string {
     switch (borderType) {
-      case "flat": return "regular";
-      case "rounded": return "rounded";
+      case "flat":         return "regular";
+      case "rounded":      return "rounded";
       case "very-rounded": return "very-rounded";
-      default: return "regular";
+      default:             return "regular";
     }
   }
-  
-  // Get color value from name or hex code
+
   const getColorValue = (colorName?: string) => {
     const col = colorName || color;
     return colorMap[col] || col || colorMap.blue;
   }
-  
-  // Get border radius value
+
   const getBorderRadiusValue = (borderRadiusType?: string) => {
     const br = borderRadiusType || borderRadius;
     switch (br) {
-      case "regular": return "0.375rem";
-      case "rounded": return "0.75rem";
+      case "regular":      return "0.375rem";
+      case "rounded":      return "0.75rem";
       case "very-rounded": return "1.5rem";
-      default: return "0.375rem";
+      default:             return "0.375rem";
     }
-  }
-  
-  // Get shape class
-  const getShapeClass = (shape?: string, borderType?: string) => {
-    const shp = shape || iconShape;
-    const border = borderType || iconBorder;
-    
-    // If border type is flat, use simpler shapes
-    if (border === "flat") {
-      switch (shp) {
-        case "circle": return "rounded-full";
-        case "square": return "rounded-none";
-        case "rounded": return "rounded-lg";
-        default: return "rounded-full";
-      }
-    }
-    
-    // For rounded borders, always use rounded styles
-    switch (border) {
-      case "rounded": return "rounded-full";
-      case "very-rounded": return "rounded-3xl";
-      default: return "rounded-lg";
-    }
-  }
-  
-  // Calculate dimensions
-  const getDimensions = (size?: number) => {
-    const baseSize = size || iconSize;
-    return Math.max(30, Math.min(100, baseSize)); // Clamp between 30-100px
   }
 
-  // Fetch chatbot data from database
-  useEffect(() => {
-    if (!useDbConfig) {
-      setIsLoadingChatbot(false);
-      return;
+  const getShapeClass = (shape?: string, borderType?: string) => {
+    const shp    = shape      || iconShape;
+    const border = borderType || iconBorder;
+
+    if (border === "flat") {
+      switch (shp) {
+        case "circle":  return "rounded-full";
+        case "square":  return "rounded-none";
+        case "rounded": return "rounded-lg";
+        default:        return "rounded-full";
+      }
     }
+    switch (border) {
+      case "rounded":      return "rounded-full";
+      case "very-rounded": return "rounded-3xl";
+      default:             return "rounded-lg";
+    }
+  }
+
+  const getDimensions = (size?: number) => Math.max(30, Math.min(100, size || iconSize));
+
+  // ─── Theme colours ────────────────────────────────────────────────────────
+
+  const themeColors             = liveTheme || propTheme || (chatbot as any)?.theme || {};
+  const headerBgColor           = themeColors.headerBgColor           || "#1320AA";
+  const headerTextColor         = themeColors.headerTextColor         || "#ffffff";
+  const botMessageBgColor       = themeColors.botMessageBgColor       || "#f1f5f9";
+  const botMessageTextColor     = themeColors.botMessageTextColor     || "#0f172a";
+  const userMessageBgColor      = themeColors.userMessageBgColor      || "#1320AA";
+  const userMessageTextColor    = themeColors.userMessageTextColor    || "#ffffff";
+  const closeButtonBgColor      = themeColors.closeButtonBgColor      || "#DD692E";
+  const closeButtonColor        = themeColors.closeButtonColor        || "#000000";
+  const quickSuggestionBgColor  = themeColors.quickSuggestionBgColor  || "#ffffff";
+  const quickSuggestionTextColor= themeColors.quickSuggestionTextColor|| "#0f172a";
+  const widgetSize              = themeColors.widgetSize              || 70;
+  const widgetSizeMobile        = themeColors.widgetSizeMobile        || 60;
+
+  // ─── Data fetching ────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (!useDbConfig) { setIsLoadingChatbot(false); return; }
 
     fetch(`/api/chatbots/${id}`)
       .then(res => {
-        if (!res.ok) {
-          throw new Error(`HTTP error! status: ${res.status}`);
-        }
+        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
         return res.json();
       })
-      .then(data => {
-        setChatbot(data);
-        setIsLoadingChatbot(false);
-      })
-      .catch(err => {
-        console.error("Error fetching chatbot data:", err);
-        setIsLoadingChatbot(false);
-      });
+      .then(data => { setChatbot(data); setIsLoadingChatbot(false); })
+      .catch(err => { console.error("Error fetching chatbot data:", err); setIsLoadingChatbot(false); });
   }, [id, useDbConfig]);
 
-  // Listen for live theme updates from parent
   useEffect(() => {
-    if (propTheme) {
-      setLiveTheme(propTheme);
-    }
+    if (propTheme) setLiveTheme(propTheme);
   }, [propTheme]);
 
-  // Initialize messages with greeting
+  // Seed initial greeting message.
+  // greetingText is already localised so we just use it directly.
   useEffect(() => {
-    if (greeting && messages.length === 0) {
-      setMessages([{ role: "assistant", content: greeting }]);
+    if (greetingText && messages.length === 0) {
+      setMessages([{ role: "assistant", content: greetingText }]);
       setShowSuggestions(true);
     }
-  }, [greeting, messages.length]);
+  }, [greetingText, messages.length]);
 
-  // Auto greeting on mount if enabled
   useEffect(() => {
-    if (autoGreeting && greeting && messages.length === 0) {
-      setMessages([{ role: "assistant", content: greeting }]);
+    if (autoGreeting && greetingText && messages.length === 0) {
+      setMessages([{ role: "assistant", content: greetingText }]);
       setShowSuggestions(true);
     }
-  }, [autoGreeting, greeting, messages.length]);
+  }, [autoGreeting, greetingText, messages.length]);
 
-  useEffect(() => {
-    scrollToBottom()
-  }, [])
+  useEffect(() => { scrollToBottom() }, [])
 
-  // Auto open chat if enabled (simulated by focusing input)
   useEffect(() => {
     if (autoOpenChat && !showPreviewControls) {
       const input = document.querySelector('input[placeholder="Ask me anything"]') as HTMLInputElement;
-      if (input) {
-        setTimeout(() => input.focus(), 500);
-      }
+      if (input) setTimeout(() => input.focus(), 500);
     }
   }, [autoOpenChat, showPreviewControls])
 
-  // Scroll to bottom when messages change
-  useEffect(() => {
-    scrollToBottom()
-  }, [messages])
+  useEffect(() => { scrollToBottom() }, [messages])
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }
 
+  // ─── Message handlers ─────────────────────────────────────────────────────
+
   const handleSendMessage = async (messageText?: string) => {
     const textToSend = messageText || message.trim();
     if (!textToSend || isLoading) return
 
-    // Clear the input if using the regular input field
-    if (!messageText) {
-      setMessage("")
-    }
-    
-    // Hide suggestions when user sends a message
+    if (!messageText) setMessage("")
     setShowSuggestions(false);
-    
-    // Add user message to chat
+
     const newMessages: Message[] = [...messages, { role: "user", content: textToSend }]
     setMessages(newMessages)
-    
     setIsLoading(true)
 
     try {
       if (onSendMessage) {
-        // Use custom message handler if provided
         const response = await onSendMessage(textToSend, newMessages.slice(0, -1))
         if (response) {
-          setMessages(prev => [...prev, { 
-            role: "assistant", 
-            content: response
-          }])
+          setMessages(prev => [...prev, { role: "assistant", content: response }])
         }
       } else {
-        // Default behavior - call API with directive
         const res = await fetch(`/api/chat`, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             input: textToSend,
             prompt: directive,
@@ -337,48 +414,37 @@ export default function ChatPreview({
           }),
         })
 
-        if (!res.ok) {
-          throw new Error(`HTTP error! status: ${res.status}`)
-        }
-
+        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`)
         const data = await res.json()
-        
-        setMessages(prev => [...prev, { 
-          role: "assistant", 
-          content: data.message || "I'm sorry, I couldn't process that request." 
+        setMessages(prev => [...prev, {
+          role: "assistant",
+          content: data.message || "I'm sorry, I couldn't process that request."
         }])
       }
-      
     } catch (error) {
       console.error("Error while sending message:", error)
-      
-      // Add error message to chat
-      setMessages(prev => [...prev, { 
-        role: "assistant", 
-        content: "Sorry, I encountered an error. Please try again." 
+      setMessages(prev => [...prev, {
+        role: "assistant",
+        content: "Sorry, I encountered an error. Please try again."
       }])
     } finally {
       setIsLoading(false)
     }
   }
 
-  const handleSuggestionClick = (suggestion: string) => {
-    handleSendMessage(suggestion);
-  }
+  const handleSuggestionClick = (text: string) => handleSendMessage(text)
 
   const handleRestartChat = () => {
-    setMessages([{ role: "assistant", content: greeting }]);
+    setMessages([{ role: "assistant", content: greetingText }]);
     setShowSuggestions(true);
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault()
-      handleSendMessage()
-    }
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSendMessage() }
   }
 
-  // Render avatar/icon component
+  // ─── Avatar / icon renderer ───────────────────────────────────────────────
+
   const renderAvatarIcon = ({
     type = "icon",
     size,
@@ -387,51 +453,41 @@ export default function ChatPreview({
     bgColor,
     colorValue,
   }: {
-    type?: "avatar" | "icon";
-    size?: number;
-    shape?: string;
-    border?: string;
-    bgColor?: string;
-    colorValue: string;
+    type?: "avatar" | "icon"
+    size?: number
+    shape?: string
+    border?: string
+    bgColor?: string
+    colorValue: string
   }) => {
-    const dim = getDimensions(size);
+    const dim        = getDimensions(size);
     const shapeClass = getShapeClass(shape, border);
-    const imageSrc = type === "avatar" ? avatar : icon;
-    
+    const imageSrc   = type === "avatar" ? avatar : icon;
+
     return (
-      <div 
-        className={`shrink-0 overflow-hidden flex items-center justify-center border border-border`}
-        style={{
-          width: `${dim}px`,
-          height: `${dim}px`,
-          backgroundColor: bgColor || colorValue,
-        }}
+      <div
+        className="shrink-0 overflow-hidden flex items-center justify-center border border-border"
+        style={{ width: `${dim}px`, height: `${dim}px`, backgroundColor: bgColor || colorValue }}
       >
         {imageSrc ? (
-          <img 
-            src={imageSrc} 
-            alt={`${name} ${type}`} 
-            className={`w-full h-full object-cover ${shapeClass}`}
-          />
+          <img src={imageSrc} alt={`${name} ${type}`} className={`w-full h-full object-cover ${shapeClass}`} />
         ) : (
-          <div 
+          <div
             className={`w-full h-full flex items-center justify-center ${shapeClass}`}
             style={{ backgroundColor: colorValue }}
           >
-            <span className="text-white font-bold text-lg">
-              {name?.charAt(0) || "C"}
-            </span>
+            <span className="text-white font-bold text-lg">{name?.charAt(0) || "C"}</span>
           </div>
         )}
       </div>
     );
   }
 
-  // Show loading skeleton while fetching chatbot data
+  // ─── Loading skeleton ─────────────────────────────────────────────────────
+
   if (isLoadingChatbot && useDbConfig) {
     return (
       <div className="h-full flex flex-col">
-        {/* Header Skeleton */}
         {showPreviewControls && (
           <div className="flex items-center justify-between px-6 py-4 border-b">
             <div className="h-6 w-24 bg-gray-200 rounded animate-pulse" />
@@ -442,10 +498,7 @@ export default function ChatPreview({
             </div>
           </div>
         )}
-
-        {/* Chat Area Skeleton */}
         <div className="flex-1 overflow-y-auto p-6 bg-background space-y-4">
-          {/* Avatar + Message Skeleton */}
           <div className="flex gap-3">
             <div className="w-12 h-12 bg-gray-200 rounded-full animate-pulse shrink-0" />
             <div className="flex-1 space-y-2">
@@ -453,8 +506,6 @@ export default function ChatPreview({
               <div className="h-4 w-1/2 bg-gray-200 rounded animate-pulse" />
             </div>
           </div>
-
-          {/* Quick Suggestions Skeleton */}
           <div className="space-y-3 mt-6">
             <div className="h-4 w-32 bg-gray-200 rounded animate-pulse" />
             <div className="flex flex-wrap gap-2">
@@ -464,8 +515,6 @@ export default function ChatPreview({
             </div>
           </div>
         </div>
-
-        {/* Input Area Skeleton */}
         <div className="p-6 border-t bg-background">
           <div className="flex items-center gap-3">
             <div className="flex-1 h-10 bg-gray-200 rounded animate-pulse" />
@@ -476,41 +525,16 @@ export default function ChatPreview({
     );
   }
 
-  return (
-    <div className="h-full flex flex-col">
-      {/* Preview Header */}
-      {showPreviewControls && (
-        <div className="flex items-center justify-between px-6 py-4 border-b">
-          <h2 className="text-lg font-semibold">Preview</h2>
-          <div className="flex items-center gap-2">
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              className="text-sm"
-              onClick={handleRestartChat}
-            >
-              <RefreshCw className="w-4 h-4 mr-2" />
-              Restart Chat
-            </Button>
-            <Button variant="ghost" size="icon" className="w-9 h-9">
-              <Monitor className="w-4 h-4" />
-            </Button>
-            <Button variant="ghost" size="icon" className="w-9 h-9">
-              <Smartphone className="w-4 h-4" />
-            </Button>
-          </div>
-        </div>
-      )}
+  // ─── Shared chat content ──────────────────────────────────────────────────
 
-      {/* Chat Area */}
-      <div 
-        ref={chatAreaRef}
-        className="flex-1 overflow-y-auto no-scrollbar p-6 bg-background"
-      >
-        {/* Greeting/Initial Message */}
+  const chatContent = (
+    <div className="h-full flex flex-col">
+      <div ref={chatAreaRef} className="flex-1 overflow-y-auto no-scrollbar p-4 bg-background">
+
+        {/* First greeting message */}
         {messages.length > 0 && (
           <div className="mb-4">
-            {showPreviewControls && (
+            {showPreviewControls && previewMode === "desktop" && (
               <p className="text-xs text-muted-foreground mb-3">{name}</p>
             )}
             <div className="flex gap-3">
@@ -522,22 +546,22 @@ export default function ChatPreview({
                 bgColor: avatar ? avatarBgColor : iconBgColor,
                 colorValue: getColorValue(avatar ? avatarColor : iconColor),
               })}
-              
-              <Card 
-                className="p-4 max-w-md border"
-                style={{ 
+              <Card
+                className="p-3 max-w-[80%] border"
+                style={{
                   borderRadius: getBorderRadiusValue(),
                   backgroundColor: botMessageBgColor,
                   color: botMessageTextColor,
                 }}
               >
+                {/* greetingText is already a resolved string — render directly */}
                 <p className="text-sm">{messages[0]?.content}</p>
               </Card>
             </div>
           </div>
         )}
 
-        {/* Suggestions Section - Only show when chat is new/restarted */}
+        {/* Quick suggestions */}
         {showSuggestions && suggestions.length > 0 && messages.length === 1 && (
           <div className="mb-6">
             <div className="flex items-center gap-2 mb-3">
@@ -545,32 +569,37 @@ export default function ChatPreview({
               <p className="text-xs text-muted-foreground font-medium">Quick suggestions</p>
             </div>
             <div className="flex flex-wrap gap-2">
-              {suggestions.map((suggestion, index) => (
-                <Button
-                  key={index}
-                  variant="outline"
-                  size="sm"
-                  className="text-xs h-8 px-3 whitespace-normal text-left hover:opacity-80 cursor-pointer"
-                  style={{ 
-                    borderRadius: getBorderRadiusValue(),
-                    backgroundColor: quickSuggestionBgColor,
-                    color: quickSuggestionTextColor,
-                    borderColor: quickSuggestionTextColor + '20',
-                  }}
-                  onClick={() => handleSuggestionClick(suggestion)}
-                  disabled={isLoading}
-                >
-                  {suggestion}
-                </Button>
-              ))}
+              {suggestions.map((suggestion, index) => {
+                // Resolve multilingual object → plain string for this user's language
+                const text = resolveLocalizedSuggestion(suggestion, userLang)
+                if (!text) return null
+                return (
+                  <Button
+                    key={index}
+                    variant="outline"
+                    size="sm"
+                    className="text-xs h-8 px-3 whitespace-normal text-left hover:opacity-80 cursor-pointer"
+                    style={{
+                      borderRadius: getBorderRadiusValue(),
+                      backgroundColor: quickSuggestionBgColor,
+                      color: quickSuggestionTextColor,
+                      borderColor: quickSuggestionTextColor + '20',
+                    }}
+                    onClick={() => handleSuggestionClick(text)}
+                    disabled={isLoading}
+                  >
+                    {text}
+                  </Button>
+                )
+              })}
             </div>
           </div>
         )}
 
-        {/* Display all messages (except first greeting message) */}
+        {/* Remaining messages (skip the first greeting) */}
         {messages.slice(1).map((msg, index) => (
-          <div 
-            key={index} 
+          <div
+            key={index}
             className={`mb-4 ${msg.role === "user" ? "flex justify-end" : "flex gap-3"}`}
           >
             {msg.role === "assistant" && (
@@ -583,24 +612,28 @@ export default function ChatPreview({
                 colorValue: getColorValue(avatar ? avatarColor : iconColor),
               })
             )}
-            <Card 
-              className="p-4 max-w-md border"
-              style={{ 
+            <Card
+              className="p-3 max-w-[80%] border"
+              style={{
                 borderRadius: getBorderRadiusValue(),
                 backgroundColor: msg.role === "user" ? userMessageBgColor : botMessageBgColor,
                 color: msg.role === "user" ? userMessageTextColor : botMessageTextColor,
               }}
             >
-              <div className="text-sm whitespace-pre-wrap"
-                dangerouslySetInnerHTML={{ 
-                  __html: sanitizedHTML(msg.content).replace(/<a /g, `<a target="_blank" rel="noopener noreferrer" `)
+              <div
+                className="text-sm whitespace-pre-wrap"
+                dangerouslySetInnerHTML={{
+                  __html: sanitizedHTML(msg.content).replace(
+                    /<a /g,
+                    `<a target="_blank" rel="noopener noreferrer" `
+                  )
                 }}
               />
             </Card>
           </div>
         ))}
 
-        {/* Loading indicator */}
+        {/* Typing indicator */}
         {isLoading && (
           <div className="mb-4 flex gap-3">
             {renderAvatarIcon({
@@ -611,9 +644,9 @@ export default function ChatPreview({
               bgColor: avatar ? avatarBgColor : iconBgColor,
               colorValue: getColorValue(avatar ? avatarColor : iconColor),
             })}
-            <Card 
-              className="p-4 max-w-md border"
-              style={{ 
+            <Card
+              className="p-3 max-w-[80%] border"
+              style={{
                 borderRadius: getBorderRadiusValue(),
                 backgroundColor: botMessageBgColor,
                 color: botMessageTextColor,
@@ -621,31 +654,28 @@ export default function ChatPreview({
             >
               <div className="flex items-center space-x-3">
                 <div className="flex space-x-1.5">
-                  {[0, 150, 300].map((delay, i) => (
-                    <div 
-                      key={delay} 
-                      className="w-2.5 h-2.5 rounded-full bg-gradient-to-br from-primary/80 to-primary animate-bounce" 
-                      style={{ 
-                        animationDelay: `${delay}ms`,
-                        animationDuration: '1s',
-                        animationIterationCount: 'infinite'
-                      }} 
+                  {[0, 150, 300].map((delay) => (
+                    <div
+                      key={delay}
+                      className="w-2.5 h-2.5 rounded-full bg-gradient-to-br from-primary/80 to-primary animate-bounce"
+                      style={{ animationDelay: `${delay}ms`, animationDuration: '1s', animationIterationCount: 'infinite' }}
                     />
                   ))}
                 </div>
-                <p className="text-sm font-medium bg-gradient-to-r from-primary/80 to-primary bg-clip-text text-transparent animate-pulse">Thinking...</p>
+                <p className="text-sm font-medium bg-gradient-to-r from-primary/80 to-primary bg-clip-text text-transparent animate-pulse">
+                  Thinking...
+                </p>
               </div>
             </Card>
           </div>
         )}
 
-        {/* Scroll anchor */}
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Chat Input */}
-      <div className="p-6 border-t bg-background">
-        <div className="flex items-center gap-3">
+      {/* Input bar */}
+      <div className="p-3 border-t bg-background">
+        <div className="flex items-center gap-2">
           <Input
             value={message}
             onChange={(e) => setMessage(e.target.value)}
@@ -655,22 +685,144 @@ export default function ChatPreview({
             style={{ borderRadius: getBorderRadiusValue() }}
             disabled={isLoading || isLoadingChatbot}
           />
-          <Button 
-            size="icon" 
-            variant="ghost" 
+          <Button
+            size="icon"
+            variant="ghost"
             className="shrink-0"
             onClick={() => handleSendMessage()}
             disabled={isLoading || !message.trim() || isLoadingChatbot}
             style={{ borderRadius: getBorderRadiusValue() }}
           >
-            {isLoading ? (
-              <Loader2 className="w-5 h-5 animate-spin" />
-            ) : (
-              <Send className="w-5 h-5" />
-            )}
+            {isLoading
+              ? <Loader2 className="w-5 h-5 animate-spin" />
+              : <Send className="w-5 h-5" />
+            }
           </Button>
         </div>
       </div>
+    </div>
+  );
+
+  // ─── Root render ──────────────────────────────────────────────────────────
+
+  return (
+    <div className="h-full flex flex-col">
+      {/* Preview controls */}
+      {showPreviewControls && (
+        <div className="flex items-center justify-between px-6 py-4 border-b">
+          <h2 className="text-lg font-semibold">Preview</h2>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" className="text-sm" onClick={handleRestartChat}>
+              <RefreshCw className="w-4 h-4 mr-2" />
+              Restart Chat
+            </Button>
+            <Button
+              variant="ghost" size="icon"
+              className={`w-9 h-9 ${previewMode === "desktop" ? "bg-accent text-accent-foreground" : ""}`}
+              onClick={() => setPreviewMode("desktop")}
+              title="Desktop view"
+            >
+              <Monitor className="w-4 h-4" />
+            </Button>
+            <Button
+              variant="ghost" size="icon"
+              className={`w-9 h-9 ${previewMode === "mobile" ? "bg-accent text-accent-foreground" : ""}`}
+              onClick={() => setPreviewMode("mobile")}
+              title="Mobile view"
+            >
+              <Smartphone className="w-4 h-4" />
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Desktop */}
+      {previewMode === "desktop" || !showPreviewControls ? (
+        <div className="flex-1 overflow-hidden">{chatContent}</div>
+      ) : (
+        /* Mobile phone frame */
+        <div className="flex-1 flex items-center justify-center bg-muted/30 overflow-hidden">
+          <div
+            ref={phoneWrapRef}
+            style={{ width: `${PHONE_W}px`, height: `${PHONE_H}px`, transformOrigin: "center center", flexShrink: 0 }}
+          >
+            <div
+              className="relative flex flex-col"
+              style={{
+                width: `${PHONE_W}px`, height: `${PHONE_H}px`,
+                borderRadius: "44px", background: "#1a1a1a", padding: "12px",
+                boxShadow: "0 0 0 1px #333, 0 25px 60px rgba(0,0,0,0.5), inset 0 0 0 2px #444",
+              }}
+            >
+              {/* Buttons */}
+              <div className="absolute" style={{ left: "-3px", top: "100px", width: "3px", height: "32px", background: "#333", borderRadius: "2px 0 0 2px" }} />
+              <div className="absolute" style={{ left: "-3px", top: "144px", width: "3px", height: "32px", background: "#333", borderRadius: "2px 0 0 2px" }} />
+              <div className="absolute" style={{ right: "-3px", top: "130px", width: "3px", height: "60px", background: "#333", borderRadius: "0 2px 2px 0" }} />
+
+              {/* Screen */}
+              <div className="flex-1 flex flex-col overflow-hidden bg-background" style={{ borderRadius: "34px" }}>
+                {/* Status bar */}
+                <div
+                  className="shrink-0 flex items-center justify-between px-6 pt-2 pb-1"
+                  style={{ background: headerBgColor }}
+                >
+                  <div
+                    className="absolute left-1/2 -translate-x-1/2"
+                    style={{ top: "20px", width: "120px", height: "34px", background: "#1a1a1a", borderRadius: "20px", zIndex: 10 }}
+                  />
+                  <span className="text-xs font-semibold" style={{ color: headerTextColor }}>9:41</span>
+                  <div className="flex items-center gap-1.5">
+                    <svg width="16" height="12" viewBox="0 0 16 12" fill="none">
+                      <rect x="0"    y="6" width="3"   height="6"  rx="1" fill={headerTextColor} fillOpacity="0.5" />
+                      <rect x="4.5"  y="4" width="3"   height="8"  rx="1" fill={headerTextColor} fillOpacity="0.7" />
+                      <rect x="9"    y="2" width="3"   height="10" rx="1" fill={headerTextColor} fillOpacity="0.9" />
+                      <rect x="13.5" y="0" width="2.5" height="12" rx="1" fill={headerTextColor} />
+                    </svg>
+                    <svg width="16" height="12" viewBox="0 0 16 12" fill="none">
+                      <path d="M8 9.5a1.5 1.5 0 100 3 1.5 1.5 0 000-3z" fill={headerTextColor} />
+                      <path d="M4.5 7C5.8 5.7 6.8 5 8 5s2.2.7 3.5 2" stroke={headerTextColor} strokeWidth="1.5" strokeLinecap="round" />
+                      <path d="M2 4.5C3.8 2.6 5.7 1.5 8 1.5s4.2 1.1 6 3" stroke={headerTextColor} strokeWidth="1.5" strokeLinecap="round" />
+                    </svg>
+                    <svg width="25" height="12" viewBox="0 0 25 12" fill="none">
+                      <rect x="0.5" y="0.5" width="21" height="11" rx="3.5" stroke={headerTextColor} strokeOpacity="0.35" />
+                      <rect x="2"   y="2"   width="15" height="8"  rx="2"   fill={headerTextColor} />
+                      <path d="M23 4v4a2 2 0 000-4z" fill={headerTextColor} fillOpacity="0.4" />
+                    </svg>
+                  </div>
+                </div>
+
+                {/* Chat header */}
+                <div
+                  className="shrink-0 flex items-center gap-3 px-4 py-3"
+                  style={{ background: headerBgColor, paddingTop: "16px" }}
+                >
+                  <div
+                    className="shrink-0 overflow-hidden flex items-center justify-center"
+                    style={{ width: "32px", height: "32px", borderRadius: "50%", backgroundColor: getColorValue(iconColor) }}
+                  >
+                    {icon
+                      ? <img src={icon} alt={name} className="w-full h-full object-cover" />
+                      : <span className="text-white font-bold text-sm">{name?.charAt(0) || "C"}</span>
+                    }
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold leading-none" style={{ color: headerTextColor }}>{name}</p>
+                    <p className="text-xs mt-0.5 opacity-70" style={{ color: headerTextColor }}>Online</p>
+                  </div>
+                </div>
+
+                {/* Chat area */}
+                <div className="flex-1 overflow-hidden">{chatContent}</div>
+
+                {/* Home indicator */}
+                <div className="shrink-0 flex justify-center pb-2 pt-1 bg-background">
+                  <div style={{ width: "120px", height: "4px", background: "#333", borderRadius: "2px", opacity: 0.3 }} />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
