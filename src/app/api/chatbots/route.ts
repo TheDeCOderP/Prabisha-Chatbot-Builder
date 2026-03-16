@@ -205,7 +205,23 @@ export async function POST(request: NextRequest) {
           `,
           workspaceId: workspaceId,
           // Default chatbot settings
-          greeting: "Hi there! How can I help you today?",
+          greeting: [
+  {
+            "en": "How can I help you today?",
+            "ar": "كيف يمكنني مساعدتك اليوم؟",
+            "fr": "Comment puis-je vous aider aujourd'hui ?",
+            "es": "¿Cómo puedo ayudarte hoy?",
+            "de": "Wie kann ich Ihnen heute helfen?",
+            "pt": "Como posso ajudar hoje?",
+            "it": "Come posso aiutarti oggi?",
+            "nl": "Hoe kan ik je vandaag helpen?",
+            "ru": "Чем я могу вам помочь сегодня?",
+            "zh": "今天我能为您提供什么帮助？",
+            "ja": "今日はどのようなご用件でしょうか？",
+            "ko": "오늘 무엇을 도와드릴까요?",
+            "hi": "आज मैं आपकी क्या मदद कर सकता हूँ?"
+          }
+        ],
           model: "gemini-1.5-flash",
           max_tokens: 500,
           temperature: 0.7,
