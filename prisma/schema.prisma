@@ -34,9 +34,9 @@ model Workspace {
   name      String
   createdAt DateTime @default(now())
 
+  chatbots     Chatbot[]
   members      WorkspaceMember[]
   invitations  WorkspaceInvitation[] // Added this
-  chatbots     Chatbot[]
 }
 
 model WorkspaceMember {
@@ -110,6 +110,7 @@ model Chatbot {
   theme          ChatbotTheme?
   
   leads          Lead[]
+  connections    Connections[]
   conversations  Conversation[]
   knowledgeBases KnowledgeBase[]
   documentVectors DocumentVector[]
@@ -467,4 +468,68 @@ model WorkspaceInvitation {
   @@index([invitedToId])
   @@index([workspaceId, invitedToId, status])
   @@index([memberId])
+}
+
+enum Platform {
+  LINKEDIN
+  FACEBOOK
+  INSTAGRAM
+}
+
+model Connections {
+  id                String                @id @default(cuid())
+  chatbotId         String
+
+  platform          Platform
+  accessToken       String                @db.Text
+  refreshToken      String?               @db.Text
+  tokenExpiresAt    DateTime?
+
+  platformUserId    String
+  platformUsername  String
+  platformUserImage String?
+
+  lastSyncedAt      DateTime              @default(now())
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  // Relations
+  chatbot           Chatbot          @relation(fields: [chatbotId], references: [id], onDelete: Cascade)
+  
+  @@unique([platform, platformUserId])
+}
+
+model CommentReply {
+  id     String @id @default(cuid())
+
+  // Original comment details
+  platformCommentId String // NOT unique - user can comment multiple times
+  commentAuthorId   String // Author ID from the platform
+  commentAuthorName String?
+  commentText       String   @db.Text
+  commentCreatedAt  DateTime
+
+  // Our reply details
+  replyText       String  @db.Text
+  platformReplyId String? // The ID of our reply on the platform
+
+  // Status tracking
+  status       String  @default("PENDING") // PENDING, SENT, FAILED
+  errorMessage String? @db.Text
+
+  // Thread/context tracking
+  parentCommentId String? // If this comment is a reply to another comment
+  threadId        String? // To track entire conversation threads
+
+  // Additional metadata
+  platform Platform
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([platformCommentId])
+  @@index([commentAuthorId])
+  @@index([platformReplyId])
+  @@index([status])
+  @@index([createdAt])
 }
