@@ -206,26 +206,72 @@ export async function POST(request: NextRequest) {
           workspaceId: workspaceId,
           // Default chatbot settings
           greeting: [
-  {
-            "en": "How can I help you today?",
-            "ar": "كيف يمكنني مساعدتك اليوم؟",
-            "fr": "Comment puis-je vous aider aujourd'hui ?",
-            "es": "¿Cómo puedo ayudarte hoy?",
-            "de": "Wie kann ich Ihnen heute helfen?",
-            "pt": "Como posso ajudar hoje?",
-            "it": "Come posso aiutarti oggi?",
-            "nl": "Hoe kan ik je vandaag helpen?",
-            "ru": "Чем я могу вам помочь сегодня?",
-            "zh": "今天我能为您提供什么帮助？",
-            "ja": "今日はどのようなご用件でしょうか？",
-            "ko": "오늘 무엇을 도와드릴까요?",
-            "hi": "आज मैं आपकी क्या मदद कर सकता हूँ?"
-          }
-        ],
+            {
+              "en": "How can I help you today?",
+              "ar": "كيف يمكنني مساعدتك اليوم؟",
+              "fr": "Comment puis-je vous aider aujourd'hui ?",
+              "es": "¿Cómo puedo ayudarte hoy?",
+              "de": "Wie kann ich Ihnen heute helfen?",
+              "pt": "Como posso ajudar hoje?",
+              "it": "Come posso aiutarti oggi?",
+              "nl": "Hoe kan ik je vandaag helpen?",
+              "ru": "Чем я могу вам помочь сегодня?",
+              "zh": "今天我能为您提供什么帮助？",
+              "ja": "今日はどのようなご用件でしょうか？",
+              "ko": "오늘 무엇을 도와드릴까요?",
+              "hi": "आज मैं आपकी क्या मदद कर सकता हूँ?"
+            }
+          ],
           model: "gemini-1.5-flash",
           max_tokens: 500,
           temperature: 0.7,
-          suggestions: ["How can I contact support?", "What are your business hours?", "Can I schedule a demo?"]
+          suggestions: [
+            {
+              "en": "How can I contact support?",
+              "ar": "كيف يمكنني الاتصال بالدعم؟",
+              "fr": "Comment puis-je contacter le support ?",
+              "es": "¿Cómo puedo contactar con el soporte?",
+              "de": "Wie kann ich den Support kontaktieren?",
+              "pt": "Como posso contactar o suporte?",
+              "it": "Come posso contattare l'assistenza?",
+              "nl": "Hoe kan ik contact opnemen met de ondersteuning?",
+              "ru": "Как я могу связаться со службой поддержки?",
+              "zh": "如何联系客户支持？",
+              "ja": "サポートへの問い合わせ方法を教えてください。",
+              "ko": "고객 지원에 어떻게 문의하나요?",
+              "hi": "मैं सहायता टीम से कैसे संपर्क कर सकता हूँ?"
+            },
+            {
+              "en": "What are your business hours?",
+              "ar": "ما هي ساعات العمل الخاصة بكم؟",
+              "fr": "Quelles sont vos heures d'ouverture ?",
+              "es": "¿Cuál es su horario comercial?",
+              "de": "Was sind Ihre Geschäftszeiten?",
+              "pt": "Qual é o seu horário de funcionamento?",
+              "it": "Quali sono i vostri orari di apertura?",
+              "nl": "Wat zijn uw openingstijden?",
+              "ru": "Каков ваш график работы?",
+              "zh": "您的营业时间是什么时候？",
+              "ja": "営業時間を教えてください。",
+              "ko": "영업 시간은 어떻게 되나요?",
+              "hi": "आपके व्यवसाय के घंटे क्या हैं?"
+            },
+            {
+              "en": "Can I schedule a demo?",
+              "ar": "هل يمكنني تحديد موعد للعرض التجريبي؟",
+              "fr": "Puis-je planifier une démonstration ?",
+              "es": "¿Puedo programar una demostración?",
+              "de": "Kann ich eine Demo vereinbaren?",
+              "pt": "Posso agendar uma demonstração?",
+              "it": "Posso prenotare una demo?",
+              "nl": "Kan ik een demo inplannen?",
+              "ru": "Могу ли я запланировать демо-презентацию?",
+              "zh": "我可以预约演示吗？",
+              "ja": "デモを予約することはできますか？",
+              "ko": "데모 일정을 잡을 수 있을까요?",
+              "hi": "क्या मैं डेमो शेड्यूल कर सकता हूँ?"
+            }
+          ]
         }
       });
 

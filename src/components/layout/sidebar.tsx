@@ -20,6 +20,7 @@ import {
   Sun,
   NotebookPen,
   UserRoundPlus,
+  Link,
 } from "lucide-react"
 import {
   Sidebar,
@@ -163,6 +164,11 @@ export default function AppSidebar({ ...props }: React.ComponentProps<typeof Sid
             icon: Bot,
             title: "AI Model",
             url: `/chatbots/${id}/models`,
+          },
+          {
+            icon: Link,
+            title: "Connections",
+            url: `/chatbots/${id}/connections`,
           },
         ],
       },
