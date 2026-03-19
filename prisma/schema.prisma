@@ -80,17 +80,7 @@ model Chatbot {
   suggestions Json[] @default([]) @db.Json
 
   icon        String?
-  iconSize    Int?
-  iconColor   String?
-  iconShape   ShapeType  @default(ROUND)
-  iconBorder  BorderType @default(FLAT)
-  iconBgColor String?
-
-  avatar        String?
-  avatarSize    Int?
-  avatarColor   String?
-  avatarBorder  BorderType @default(FLAT)
-  avatarBgColor String?
+  avatar       String?
 
   popup_onload  Boolean @default(false)
 
@@ -286,12 +276,21 @@ enum SenderType {
   BOT
 }
 
+enum MessageType {
+  COMMENT
+  PRIVATE_REPLY
+  DIRECT_MESSAGE
+}
+
 model Conversation {
   id        String  @id @default(cuid())
   title     String?
   chatbotId String
   userId    String?
   leadId    String?
+
+  // Context
+  mediaId           String?  // If message is on a post/reel
 
   isActive Boolean @default(true)
   metadata Json?
@@ -315,8 +314,15 @@ model Conversation {
 model Message {
   id         String     @id @default(cuid())
   content    String     @db.Text
-  senderType SenderType
+  senderType  SenderType
+  messageType MessageType @default(DIRECT_MESSAGE)
 
+  // Sender/Recipient info
+  parentId          String?  // If reply to another message (comment ID or message ID)
+  senderId          String?   // Platform user ID
+  senderName        String?
+  recipientId       String?  // For DMs, who it was sent to
+  
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -471,9 +477,17 @@ model WorkspaceInvitation {
 }
 
 enum Platform {
-  LINKEDIN
-  FACEBOOK
   INSTAGRAM
+  FACEBOOK
+  MESSENGER
+  LINKEDIN
+}
+
+enum Frequency {
+  HOURLY
+  DAILY
+  WEEKLY
+  MANUAL
 }
 
 model Connections {
@@ -492,44 +506,43 @@ model Connections {
   lastSyncedAt      DateTime              @default(now())
   createdAt         DateTime              @default(now())
   updatedAt         DateTime              @updatedAt
+  isActive          Boolean               @default(true)
 
   // Relations
   chatbot           Chatbot          @relation(fields: [chatbotId], references: [id], onDelete: Cascade)
-  
+  configuration     ConnectionConfiguration?
   @@unique([platform, platformUserId])
 }
 
-model CommentReply {
-  id     String @id @default(cuid())
+model ConnectionConfiguration {
+  id            String   @id @default(cuid())
+  connectionsId String   @unique
 
-  // Original comment details
-  platformCommentId String // NOT unique - user can comment multiple times
-  commentAuthorId   String // Author ID from the platform
-  commentAuthorName String?
-  commentText       String   @db.Text
-  commentCreatedAt  DateTime
+  // ── Scheduling ────────────────────────────────────────────────
+  scheduleFrequency Frequency @default(DAILY)
+  windowHours       Int               @default(24)   // look-back window for posts/comments
+  lastRunAt         DateTime?                         // when the job last executed
+  nextRunAt         DateTime?                         // used by scheduler to decide when to fire
 
-  // Our reply details
-  replyText       String  @db.Text
-  platformReplyId String? // The ID of our reply on the platform
+  // ── Feature toggles ───────────────────────────────────────────
+  autoReplyComment  Boolean @default(false)  // reply publicly to comments
+  autoSendPrivateDM Boolean @default(false)  // send private reply / DM
 
-  // Status tracking
-  status       String  @default("PENDING") // PENDING, SENT, FAILED
-  errorMessage String? @db.Text
+  // ── Rate limiting ─────────────────────────────────────────────
+  maxRepliesPerRun    Int @default(20)  // hard cap per cron execution
+  replyDelaySeconds   Int @default(0)   // artificial delay between replies (anti-spam)
+  userCooldownHours   Int @default(24)  // don't message the same user within N hours
 
-  // Thread/context tracking
-  parentCommentId String? // If this comment is a reply to another comment
-  threadId        String? // To track entire conversation threads
-
-  // Additional metadata
-  platform Platform
+  // ── Keyword filters ───────────────────────────────────────────
+  // Only reply to comments containing one of these words (empty = reply to all)
+  filterKeywords      String[] @default([])
+  // Never reply to comments containing one of these words
+  skipKeywords        String[] @default([])
+  // When true, filterKeywords acts as an allow-list (comments MUST match)
+  replyOnlyToKeywords Boolean  @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([platformCommentId])
-  @@index([commentAuthorId])
-  @@index([platformReplyId])
-  @@index([status])
-  @@index([createdAt])
+  connections   Connections @relation(fields: [connectionsId], references: [id], onDelete: Cascade)
 }

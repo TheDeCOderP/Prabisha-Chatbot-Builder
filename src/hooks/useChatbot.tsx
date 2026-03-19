@@ -10,11 +10,44 @@ interface ChatbotData {
   id: string;
   name: string;
   description?: string;
-  avatar?: string;
-  icon?: string;
-  // greeting is now Json[] on the server → normalised to MultilingualSuggestion here
+  // Only the two image URL fields remain on the Chatbot model.
+  // All sizing, shape, border and color styling lives in ChatbotTheme.
+  avatar?: string | null;
+  icon?: string | null;
   greeting?: MultilingualSuggestion | string | MultilingualSuggestion[] | null;
-  suggestions?: MultilingualSuggestion[] | string[]
+  suggestions?: MultilingualSuggestion[] | string[];
+  popup_onload?: boolean;
+  theme?: {
+    // Widget / toggle button
+    widgetSize?: number;
+    widgetSizeMobile?: number;
+    widgetColor?: string;
+    widgetBgColor?: string;
+    widgetShape?: string;
+    widgetBorder?: string;
+    widgetPosition?: string;
+    widgetPadding?: number;
+    widgetMargin?: number;
+    widgetIcon?: string;
+    widgetIconType?: string;
+    widgetText?: string;
+    popup_onload?: boolean;
+    // Chat window colors
+    headerBgColor?: string;
+    headerTextColor?: string;
+    botMessageBgColor?: string;
+    botMessageTextColor?: string;
+    userMessageBgColor?: string;
+    userMessageTextColor?: string;
+    inputBgColor?: string;
+    inputBorderColor?: string;
+    inputButtonColor?: string;
+    closeButtonColor?: string;
+    closeButtonBgColor?: string;
+    quickSuggestionBgColor?: string;
+    quickSuggestionTextColor?: string;
+    [key: string]: any;
+  };
   workspace?: {
     logo?: string;
     name?: string;
@@ -27,11 +60,6 @@ interface UseChatbotProps {
   initialChatbotData?: ChatbotData;
   conversationalLeadConfig?: ConversationalLeadConfig | null;
   onLeadCollected?: (data: Record<string, string>) => void;
-  /**
-   * BCP-47 language code selected by the user (e.g. 'en', 'ja', 'ar').
-   * Used to resolve the multilingual greeting and sent to the AI backend.
-   * Defaults to 'en'.
-   */
   language?: string;
 }
 
@@ -61,53 +89,35 @@ interface UseChatbotReturn {
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
   messagesEndRef: React.RefObject<HTMLDivElement | null>;
   chatContainerRef: React.RefObject<HTMLDivElement | null>;
+  lastBotMessageRef: React.RefObject<HTMLDivElement | null>;
 }
 
 // ─── Greeting helpers ─────────────────────────────────────────────────────────
 
 const FALLBACK_GREETING = '👋 Hello! How can I help you today?';
 
-/**
- * Normalise the raw DB greeting value to a plain MultilingualSuggestion object.
- *
- * DB stores Json[] → [{en:'...', fr:'...', ...}]  (1-element array)
- * Legacy rows may have a plain string.
- * In-memory chatbotData may already be a bare object.
- */
 function normaliseGreeting(
   raw: ChatbotData['greeting']
 ): MultilingualSuggestion | string | null {
   if (!raw) return null;
-
-  // Json[] → take the first element
   if (Array.isArray(raw)) {
     if (raw.length === 0) return null;
     const first = raw[0];
     if (typeof first === 'object' && first !== null) return first as MultilingualSuggestion;
-    if (typeof first === 'string') return first; // legacy plain string inside array
+    if (typeof first === 'string') return first;
     return null;
   }
-
-  // Already a plain object or legacy string — return as-is
   if (typeof raw === 'object') return raw as MultilingualSuggestion;
   if (typeof raw === 'string') return raw;
-
   return null;
 }
 
-/**
- * Resolve a normalised greeting (multilingual object or legacy string) to a
- * display string for the given language code.
- *
- * Priority: requested lang → 'en' → first non-empty value → fallback constant.
- */
 function resolveGreetingText(
   greeting: MultilingualSuggestion | string | null,
   lang: string
 ): string {
   if (!greeting) return FALLBACK_GREETING;
   if (typeof greeting === 'string') return greeting || FALLBACK_GREETING;
-
   return (
     greeting[lang]?.trim() ||
     greeting['en']?.trim() ||
@@ -115,8 +125,6 @@ function resolveGreetingText(
     FALLBACK_GREETING
   );
 }
-
-// ─── Misc helpers ─────────────────────────────────────────────────────────────
 
 function timer(label: string) {
   const start = performance.now();
@@ -127,6 +135,25 @@ function timer(label: string) {
       return parseFloat(ms);
     }
   };
+}
+
+// ─── Scroll helpers ───────────────────────────────────────────────────────────
+
+function scrollContainerToBottom(el: HTMLDivElement | null, smooth = true) {
+  if (!el) return;
+  el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'instant' });
+}
+
+function scrollToElement(
+  container: HTMLDivElement | null,
+  el: HTMLDivElement | null,
+  padding = 12
+) {
+  if (!container || !el) return;
+  container.scrollTo({
+    top: el.offsetTop - padding,
+    behavior: 'smooth',
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -153,14 +180,18 @@ export function useChatbot({
   const [mode, setMode] = useState<'streaming' | 'standard'>('standard');
   const [pendingMessage, setPendingMessage] = useState<string | null>(null);
 
-  // Keep a ref so streaming/standard handlers always read the latest values
-  // without needing to be re-created when language or chatbot changes.
   const languageRef = useRef(language);
   useEffect(() => { languageRef.current = language; }, [language]);
 
-  // Keep a ref to the latest chatbot data for use inside stable callbacks.
   const chatbotRef = useRef<ChatbotData | null>(chatbot);
   useEffect(() => { chatbotRef.current = chatbot; }, [chatbot]);
+
+  const forceScrollRef = useRef(false);
+
+  const messagesEndRef     = useRef<HTMLDivElement>(null);
+  const inputRef           = useRef<HTMLTextAreaElement>(null);
+  const chatContainerRef   = useRef<HTMLDivElement>(null);
+  const lastBotMessageRef  = useRef<HTMLDivElement>(null);
 
   // ── Conversational lead ───────────────────────────────────────────────────
 
@@ -180,27 +211,16 @@ export function useChatbot({
     onLeadCollected,
   });
 
-  const messagesEndRef    = useRef<HTMLDivElement>(null);
-  const inputRef          = useRef<HTMLTextAreaElement>(null);
-  const chatContainerRef  = useRef<HTMLDivElement>(null);
-
   // ── showWelcomeMessage ────────────────────────────────────────────────────
-  // Resolves the greeting for the *current* language at call time using the ref.
 
   const showWelcomeMessage = useCallback(() => {
     const current = chatbotRef.current;
     if (!current) return;
-
-    const normalised = normaliseGreeting(current.greeting);
+    const normalised   = normaliseGreeting(current.greeting);
     const greetingText = resolveGreetingText(normalised, languageRef.current);
-
-    setMessages([{
-      senderType: 'BOT',
-      content: greetingText,
-      createdAt: new Date(),
-    }]);
+    setMessages([{ senderType: 'BOT', content: greetingText, createdAt: new Date() }]);
     setHasLoadedInitialMessages(true);
-  }, []); // stable — reads via refs
+  }, []);
 
   // ── loadConversationMessages ──────────────────────────────────────────────
 
@@ -224,8 +244,8 @@ export function useChatbot({
         if (Array.isArray(msgs) && msgs.length > 0) {
           setMessages(msgs.map((msg: any) => ({
             senderType: msg.senderType,
-            content: msg.content,
-            createdAt: new Date(msg.createdAt),
+            content:    msg.content,
+            createdAt:  new Date(msg.createdAt),
           })));
         } else {
           showWelcomeMessage();
@@ -258,12 +278,9 @@ export function useChatbot({
       );
       if (!response.ok) throw new Error(`Failed to fetch chatbot: ${response.status}`);
       const data = await response.json();
-
-      // The GET route now guarantees greeting & suggestions are always arrays.
-      // We store the raw data as-is; normalisation happens at display time.
       setChatbot(data);
 
-      // ── Normalise suggestions ─────────────────────────────────────────────
+      // Normalise suggestions — only multilingual objects now, no plain strings
       const rawSuggestions = data.suggestions;
       let parsed: MultilingualSuggestion[] = [];
 
@@ -273,13 +290,9 @@ export function useChatbot({
           parsed = Array.isArray(arr)
             ? arr.map((s: any) => typeof s === 'string' ? { en: s } : s)
             : [];
-        } catch {
-          parsed = [];
-        }
+        } catch { parsed = []; }
       } else if (Array.isArray(rawSuggestions) && rawSuggestions.length > 0) {
-        parsed = rawSuggestions.map((s: any) =>
-          typeof s === 'string' ? { en: s } : s
-        );
+        parsed = rawSuggestions.map((s: any) => typeof s === 'string' ? { en: s } : s);
       }
 
       setQuickQuestions(parsed.length ? parsed : []);
@@ -322,36 +335,39 @@ export function useChatbot({
     }
   }, [chatbot, chatbotId, loadConversationMessages, showWelcomeMessage]);
 
-  // ── Re-render greeting when language changes (only on fresh/restarted chat) ─
-  // If the first message is the bot's greeting (no user messages yet),
-  // re-resolve it for the newly selected language.
+  // ── Re-render greeting when language changes ──────────────────────────────
 
   useEffect(() => {
     setMessages(prev => {
-      // Only update if the conversation is fresh (first message only, from BOT)
       if (prev.length !== 1 || prev[0].senderType !== 'BOT') return prev;
-
       const current = chatbotRef.current;
       if (!current) return prev;
-
-      const normalised = normaliseGreeting(current.greeting);
+      const normalised   = normaliseGreeting(current.greeting);
       const greetingText = resolveGreetingText(normalised, language);
-
-      // Avoid unnecessary re-renders
       if (prev[0].content === greetingText) return prev;
-
       return [{ ...prev[0], content: greetingText }];
     });
   }, [language]);
 
-  // ── Scroll ────────────────────────────────────────────────────────────────
+  // ── Smart scroll ──────────────────────────────────────────────────────────
 
   useEffect(() => {
-    if (hasLoadedInitialMessages) {
-      setTimeout(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      }, 100);
+    if (!hasLoadedInitialMessages) return;
+    const container = chatContainerRef.current;
+    if (!container) return;
+
+    if (forceScrollRef.current) {
+      forceScrollRef.current = false;
+      requestAnimationFrame(() => {
+        scrollContainerToBottom(chatContainerRef.current, false);
+      });
+      return;
     }
+
+    requestAnimationFrame(() => {
+      scrollToElement(chatContainerRef.current, lastBotMessageRef.current, 12);
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages, loading, hasLoadedInitialMessages]);
 
   useEffect(() => {
@@ -372,7 +388,6 @@ export function useChatbot({
     }]);
 
     try {
-      const tFetch = timer('streaming: fetch /api/chat/stream');
       const response = await fetch('/api/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -383,7 +398,6 @@ export function useChatbot({
           language: languageRef.current,
         }),
       });
-      tFetch.end();
 
       if (!response.ok) {
         const errData = await response.json().catch(() => ({}));
@@ -396,35 +410,27 @@ export function useChatbot({
         localStorage.setItem(`chatbot_${chatbotId}_conversation`, newConversationId);
       }
 
-      const reader = response.body!.getReader();
+      const reader  = response.body!.getReader();
       const decoder = new TextDecoder();
       let accumulated = '';
 
       setStatus('streaming');
 
-      const tStream = timer('streaming: reading stream chunks');
-      let chunkCount = 0;
-
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        chunkCount++;
-        const chunk = decoder.decode(value, { stream: true });
-        accumulated += chunk;
+        accumulated += decoder.decode(value, { stream: true });
 
         setMessages(prev => {
           const updated = [...prev];
           updated[updated.length - 1] = {
             senderType: 'BOT',
-            content: accumulated,
-            createdAt: new Date(),
+            content:    accumulated,
+            createdAt:  new Date(),
           };
           return updated;
         });
       }
-
-      const streamMs = tStream.end();
-      console.log(`   └─ chunks received: ${chunkCount}, total chars: ${accumulated.length}`);
 
       setStatus('ready');
       setLoading(false);
@@ -436,8 +442,8 @@ export function useChatbot({
         const updated = [...prev];
         updated[updated.length - 1] = {
           senderType: 'BOT',
-          content: 'Sorry, I encountered an error. Please try again.',
-          createdAt: new Date(),
+          content:    'Sorry, I encountered an error. Please try again.',
+          createdAt:  new Date(),
         };
         return updated;
       });
@@ -454,7 +460,6 @@ export function useChatbot({
     const tTotal = timer('handleStandardSubmit [total]');
 
     try {
-      const tFetch = timer('standard: fetch /api/chat');
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -465,17 +470,13 @@ export function useChatbot({
           language: languageRef.current,
         }),
       });
-      tFetch.end();
 
       if (!response.ok) {
         const errData = await response.json().catch(() => ({}));
         throw new Error(errData.error || `HTTP error! status: ${response.status}`);
       }
 
-      const tParse = timer('standard: parse JSON response');
       const data = await response.json();
-      tParse.end();
-
       console.log('Chat response:', data);
 
       if (data.conversationId && data.conversationId !== conversationId) {
@@ -486,8 +487,8 @@ export function useChatbot({
       setStatus('streaming');
       setMessages(prev => [...prev, {
         senderType: 'BOT',
-        content: data.message || data.response,
-        createdAt: new Date(),
+        content:    data.message || data.response,
+        createdAt:  new Date(),
       }]);
 
       setTimeout(() => {
@@ -500,8 +501,8 @@ export function useChatbot({
       setLoading(false);
       setMessages(prev => [...prev, {
         senderType: 'BOT',
-        content: 'Sorry, I encountered an error. Please try again.',
-        createdAt: new Date(),
+        content:    'Sorry, I encountered an error. Please try again.',
+        createdAt:  new Date(),
       }]);
       setError(err instanceof Error ? err.message : 'Failed to send message. Please try again.');
       setTimeout(() => setStatus('ready'), 3000);
@@ -513,8 +514,10 @@ export function useChatbot({
   // ─── sendMessage ──────────────────────────────────────────────────────────
 
   const sendMessage = useCallback(async (searchQuery: string) => {
-    console.group(`🚀 sendMessage [mode=${mode}] — "${searchQuery.substring(0, 40)}..."`);
-    const tSubmit = timer('sendMessage [total including UI updates]');
+    console.group(`🚀 sendMessage [mode=${mode}] — "${searchQuery.substring(0, 40)}"`);
+    const tSubmit = timer('sendMessage [total]');
+
+    forceScrollRef.current = true;
 
     setMessages(prev => [...prev, { senderType: 'USER', content: searchQuery, createdAt: new Date() }]);
     setLoading(true);
@@ -531,6 +534,7 @@ export function useChatbot({
 
     tSubmit.end();
     console.groupEnd();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
 
   useEffect(() => {
@@ -551,6 +555,7 @@ export function useChatbot({
     if (!searchQuery) { setError('Please enter a message'); return; }
 
     if (conversationalLead.isAwaitingLeadAnswer) {
+      forceScrollRef.current = true;
       setMessages(prev => [...prev, { senderType: 'USER', content: searchQuery, createdAt: new Date() }]);
       setText('');
       setTimeout(() => inputRef.current?.focus(), 50);
@@ -619,5 +624,6 @@ export function useChatbot({
     messagesEndRef,
     inputRef,
     chatContainerRef,
+    lastBotMessageRef,
   };
 }

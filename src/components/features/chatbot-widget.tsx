@@ -247,6 +247,31 @@ function resolveSuggestion(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Theme helpers — all visual sizing/shaping comes from ChatbotTheme
+// ─────────────────────────────────────────────────────────────────────────────
+
+function getWidgetSize(theme: any, isMobile: boolean): number {
+  return isMobile
+    ? (theme?.widgetSizeMobile || 60)
+    : (theme?.widgetSize || 70);
+}
+
+function getWidgetShapeClass(theme: any): string {
+  const shape = theme?.widgetShape?.toLowerCase() || 'round';
+  switch (shape) {
+    case 'round':          return 'rounded-full';
+    case 'square':         return 'rounded-none';
+    case 'rounded_square': return 'rounded-xl';
+    default:               return 'rounded-full';
+  }
+}
+
+function getIconShapeClass(theme: any): string {
+  // Icon in the chat header / message bubbles uses widgetShape too
+  return getWidgetShapeClass(theme);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Shared small components
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -475,6 +500,7 @@ export default function ChatbotWidget({ chatbotId, initialChatbotData, onLanguag
     messagesEndRef,
     inputRef,
     chatContainerRef,
+    lastBotMessageRef,
     startLeadCollection,
     isAwaitingLeadAnswer,
     leadCollectionStatus,
@@ -486,7 +512,6 @@ export default function ChatbotWidget({ chatbotId, initialChatbotData, onLanguag
       console.log('Conversational lead submitted:', data);
       markLeadAsSubmitted();
     },
-    // Pass selectedLang so the hook re-resolves the greeting when language changes
     language: selectedLang,
   });
 
@@ -530,6 +555,7 @@ export default function ChatbotWidget({ chatbotId, initialChatbotData, onLanguag
   if (chatbotError) return <ErrorDisplay error="Failed to load chatbot" onRetry={() => window.location.reload()} />;
   if (!chatbot) return null;
 
+  // Merge live theme override on top of db theme
   const effectiveChatbot = liveTheme
     ? { ...chatbot, theme: { ...chatbot.theme, ...liveTheme } }
     : chatbot;
@@ -556,6 +582,7 @@ export default function ChatbotWidget({ chatbotId, initialChatbotData, onLanguag
       messagesEndRef={messagesEndRef}
       inputRef={inputRef}
       chatContainerRef={chatContainerRef}
+      lastBotMessageRef={lastBotMessageRef}
       activeLeadForm={activeLeadForm}
       isLeadFormVisible={isLeadFormVisible}
       isLoadingLeadConfig={isLoadingLeadConfig}
@@ -599,6 +626,7 @@ interface ChatBotProps {
   messagesEndRef: React.RefObject<HTMLDivElement | null>;
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
   chatContainerRef: React.RefObject<HTMLDivElement | null>;
+  lastBotMessageRef: React.RefObject<HTMLDivElement | null>;
   activeLeadForm: any;
   isLeadFormVisible: boolean;
   isLoadingLeadConfig: boolean;
@@ -620,7 +648,7 @@ function ChatBot({
   text, setText, status, messages, loading, error,
   hasLoadedInitialMessages, quickQuestions, conversationId, mode, setMode,
   handleSubmit, handleQuickQuestion, handleNewChat, formatTime,
-  messagesEndRef, inputRef, chatContainerRef,
+  messagesEndRef, inputRef, chatContainerRef, lastBotMessageRef,
   activeLeadForm, isLeadFormVisible, isLoadingLeadConfig, hasSubmittedLead,
   isConversationalMode, isAwaitingLeadAnswer, leadCollectionStatus,
   showLeadForm, hideLeadForm, submitLeadForm, startLeadCollection, markLeadAsSubmitted,
@@ -683,10 +711,8 @@ function ChatBot({
       const isMobileParam = params.get('is_mobile');
 
       if (isMobileParam !== null) {
-        // Use the value passed from the parent script
         setIsMobile(isMobileParam === 'true');
       } else {
-        // Fallback for direct access (non-embedded)
         setIsMobile(window.innerWidth < 768);
       }
     };
@@ -719,8 +745,10 @@ function ChatBot({
   const currentLangMeta = LANGUAGES.find(l => l.code === selectedLang);
   const dir = currentLangMeta?.dir ?? 'ltr';
 
-  const primaryLight = chatbot.theme?.primaryLight || '#E6F0FF';
-  const borderColor  = chatbot.theme?.borderColor  || '#D6E4FF';
+  // All visual theme values come from chatbot.theme
+  const th = chatbot.theme || {};
+  const primaryLight = th.inputBgColor      || '#f8fafc';
+  const borderColor  = th.inputBorderColor  || '#e2e8f0';
 
   const shellClass = [
     isMobile || isEmbedded
@@ -780,6 +808,7 @@ function ChatBot({
             onQuickQuestion={handleQuickQuestion}
             chatContainerRef={chatContainerRef}
             messagesEndRef={messagesEndRef}
+            lastBotMessageRef={lastBotMessageRef}
             formatTime={formatTime}
             chatbot={chatbot}
             hasSubmittedLead={hasSubmittedLead}
@@ -825,7 +854,7 @@ function ChatBot({
         </div>
       ) : (
         !isEmbedded && !isMobile && (
-          <ChatToggleButton onClick={() => setIsOpen(true)} chatbot={chatbot} openLabel={t('openChat')} />
+          <ChatToggleButton onClick={() => setIsOpen(true)} chatbot={chatbot} isMobile={isMobile} openLabel={t('openChat')} />
         )
       )}
     </div>
@@ -833,7 +862,7 @@ function ChatBot({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ChatHeader
+// ChatHeader — reads everything from chatbot.theme
 // ─────────────────────────────────────────────────────────────────────────────
 
 function ChatHeader({
@@ -846,9 +875,15 @@ function ChatHeader({
   closeLabel: string;
   liveLabel: string;
 }) {
-  const headerBg    = chatbot?.theme?.primaryColor     || '#111CA8';
-  const headerText  = chatbot?.theme?.headerTextColor  || '#ffffff';
-  const accentColor = chatbot?.theme?.inputButtonColor || '#DF6A2E';
+  const th = chatbot?.theme || {};
+  const headerBg      = th.headerBgColor      || '#111CA8';
+  const headerText    = th.headerTextColor    || '#ffffff';
+  const accentColor   = th.inputButtonColor   || '#DF6A2E';
+  const closeBtnBg    = th.closeButtonBgColor || '#DF6A2E';
+  const closeBtnColor = th.closeButtonColor   || '#ffffff';
+
+  // Icon image: prefer avatar (chatbot.avatar), fall back to icon (chatbot.icon)
+  const iconSrc = chatbot.avatar || chatbot.icon || '/icons/logo.png';
 
   return (
     <div
@@ -860,7 +895,7 @@ function ChatHeader({
     >
       <div className="flex items-center gap-4 min-w-0">
         <Image
-          src={chatbot.avatar || '/icons/logo.png'}
+          src={iconSrc}
           height={48} width={48}
           alt={chatbot.name || 'Assistant'}
           className="h-12 w-12 rounded-xl object-cover border border-black/10"
@@ -889,17 +924,17 @@ function ChatHeader({
               `}</style>
             </span>
           </div>
-          {/* description is always a plain string — no change needed */}
           <p className="text-xs font-semibold truncate mt-0.5" style={{ color: accentColor }}>
             {chatbot.description || 'Typically replies instantly'}
           </p>
         </div>
       </div>
 
-      { isMobile && (
+      {isMobile && (
         <button
           onClick={onClose}
-          className="border-2 border-solid border-white h-9 w-9 rounded-full bg-[#DF6A2E] text-white flex items-center justify-center hover:opacity-90 transition cursor-pointer"
+          className="border-2 border-solid border-white/40 h-9 w-9 rounded-full flex items-center justify-center hover:opacity-90 transition cursor-pointer"
+          style={{ backgroundColor: closeBtnBg, color: closeBtnColor }}
           aria-label={closeLabel}
         >
           <XIcon size={16} strokeWidth={5} />
@@ -910,26 +945,25 @@ function ChatHeader({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ChatToggleButton
+// ChatToggleButton — reads size/shape/colors entirely from chatbot.theme
 // ─────────────────────────────────────────────────────────────────────────────
 
-function ChatToggleButton({ onClick, chatbot, openLabel }: { onClick: () => void; chatbot: any; openLabel: string }) {
-  const [isMobileScreen, setIsMobileScreen] = useState(false);
-  useEffect(() => {
-    const check = () => setIsMobileScreen(window.innerWidth < 768);
-    check();
-    window.addEventListener('resize', check);
-    return () => window.removeEventListener('resize', check);
-  }, []);
-
-  const size = isMobileScreen
-    ? (chatbot.theme?.widgetSizeMobile || 60)
-    : (chatbot.theme?.widgetSize || 70);
+function ChatToggleButton({
+  onClick, chatbot, isMobile, openLabel,
+}: {
+  onClick: () => void;
+  chatbot: any;
+  isMobile: boolean;
+  openLabel: string;
+}) {
+  const size = getWidgetSize(chatbot.theme, isMobile);
+  const shapeClass = getWidgetShapeClass(chatbot.theme);
+  const imageSrc = chatbot.avatar || chatbot.icon || '/character1.png';
 
   return (
     <button
       onClick={onClick}
-      className="fixed bottom-6 right-6 rounded-full shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-110 active:scale-95 cursor-pointer"
+      className={`fixed bottom-6 right-6 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-110 active:scale-95 cursor-pointer ${shapeClass}`}
       aria-label={openLabel}
       style={{
         width: `${size}px`, height: `${size}px`,
@@ -938,10 +972,10 @@ function ChatToggleButton({ onClick, chatbot, openLabel }: { onClick: () => void
       }}
     >
       <Image
-        src={chatbot.avatar || chatbot.icon || '/character1.png'}
+        src={imageSrc}
         height={size} width={size}
         alt={chatbot.name || 'Chat'}
-        className="rounded-full w-full h-full object-contain"
+        className={`w-full h-full object-contain ${shapeClass}`}
       />
       <span className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-green-500 border-2 border-white" />
     </button>
@@ -960,6 +994,7 @@ interface ChatMessagesProps {
   onQuickQuestion: (q: string) => void;
   chatContainerRef: React.RefObject<HTMLDivElement | null>;
   messagesEndRef: React.RefObject<HTMLDivElement | null>;
+  lastBotMessageRef: React.RefObject<HTMLDivElement | null>;
   formatTime: (date?: Date) => string;
   chatbot: any;
   hasSubmittedLead: boolean;
@@ -972,49 +1007,75 @@ interface ChatMessagesProps {
 
 function ChatMessages({
   messages, loading, status, quickQuestions, onQuickQuestion,
-  chatContainerRef, messagesEndRef, formatTime, chatbot,
+  chatContainerRef, messagesEndRef, lastBotMessageRef, formatTime, chatbot,
   hasSubmittedLead, isConversationalMode, leadCollectionStatus, onLeadAction, t, selectedLang,
 }: ChatMessagesProps) {
   const { speak, stop, isPlaying } = useTextToSpeech();
   const [activeSpeakingId, setActiveSpeakingId] = useState<string | null>(null);
 
-  const th = chatbot.theme;
-  const botBg    = th?.botMessageBgColor   || '#FFFFFF';
-  const botText  = th?.botMessageTextColor || '#1E293B';
-  const userBg   = th?.userMessageBgColor  || '#111CA8';
-  const userText = th?.userMessageTextColor|| '#ffffff';
-  const accentColor = th?.inputButtonColor || '#DF6A2E';
+  const th = chatbot.theme || {};
+  const botBg    = th.botMessageBgColor   || '#FFFFFF';
+  const botText  = th.botMessageTextColor || '#1E293B';
+  const userBg   = th.userMessageBgColor  || '#111CA8';
+  const userText = th.userMessageTextColor|| '#ffffff';
+  const accentColor = th.inputButtonColor || '#DF6A2E';
 
-  const hasUserMessages  = messages.some(m => m.senderType === 'USER');
+  // Icon src: avatar preferred, fall back to icon
+  const chatIconSrc = chatbot.avatar || chatbot.icon || '/icons/logo1.png';
+  const iconShapeClass = getIconShapeClass(th);
+
+  const hasUserMessages     = messages.some(m => m.senderType === 'USER');
   const hasMultipleMessages = messages.length >= 2;
+
+  const lastBotIndex = messages.reduce<number>(
+    (acc, m, i) => (m.senderType === 'BOT' ? i : acc),
+    -1
+  );
 
   const handleSpeak = async (id: string, content: string) => {
     if (activeSpeakingId === id && isPlaying) { stop(); setActiveSpeakingId(null); }
     else { setActiveSpeakingId(id); await speak(content); }
   };
 
-  const ChatbotAvatar = ({ small = false }: { small?: boolean }) => (
-    <div className={`shrink-0 flex flex-col items-center ${small ? '' : 'w-12'}`}>
-      <Image
-        src={chatbot.icon || '/icons/logo1.png'}
-        height={small ? 32 : 50} width={small ? 32 : 50}
-        alt={chatbot.name || 'Assistant'}
-        className={`${small ? 'p-0.5' : 'p-1'} rounded-full bg-primary/10`}
-      />
-      {!small && (
-        <span className="text-[10px] text-center break-words w-full leading-tight mt-1">
-          {chatbot.name || 'Assistant'}
-        </span>
-      )}
-    </div>
-  );
+  // Avatar uses chatbot.avatar or chatbot.icon; size from theme
+  const ChatbotAvatar = ({ small = false }: { small?: boolean }) => {
+    const size = small ? 32 : (th.widgetSize || 50);
+    return (
+      <div className={`shrink-0 flex flex-col items-center ${small ? '' : ''}`} style={{ width: small ? 32 : size }}>
+        <Image
+          src={chatIconSrc}
+          height={size} width={size}
+          alt={chatbot.name || 'Assistant'}
+          className={`${small ? 'p-0.5' : 'p-1'} rounded-full bg-primary/10 object-cover ${iconShapeClass}`}
+        />
+        {!small && (
+          <span className="text-[10px] text-center break-words w-full leading-tight mt-1">
+            {chatbot.name || 'Assistant'}
+          </span>
+        )}
+      </div>
+    );
+  };
 
-  const MessageBubble = ({ message, isUser, index }: { message: Message; isUser: boolean; index: number }) => {
+  const MessageBubble = ({
+    message,
+    isUser,
+    index,
+    isLastBot,
+  }: {
+    message: Message;
+    isUser: boolean;
+    index: number;
+    isLastBot: boolean;
+  }) => {
     const id = `msg-${index}`;
     const isSpeaking = activeSpeakingId === id && isPlaying;
 
     return (
-      <div className={`flex gap-3 ${isUser ? 'flex-row-reverse' : ''}`}>
+      <div
+        ref={isLastBot ? lastBotMessageRef : undefined}
+        className={`flex gap-3 ${isUser ? 'flex-row-reverse' : ''}`}
+      >
         {!isUser && <ChatbotAvatar />}
         <div className={`relative group min-w-0 ${isUser ? 'ml-auto max-w-[85%]' : 'max-w-[85%]'}`}>
           <div
@@ -1143,6 +1204,7 @@ function ChatMessages({
             index={index}
             message={message}
             isUser={message.senderType === 'USER'}
+            isLastBot={index === lastBotIndex}
           />
         ))}
 
@@ -1158,7 +1220,6 @@ function ChatMessages({
           <div className="mt-6 flex flex-col gap-3">
             {(quickQuestions.length > 0 ? quickQuestions : DEFAULT_SUGGESTIONS)
               .map((item, i) => {
-                // resolveSuggestion handles both multilingual objects and legacy strings
                 const label = resolveSuggestion(item, selectedLang);
                 if (!label) return null;
                 return (
@@ -1166,7 +1227,12 @@ function ChatMessages({
                     key={i}
                     onClick={() => onQuickQuestion(label)}
                     disabled={loading}
-                    className="w-full py-3 px-6 rounded-full border-2 border-black bg-white text-black text-sm font-medium transition-colors hover:bg-black hover:text-white disabled:opacity-50 cursor-pointer"
+                    className="w-full py-3 px-6 rounded-full border text-sm font-medium transition-opacity hover:opacity-75 disabled:opacity-50 cursor-pointer"
+                    style={{
+                      backgroundColor: th.quickSuggestionBgColor || '#ffffff',
+                      color: th.quickSuggestionTextColor || '#0f172a',
+                      borderColor: th.inputBorderColor || '#e2e8f0',
+                    }}
                   >
                     {label}
                   </button>
@@ -1214,9 +1280,10 @@ function ChatInput({
   isAwaitingLeadAnswer, isConversationalMode, chatbot,
   selectedLang, onLanguageChange, t,
 }: ChatInputProps) {
-  const accentColor = chatbot?.theme?.inputButtonColor || '#DD692E';
-  const inputBg     = chatbot?.theme?.inputBgColor     || '#FFF4E6';
-  const borderColor = chatbot?.theme?.borderColor      || '#D6E4FF';
+  const th = chatbot?.theme || {};
+  const accentColor = th.inputButtonColor  || '#DD692E';
+  const inputBg     = th.inputBgColor      || '#ffffff';
+  const borderColor = th.inputBorderColor  || '#e2e8f0';
   const [showPicker, setShowPicker] = useState(false);
 
   const onEmojiClick = (emojiData: EmojiClickData) => {

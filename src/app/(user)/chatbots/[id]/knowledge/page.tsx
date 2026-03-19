@@ -289,7 +289,7 @@ export default function KnowledgePage() {
       "application/msword": [".doc"],
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [".docx"],
     },
-    maxSize: 2097152, // 2MB
+    maxSize: 12097152, // ~12MB
   })
 
   // Table upload dropzone
@@ -499,7 +499,7 @@ export default function KnowledgePage() {
                   <input {...getFileInputProps()} />
                   <Upload className="w-8 h-8 mx-auto mb-3 text-muted-foreground" />
                   <p className="text-sm font-medium">Click to upload or drag and drop</p>
-                  <p className="text-xs text-muted-foreground mt-1">PDF, DOCX, TXT (Max 2MB)</p>
+                  <p className="text-xs text-muted-foreground mt-1">PDF, DOCX, TXT (Max 12MB)</p>
                 </div>
 
                 {uploadedFiles.length > 0 && (
