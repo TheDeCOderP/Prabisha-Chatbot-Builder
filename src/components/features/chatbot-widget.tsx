@@ -1021,7 +1021,7 @@ function ChatMessages({
   const accentColor = th.inputButtonColor || '#DF6A2E';
 
   // Icon src: avatar preferred, fall back to icon
-  const chatIconSrc = chatbot.avatar || chatbot.icon || '/icons/logo1.png';
+  const chatIconSrc = chatbot.icon || chatbot.avatar || '/icons/logo1.png';
   const iconShapeClass = getIconShapeClass(th);
 
   const hasUserMessages     = messages.some(m => m.senderType === 'USER');
