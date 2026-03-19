@@ -26,7 +26,10 @@
     position: 'bottom-right',
     buttonColor: '#3b82f6',
     buttonTextColor: '#ffffff',
-    buttonSize: 'medium'
+    buttonSize: 'medium',
+    // Close button colors — overridden by theme.closeButtonBgColor / theme.closeButtonColor
+    closeBtnBgColor: '#DF6A2E',
+    closeBtnColor: '#ffffff',
   };
 
   let config = { ...defaults };
@@ -56,16 +59,24 @@
       const response = await fetch(`${config.baseUrl}/api/chatbots/${config.chatbotId}`);
       if (response.ok) {
         const dbConfig = await response.json();
-        config.buttonColor = dbConfig.iconBgColor || config.buttonColor;
-        config.buttonTextColor = dbConfig.iconColor || config.buttonTextColor;
-        config.iconUrl = dbConfig.icon;
-        config.iconShape = dbConfig.iconShape;
-        config.iconSize = dbConfig.iconSize;
-        config.iconBorder = dbConfig.iconBorder;
+        config.buttonColor      = dbConfig.iconBgColor  || config.buttonColor;
+        config.buttonTextColor  = dbConfig.iconColor    || config.buttonTextColor;
+        config.iconUrl          = dbConfig.icon;
+        config.iconShape        = dbConfig.iconShape;
+        config.iconSize         = dbConfig.iconSize;
+        config.iconBorder       = dbConfig.iconBorder;
 
         if (dbConfig.theme) {
-          config.widgetSize = dbConfig.theme.widgetSize || 70;
+          config.widgetSize       = dbConfig.theme.widgetSize       || 70;
           config.widgetSizeMobile = dbConfig.theme.widgetSizeMobile || 60;
+
+          // ── Dynamic close button colours ─────────────────────────────────
+          config.closeBtnBgColor  = dbConfig.theme.closeButtonBgColor || config.closeBtnBgColor;
+          config.closeBtnColor    = dbConfig.theme.closeButtonColor   || config.closeBtnColor;
+          // ─────────────────────────────────────────────────────────────────
+
+          // Widget toggle button colour from theme
+          if (dbConfig.theme.widgetBgColor) config.buttonColor = dbConfig.theme.widgetBgColor;
         }
 
         if (dbConfig.popup_onload !== undefined && userConfig.autoOpen === undefined) {
@@ -141,8 +152,7 @@
 
   // ─── Parent-side close button ───────────────────────────────────────────────
   function createCloseButton() {
-    // 1. Detect mobile state
-    if(window.innerWidth <= 768) {
+    if (window.innerWidth <= 768) {
       return; // Don't create close button on mobile, rely on in-iframe controls
     }
 
@@ -154,9 +164,9 @@
       width: 36px;
       height: 36px;
       border-radius: 50%;
-      background-color: #DF6A2E;
-      color: white;
-      border: 2px solid white; /* Added border to make the 'clip' look cleaner */
+      background-color: ${config.closeBtnBgColor};
+      color: ${config.closeBtnColor};
+      border: 2px solid rgba(255,255,255,0.4);
       cursor: pointer;
       display: none;
       align-items: center;
@@ -172,37 +182,11 @@
         <line x1="18" y1="6" x2="6" y2="18"/>
         <line x1="6" y1="6" x2="18" y2="18"/>
       </svg>`;
-    
+
     closeBtn.onmouseenter = () => { closeBtn.style.transform = 'scale(1.1)'; };
     closeBtn.onmouseleave = () => { closeBtn.style.transform = 'scale(1)'; };
     closeBtn.onclick = closeChat;
     document.body.appendChild(closeBtn);
-  }
-
-  function positionCloseButton() {
-    if (!iframe || !closeBtn || iframe.style.display === 'none') return;
-    
-    const rect = iframe.getBoundingClientRect();
-    const btnSize = 36; // Matches the width/height in CSS
-    const offset = btnSize / 2;
-
-    // Logic to handle both left and right positions
-    if (config.position.includes('right')) {
-        closeBtn.style.right = (window.innerWidth - rect.right - offset) + 'px';
-        closeBtn.style.left = 'auto';
-    } else {
-        closeBtn.style.left = (rect.left - offset) + 'px';
-        closeBtn.style.right = 'auto';
-    }
-
-    closeBtn.style.top = (rect.top - offset) + 'px';
-    
-    // Hide close button if we are in full-screen mobile mode
-    if (window.innerWidth <= 480) {
-      closeBtn.style.display = 'none';
-    } else {
-      closeBtn.style.display = 'flex';
-    }
   }
 
   function positionCloseButton() {
@@ -211,6 +195,11 @@
     // Place button centred on the top-right corner of the iframe
     closeBtn.style.top  = (rect.top  - 20) + 'px';
     closeBtn.style.left = (rect.right - 20) + 'px';
+
+    // Hide on full-screen mobile
+    closeBtn.style.display = (window.innerWidth <= 480 || iframe.style.display === 'none')
+      ? 'none'
+      : 'flex';
   }
   // ────────────────────────────────────────────────────────────────────────────
 
@@ -357,7 +346,6 @@
     // Show parent-side close button and position it over the iframe corner
     if (closeBtn) {
       closeBtn.style.display = 'flex';
-      // Use rAF so the iframe has its final position before we read getBoundingClientRect
       requestAnimationFrame(positionCloseButton);
     }
 
@@ -385,6 +373,7 @@
         if (event.data.height) iframe.style.height = event.data.height;
         positionCloseButton();
       }
+
       // Listen for theme updates from admin panel
       if (event.data.type === 'theme-update' && event.data.theme) {
         const theme = event.data.theme;
@@ -396,9 +385,22 @@
           button.style.height = `${size}px`;
         }
 
-        if (theme.widgetColor && button) {
-          button.style.backgroundColor = theme.widgetColor;
+        if (theme.widgetBgColor && button) {
+          button.style.backgroundColor = theme.widgetBgColor;
         }
+
+        // ── Live-update close button colours from admin panel ─────────────
+        if (closeBtn) {
+          if (theme.closeButtonBgColor) {
+            closeBtn.style.backgroundColor = theme.closeButtonBgColor;
+            config.closeBtnBgColor = theme.closeButtonBgColor;
+          }
+          if (theme.closeButtonColor) {
+            closeBtn.style.color = theme.closeButtonColor;
+            config.closeBtnColor = theme.closeButtonColor;
+          }
+        }
+        // ─────────────────────────────────────────────────────────────────
 
         if (theme.widgetPosition && button) {
           config.position = theme.widgetPosition.toLowerCase().replace(/([A-Z])/g, '-$1').toLowerCase();
@@ -416,7 +418,7 @@
   const processCommand = (args) => {
     const cmd    = args[0];
     const params = args[1];
-    if (cmd === 'init')  init(params);
+    if (cmd === 'init')       init(params);
     else if (cmd === 'open')  openChat();
     else if (cmd === 'close') closeChat();
   };

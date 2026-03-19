@@ -8,7 +8,6 @@ import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { RefreshCw, Monitor, Smartphone, Send, Loader2, Lightbulb } from "lucide-react"
-import { Chatbot, ShapeType, BorderType } from "../../../generated/prisma/browser";
 import { MultilingualSuggestion, getLocalizedText } from "@/providers/chatbot-provider";
 
 interface Message {
@@ -19,7 +18,7 @@ interface Message {
 interface ChatProps {
   id: string
   name?: string
-  // greeting now accepts multilingual object, legacy string, or undefined
+  // greeting accepts multilingual object, legacy string, or undefined
   greeting?: MultilingualSuggestion | string
   directive?: string
   initialMessages?: Message[]
@@ -29,27 +28,17 @@ interface ChatProps {
   // Suggestions — accepts legacy string[] or new multilingual object[]
   suggestions?: MultilingualSuggestion[]
 
-  // Theme object prop
+  // Theme object — all visual styling lives here
   theme?: any
 
-  // Legacy theme props that can override database values
+  // Simple image overrides (no size/shape/border — those come from theme)
   avatar?: string | null
   icon?: string | null
-  iconShape?: string
-  iconSize?: number
-  iconColor?: string
-  iconBorder?: string
-  iconBgColor?: string
-  avatarSize?: number
-  avatarColor?: string
-  avatarBorder?: string
-  avatarBgColor?: string
-  color?: string
-  borderRadius?: string
+
   autoOpenChat?: boolean
   autoGreeting?: boolean
 
-  // Optional: If you want to disable database fetching
+  // Optional: disable database fetching
   useDbConfig?: boolean
 }
 
@@ -61,25 +50,16 @@ const PHONE_H = 667;
 
 // ─── Localisation helpers ─────────────────────────────────────────────────
 
-/**
- * Detect the user's preferred language code (e.g. "en", "fr", "ar").
- * Falls back to "en" in non-browser environments.
- */
 const getBrowserLang = (): string =>
   typeof navigator !== 'undefined' ? navigator.language.split('-')[0] : 'en'
 
-/**
- * Resolve a greeting value (multilingual object, legacy plain string, or
- * undefined) to a display string for the current browser language.
- */
 const resolveGreeting = (
   value: MultilingualSuggestion | string | undefined | null,
   lang: string
 ): string => {
   if (!value) return 'How can I help you today?'
-  if (typeof value === 'string') return value   // legacy plain string
+  if (typeof value === 'string') return value
 
-  // Multilingual object — same priority as getLocalizedText from provider
   return (
     (value as MultilingualSuggestion)[lang]?.trim() ||
     (value as MultilingualSuggestion)['en']?.trim() ||
@@ -88,10 +68,6 @@ const resolveGreeting = (
   )
 }
 
-/**
- * Resolve a suggestion (legacy string or multilingual object) to a display
- * string for the current browser language.
- */
 const resolveLocalizedSuggestion = (
   suggestion: string | MultilingualSuggestion,
   lang: string
@@ -105,10 +81,6 @@ const resolveLocalizedSuggestion = (
   )
 }
 
-/**
- * Normalise the DB greeting field.
- * DB stores Json[] → take index [0]; plain string → return as-is; object → return as-is.
- */
 const normaliseDbGreeting = (
   raw: any
 ): MultilingualSuggestion | string | null => {
@@ -133,30 +105,15 @@ export default function ChatPreview({
   initialMessages = [],
   onSendMessage,
   showPreviewControls = false,
-
   suggestions: propSuggestions = [],
-
   theme: propTheme,
-
   avatar: propAvatar,
   icon: propIcon,
-  iconShape: propIconShape,
-  iconSize: propIconSize,
-  iconColor: propIconColor,
-  iconBorder: propIconBorder,
-  iconBgColor: propIconBgColor,
-  avatarSize: propAvatarSize,
-  avatarColor: propAvatarColor,
-  avatarBorder: propAvatarBorder,
-  avatarBgColor: propAvatarBgColor,
-  color: propColor,
-  borderRadius: propBorderRadius,
   autoOpenChat: propAutoOpenChat,
   autoGreeting: propAutoGreeting,
-
   useDbConfig = true,
 }: ChatProps) {
-  const [chatbot, setChatbot] = useState<Chatbot | null>(null);
+  const [chatbot, setChatbot] = useState<any | null>(null);
   const [isLoadingChatbot, setIsLoadingChatbot] = useState(useDbConfig);
   const [message, setMessage] = useState<string>("")
   const [messages, setMessages] = useState<Message[]>(initialMessages)
@@ -169,7 +126,6 @@ export default function ChatPreview({
 
   const phoneWrapRef = useRef<HTMLDivElement>(null);
 
-  // Detect browser language once on mount
   const userLang = getBrowserLang()
 
   useEffect(() => {
@@ -201,45 +157,20 @@ export default function ChatPreview({
     };
   }, [previewMode]);
 
-  const colorMap: Record<string, string> = {
-    blue: "#3b82f6",
-    black: "#000000",
-    purple: "#a855f7",
-    green: "#16a34a",
-    red: "#dc2626",
-    orange: "#ea580c",
-  }
-
   // ─── Resolved config values ───────────────────────────────────────────────
 
   const name        = propName      || chatbot?.name      || "Chatbot";
   const directive   = propDirective || chatbot?.directive || "You are a helpful assistant.";
   const avatar      = propAvatar    ?? chatbot?.avatar    ?? null;
   const icon        = propIcon      ?? chatbot?.icon      ?? null;
-  const iconSize    = propIconSize  || chatbot?.iconSize  || 50;
-  const iconColor   = propIconColor || chatbot?.iconColor || "blue";
-  const iconShape   = propIconShape || getShapeTypeValue(chatbot?.iconShape) || "circle";
-  const iconBorder  = propIconBorder|| getBorderTypeValue(chatbot?.iconBorder) || "flat";
-  const iconBgColor = propIconBgColor || chatbot?.iconBgColor || undefined;
-  const avatarSize  = propAvatarSize  || chatbot?.avatarSize  || 50;
-  const avatarColor = propAvatarColor || chatbot?.avatarColor || "blue";
-  const avatarBorder  = propAvatarBorder  || getBorderTypeValue(chatbot?.avatarBorder) || "flat";
-  const avatarBgColor = propAvatarBgColor || chatbot?.avatarBgColor || undefined;
-  const color        = propColor       || iconColor || avatarColor || "blue";
-  const borderRadius = propBorderRadius || getBorderRadiusFromBorderType(iconBorder) || "regular";
-  const autoOpenChat = propAutoOpenChat ?? chatbot?.popup_onload ?? false;
+  const autoOpenChat = propAutoOpenChat ?? chatbot?.popup_onload ?? chatbot?.theme?.popup_onload ?? false;
   const autoGreeting = propAutoGreeting || false;
 
-  // ─── Resolve greeting to a plain string for the user's language ──────────
-  //
-  // Priority:
-  //   1. propGreeting (multilingual object or legacy string) from parent
-  //   2. chatbot.greeting from DB (stored as Json[] → normalise to object first)
-  //   3. Hardcoded fallback
-  //
+  // ─── Resolve greeting ─────────────────────────────────────────────────────
+
   const rawGreeting: MultilingualSuggestion | string | null =
     propGreeting
-      ? (typeof propGreeting === 'string' ? propGreeting : propGreeting)
+      ? propGreeting
       : normaliseDbGreeting((chatbot as any)?.greeting)
 
   const greetingText: string = resolveGreeting(rawGreeting, userLang)
@@ -251,88 +182,43 @@ export default function ChatPreview({
       ? propSuggestions
       : ((chatbot?.suggestions as MultilingualSuggestion[]) || [])
 
-  // ─── Enum helpers ─────────────────────────────────────────────────────────
+  // ─── Theme colours (all visual styling from theme) ────────────────────────
 
-  function getShapeTypeValue(shape: ShapeType | null | undefined): string {
-    if (!shape) return "circle";
-    switch (shape) {
-      case ShapeType.ROUND:          return "circle";
-      case ShapeType.SQUARE:         return "square";
-      case ShapeType.ROUNDED_SQUARE: return "rounded";
-      default:                       return "circle";
-    }
-  }
-
-  function getBorderTypeValue(border: BorderType | null | undefined): string {
-    if (!border) return "flat";
-    switch (border) {
-      case BorderType.FLAT:         return "flat";
-      case BorderType.ROUND:        return "rounded";
-      case BorderType.ROUNDED_FLAT: return "very-rounded";
-      default:                      return "flat";
-    }
-  }
-
-  function getBorderRadiusFromBorderType(borderType: string): string {
-    switch (borderType) {
-      case "flat":         return "regular";
-      case "rounded":      return "rounded";
-      case "very-rounded": return "very-rounded";
-      default:             return "regular";
-    }
-  }
-
-  const getColorValue = (colorName?: string) => {
-    const col = colorName || color;
-    return colorMap[col] || col || colorMap.blue;
-  }
-
-  const getBorderRadiusValue = (borderRadiusType?: string) => {
-    const br = borderRadiusType || borderRadius;
-    switch (br) {
-      case "regular":      return "0.375rem";
-      case "rounded":      return "0.75rem";
-      case "very-rounded": return "1.5rem";
-      default:             return "0.375rem";
-    }
-  }
-
-  const getShapeClass = (shape?: string, borderType?: string) => {
-    const shp    = shape      || iconShape;
-    const border = borderType || iconBorder;
-
-    if (border === "flat") {
-      switch (shp) {
-        case "circle":  return "rounded-full";
-        case "square":  return "rounded-none";
-        case "rounded": return "rounded-lg";
-        default:        return "rounded-full";
-      }
-    }
-    switch (border) {
-      case "rounded":      return "rounded-full";
-      case "very-rounded": return "rounded-3xl";
-      default:             return "rounded-lg";
-    }
-  }
-
-  const getDimensions = (size?: number) => Math.max(30, Math.min(100, size || iconSize));
-
-  // ─── Theme colours ────────────────────────────────────────────────────────
-
-  const themeColors             = liveTheme || propTheme || (chatbot as any)?.theme || {};
+  const themeColors             = liveTheme || propTheme || chatbot?.theme || {};
   const headerBgColor           = themeColors.headerBgColor           || "#1320AA";
   const headerTextColor         = themeColors.headerTextColor         || "#ffffff";
   const botMessageBgColor       = themeColors.botMessageBgColor       || "#f1f5f9";
   const botMessageTextColor     = themeColors.botMessageTextColor     || "#0f172a";
   const userMessageBgColor      = themeColors.userMessageBgColor      || "#1320AA";
   const userMessageTextColor    = themeColors.userMessageTextColor    || "#ffffff";
-  const closeButtonBgColor      = themeColors.closeButtonBgColor      || "#DD692E";
-  const closeButtonColor        = themeColors.closeButtonColor        || "#000000";
   const quickSuggestionBgColor  = themeColors.quickSuggestionBgColor  || "#ffffff";
   const quickSuggestionTextColor= themeColors.quickSuggestionTextColor|| "#0f172a";
+  const widgetBgColor           = themeColors.widgetBgColor           || "#ffffff";
+  const widgetColor             = themeColors.widgetColor             || "#1320AA";
   const widgetSize              = themeColors.widgetSize              || 70;
   const widgetSizeMobile        = themeColors.widgetSizeMobile        || 60;
+
+  // Border radius — derived from theme widgetBorder or sensible default
+  const getBorderRadiusValue = (): string => {
+    const border = themeColors.widgetBorder?.toLowerCase() || '';
+    switch (border) {
+      case 'flat':         return '0.375rem';
+      case 'rounded':      return '0.75rem';
+      case 'very-rounded': return '1.5rem';
+      default:             return '0.375rem';
+    }
+  };
+
+  // Widget/icon shape — derived from theme widgetShape
+  const getWidgetShapeClass = (): string => {
+    const shape = themeColors.widgetShape?.toLowerCase() || 'circle';
+    switch (shape) {
+      case 'circle':  return 'rounded-full';
+      case 'square':  return 'rounded-none';
+      case 'rounded': return 'rounded-lg';
+      default:        return 'rounded-full';
+    }
+  };
 
   // ─── Data fetching ────────────────────────────────────────────────────────
 
@@ -352,8 +238,6 @@ export default function ChatPreview({
     if (propTheme) setLiveTheme(propTheme);
   }, [propTheme]);
 
-  // Seed initial greeting message.
-  // greetingText is already localised so we just use it directly.
   useEffect(() => {
     if (greetingText && messages.length === 0) {
       setMessages([{ role: "assistant", content: greetingText }]);
@@ -444,37 +328,25 @@ export default function ChatPreview({
   }
 
   // ─── Avatar / icon renderer ───────────────────────────────────────────────
+  // Size and shape now come entirely from theme
 
-  const renderAvatarIcon = ({
-    type = "icon",
-    size,
-    shape,
-    border,
-    bgColor,
-    colorValue,
-  }: {
-    type?: "avatar" | "icon"
-    size?: number
-    shape?: string
-    border?: string
-    bgColor?: string
-    colorValue: string
-  }) => {
-    const dim        = getDimensions(size);
-    const shapeClass = getShapeClass(shape, border);
-    const imageSrc   = type === "avatar" ? avatar : icon;
+  const renderAvatarIcon = () => {
+    const imageSrc = avatar || icon;
+    const size = themeColors.widgetSize || 50;
+    const shapeClass = getWidgetShapeClass();
+    const bgColor = themeColors.widgetBgColor || widgetColor;
 
     return (
       <div
-        className="shrink-0 overflow-hidden flex items-center justify-center border border-border"
-        style={{ width: `${dim}px`, height: `${dim}px`, backgroundColor: bgColor || colorValue }}
+        className={`shrink-0 overflow-hidden flex items-center justify-center border border-border ${shapeClass}`}
+        style={{ width: `${size}px`, height: `${size}px`, backgroundColor: bgColor }}
       >
         {imageSrc ? (
-          <img src={imageSrc} alt={`${name} ${type}`} className={`w-full h-full object-cover ${shapeClass}`} />
+          <img src={imageSrc} alt={`${name} icon`} className={`w-full h-full object-cover ${shapeClass}`} />
         ) : (
           <div
             className={`w-full h-full flex items-center justify-center ${shapeClass}`}
-            style={{ backgroundColor: colorValue }}
+            style={{ backgroundColor: widgetColor }}
           >
             <span className="text-white font-bold text-lg">{name?.charAt(0) || "C"}</span>
           </div>
@@ -538,14 +410,7 @@ export default function ChatPreview({
               <p className="text-xs text-muted-foreground mb-3">{name}</p>
             )}
             <div className="flex gap-3">
-              {renderAvatarIcon({
-                type: "icon",
-                size: avatar ? avatarSize : iconSize,
-                shape: avatar ? getShapeTypeValue(chatbot?.iconShape) : iconShape,
-                border: avatar ? avatarBorder : iconBorder,
-                bgColor: avatar ? avatarBgColor : iconBgColor,
-                colorValue: getColorValue(avatar ? avatarColor : iconColor),
-              })}
+              {renderAvatarIcon()}
               <Card
                 className="p-3 max-w-[80%] border"
                 style={{
@@ -554,7 +419,6 @@ export default function ChatPreview({
                   color: botMessageTextColor,
                 }}
               >
-                {/* greetingText is already a resolved string — render directly */}
                 <p className="text-sm">{messages[0]?.content}</p>
               </Card>
             </div>
@@ -570,7 +434,6 @@ export default function ChatPreview({
             </div>
             <div className="flex flex-wrap gap-2">
               {suggestions.map((suggestion, index) => {
-                // Resolve multilingual object → plain string for this user's language
                 const text = resolveLocalizedSuggestion(suggestion, userLang)
                 if (!text) return null
                 return (
@@ -602,16 +465,7 @@ export default function ChatPreview({
             key={index}
             className={`mb-4 ${msg.role === "user" ? "flex justify-end" : "flex gap-3"}`}
           >
-            {msg.role === "assistant" && (
-              renderAvatarIcon({
-                type: avatar ? "avatar" : "icon",
-                size: avatar ? avatarSize : iconSize,
-                shape: avatar ? getShapeTypeValue(chatbot?.iconShape) : iconShape,
-                border: avatar ? avatarBorder : iconBorder,
-                bgColor: avatar ? avatarBgColor : iconBgColor,
-                colorValue: getColorValue(avatar ? avatarColor : iconColor),
-              })
-            )}
+            {msg.role === "assistant" && renderAvatarIcon()}
             <Card
               className="p-3 max-w-[80%] border"
               style={{
@@ -636,14 +490,7 @@ export default function ChatPreview({
         {/* Typing indicator */}
         {isLoading && (
           <div className="mb-4 flex gap-3">
-            {renderAvatarIcon({
-              type: avatar ? "avatar" : "icon",
-              size: avatar ? avatarSize : iconSize,
-              shape: avatar ? getShapeTypeValue(chatbot?.iconShape) : iconShape,
-              border: avatar ? avatarBorder : iconBorder,
-              bgColor: avatar ? avatarBgColor : iconBgColor,
-              colorValue: getColorValue(avatar ? avatarColor : iconColor),
-            })}
+            {renderAvatarIcon()}
             <Card
               className="p-3 max-w-[80%] border"
               style={{
@@ -798,10 +645,10 @@ export default function ChatPreview({
                 >
                   <div
                     className="shrink-0 overflow-hidden flex items-center justify-center"
-                    style={{ width: "32px", height: "32px", borderRadius: "50%", backgroundColor: getColorValue(iconColor) }}
+                    style={{ width: "32px", height: "32px", borderRadius: "50%", backgroundColor: widgetColor }}
                   >
-                    {icon
-                      ? <img src={icon} alt={name} className="w-full h-full object-cover" />
+                    {(icon || avatar)
+                      ? <img src={icon || avatar!} alt={name} className="w-full h-full object-cover" />
                       : <span className="text-white font-bold text-sm">{name?.charAt(0) || "C"}</span>
                     }
                   </div>

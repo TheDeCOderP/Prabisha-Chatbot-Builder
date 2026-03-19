@@ -56,7 +56,7 @@ export async function PUT(
 
     const { id: chatbotId } = await params;
     const body = await req.json();
-
+console.log('Received theme update request:', { chatbotId, body });
     // Verify user has access to this chatbot
     const chatbot = await prisma.chatbot.findFirst({
       where: {

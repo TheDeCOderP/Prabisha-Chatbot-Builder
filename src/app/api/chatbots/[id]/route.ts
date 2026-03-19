@@ -78,7 +78,14 @@ export async function GET(
   try {
     const { id } = await context.params;
 
-    const chatbot = await prisma.chatbot.findUnique({ where: { id } })
+    const chatbot = await prisma.chatbot.findUnique({ 
+      where: { id },
+      include: { 
+        theme: true,
+        logic: true,
+        form: true,
+      }, 
+    })
 
     if (!chatbot) {
       return NextResponse.json(
@@ -108,27 +115,18 @@ export async function PUT(request: NextRequest, context: RouterParams) {
     const formData = await request.formData();
 
     // ── Extract fields ────────────────────────────────────────────────────────
-    const name          = formData.get('name')          as string | null;
-    const avatarFile    = formData.get('avatar')        as File   | null;
-    const iconFile      = formData.get('icon')          as File   | null;
-    const theme         = formData.get('theme')         as string | null;
-    const iconSize      = formData.get('iconSize')      as string | null;
-    const iconColor     = formData.get('iconColor')     as string | null;
-    const iconShape     = formData.get('iconShape')     as string | null;
-    const iconBorder    = formData.get('iconBorder')    as string | null;
-    const iconBgColor   = formData.get('iconBgColor')   as string | null;
-    const avatarSize    = formData.get('avatarSize')    as string | null;
-    const avatarColor   = formData.get('avatarColor')   as string | null;
-    const avatarBorder  = formData.get('avatarBorder')  as string | null;
-    const avatarBgColor = formData.get('avatarBgColor') as string | null;
-    const popup_onload  = formData.get('popup_onload')  as string | null;
-    const greeting      = formData.get('greeting')      as string | null;  // ← now Json[]
-    const directive     = formData.get('directive')     as string | null;
-    const description   = formData.get('description')   as string | null;
-    const suggestions   = formData.get('suggestions')   as string | null;
-    const model         = formData.get('model')         as string | null;
-    const max_tokens    = formData.get('max_tokens')    as string | null;
-    const temperature   = formData.get('temperature')   as string | null;
+    // Only fields that still exist on the Chatbot model
+    const name         = formData.get('name')        as string | null;
+    const avatarFile   = formData.get('avatar')      as File   | null;
+    const iconFile     = formData.get('icon')        as File   | null;
+    const popup_onload = formData.get('popup_onload') as string | null;
+    const greeting     = formData.get('greeting')    as string | null;
+    const directive    = formData.get('directive')   as string | null;
+    const description  = formData.get('description') as string | null;
+    const suggestions  = formData.get('suggestions') as string | null;
+    const model        = formData.get('model')       as string | null;
+    const max_tokens   = formData.get('max_tokens')  as string | null;
+    const temperature  = formData.get('temperature') as string | null;
 
     if (!id) {
       return NextResponse.json({ error: 'Chatbot ID is required' }, { status: 400 })
@@ -160,28 +158,12 @@ export async function PUT(request: NextRequest, context: RouterParams) {
       }
     }
 
-    // ── Enum validation ───────────────────────────────────────────────────────
-    const validIconShapes  = ['ROUND', 'SQUARE', 'ROUNDED_SQUARE'];
-    const validBorderTypes = ['FLAT', 'ROUND', 'ROUNDED_FLAT'];
-
-    if (iconShape   && !validIconShapes.includes(iconShape.toUpperCase())) {
-      return NextResponse.json({ error: `Invalid iconShape. Must be one of: ${validIconShapes.join(', ')}` }, { status: 400 })
-    }
-    if (iconBorder  && !validBorderTypes.includes(iconBorder.toUpperCase())) {
-      return NextResponse.json({ error: `Invalid iconBorder. Must be one of: ${validBorderTypes.join(', ')}` }, { status: 400 })
-    }
-    if (avatarBorder && !validBorderTypes.includes(avatarBorder.toUpperCase())) {
-      return NextResponse.json({ error: `Invalid avatarBorder. Must be one of: ${validBorderTypes.join(', ')}` }, { status: 400 })
-    }
-
     // ── Parse & auto-translate greeting ──────────────────────────────────────
-    // The frontend sends it as JSON.stringify([{ en: '...', fr: '...', ... }])
     let parsedGreeting: Record<string, string>[] | undefined;
     if (greeting !== null) {
       try {
         const raw = JSON.parse(greeting);
 
-        // Normalise: accept either the array form or a bare object (defensive)
         let greetingObj: Record<string, string>;
         if (Array.isArray(raw)) {
           const first = raw[0];
@@ -191,15 +173,13 @@ export async function PUT(request: NextRequest, context: RouterParams) {
         } else if (typeof raw === 'object' && raw !== null) {
           greetingObj = raw as Record<string, string>;
         } else if (typeof raw === 'string') {
-          // Legacy plain string
           greetingObj = { en: raw };
         } else {
           greetingObj = {};
         }
 
-        // Auto-fill missing translations via Gemini (same as suggestions)
         const filled = await fillMissingTranslations(greetingObj);
-        parsedGreeting = [filled];   // always stored as a 1-element Json[]
+        parsedGreeting = [filled];
       } catch (error) {
         return NextResponse.json({ error: 'Invalid JSON format for greeting' }, { status: 400 });
       }
@@ -242,29 +222,20 @@ export async function PUT(request: NextRequest, context: RouterParams) {
     }
 
     // ── Build update payload ──────────────────────────────────────────────────
+    // Only fields that exist on the simplified Chatbot model
     const updateData: any = {};
 
-    if (name          !== null)      updateData.name         = name;
-    if (avatarUrl     !== undefined) updateData.avatar       = avatarUrl;
-    if (theme         !== null)      updateData.theme        = theme;
-    if (iconUrl       !== undefined) updateData.icon         = iconUrl;
-    if (iconSize      !== null)      updateData.iconSize     = parseInt(iconSize);
-    if (iconColor     !== null)      updateData.iconColor    = iconColor;
-    if (iconShape     !== null)      updateData.iconShape    = iconShape.toUpperCase();
-    if (iconBorder    !== null)      updateData.iconBorder   = iconBorder.toUpperCase();
-    if (iconBgColor   !== null)      updateData.iconBgColor  = iconBgColor;
-    if (avatarSize    !== null)      updateData.avatarSize   = parseInt(avatarSize);
-    if (avatarColor   !== null)      updateData.avatarColor  = avatarColor;
-    if (avatarBorder  !== null)      updateData.avatarBorder = avatarBorder.toUpperCase();
-    if (avatarBgColor !== null)      updateData.avatarBgColor = avatarBgColor;
-    if (popup_onload  !== null)      updateData.popup_onload = popup_onload === 'true';
-    if (parsedGreeting !== undefined) updateData.greeting    = parsedGreeting;  // ← Json[]
-    if (directive     !== null)      updateData.directive    = directive;
-    if (description   !== null)      updateData.description  = description;
+    if (name              !== null)      updateData.name        = name;
+    if (avatarUrl         !== undefined) updateData.avatar      = avatarUrl;
+    if (iconUrl           !== undefined) updateData.icon        = iconUrl;
+    if (popup_onload      !== null)      updateData.popup_onload = popup_onload === 'true';
+    if (parsedGreeting    !== undefined) updateData.greeting    = parsedGreeting;
+    if (directive         !== null)      updateData.directive   = directive;
+    if (description       !== null)      updateData.description = description;
     if (parsedSuggestions !== undefined) updateData.suggestions = parsedSuggestions;
-    if (model         !== null)      updateData.model        = model;
-    if (max_tokens    !== null)      updateData.max_tokens   = parseInt(max_tokens);
-    if (temperature   !== null)      updateData.temperature  = parseFloat(temperature);
+    if (model             !== null)      updateData.model       = model;
+    if (max_tokens        !== null)      updateData.max_tokens  = parseInt(max_tokens);
+    if (temperature       !== null)      updateData.temperature = parseFloat(temperature);
 
     const updatedChatbot = await prisma.chatbot.update({ where: { id }, data: updateData });
 

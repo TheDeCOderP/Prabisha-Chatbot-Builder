@@ -28,20 +28,11 @@ export type LanguageCode = typeof SUPPORTED_LANGUAGES[number]['code']
 interface ChatbotConfig {
   id: string;
   name: string;
-  greeting: MultilingualSuggestion;   // ← was: string, now multilingual object
+  greeting: MultilingualSuggestion;
   directive: string;
   theme: any;
   avatar: string | null;
-  avatarSize: number;
-  avatarColor: string;
-  avatarBorder: string;
-  avatarBgColor: string;
   icon: string | null;
-  iconSize: number;
-  iconColor: string;
-  iconShape: string;
-  iconBorder: string;
-  iconBgColor: string;
   popup_onload: boolean;
   suggestions: MultilingualSuggestion[];
   description?: string;
@@ -99,20 +90,11 @@ const normaliseGreeting = (raw: any): MultilingualSuggestion => {
 const defaultConfig: ChatbotConfig = {
   id: '',
   name: '',
-  greeting: { en: 'How can I help you today?' },   // ← multilingual object
+  greeting: { en: 'How can I help you today?' },
   directive: '',
   theme: null,
   avatar: null,
-  avatarSize: 50,
-  avatarColor: '',
-  avatarBorder: '',
-  avatarBgColor: '',
   icon: null,
-  iconSize: 50,
-  iconColor: '',
-  iconShape: '',
-  iconBorder: '',
-  iconBgColor: '',
   popup_onload: false,
   suggestions: [],
   description: '',
@@ -158,21 +140,12 @@ export function ChatbotProvider({
       const transformed: ChatbotConfig = {
         id:           data.id           || '',
         name:         data.name         || '',
-        greeting:     normaliseGreeting(data.greeting),   // ← normalised
+        greeting:     normaliseGreeting(data.greeting),
         directive:    data.directive    || '',
         theme:        data.theme        || null,
         avatar:       data.avatar       ?? null,
-        avatarSize:   data.avatarSize   || 50,
-        avatarColor:  data.avatarColor  || '',
-        avatarBorder: data.avatarBorder?.toLowerCase() || '',
-        avatarBgColor:data.avatarBgColor|| '',
         icon:         data.icon         ?? null,
-        iconSize:     data.iconSize     || 50,
-        iconColor:    data.iconColor    || '',
-        iconShape:    data.iconShape?.toLowerCase()  || '',
-        iconBorder:   data.iconBorder?.toLowerCase() || '',
-        iconBgColor:  data.iconBgColor  || '',
-        popup_onload: data.popup_onload || false,
+        popup_onload: data.popup_onload ?? data.theme?.popup_onload ?? false,
         suggestions:  normaliseSuggestions(data.suggestions || []),
         description:  data.description  || '',
         model:        data.model        || 'meta-llama/Llama-3.3-70B-Instruct-Turbo',
@@ -217,7 +190,6 @@ export function ChatbotProvider({
 
   // ─── Greeting helpers ──────────────────────────────────────────────────────
 
-  /** Update a single language field within the greeting object */
   const updateGreetingField = (langCode: string, value: string) => {
     setConfig(prev => ({
       ...prev,
@@ -264,7 +236,7 @@ export function getLocalizedText(
   userLang: LanguageCode = 'en'
 ): string {
   if (!value) return ''
-  if (typeof value === 'string') return value   // legacy plain string
+  if (typeof value === 'string') return value
   return (
     value[userLang]?.trim() ||
     value['en']?.trim() ||

@@ -62,12 +62,7 @@ function ChatbotLayoutContent({ children, title, chatbotId }: { children: React.
                         greeting={config.greeting}
                         theme={config.theme}
                         avatar={config.avatar}
-                        avatarSize={config.avatarSize}
-                        avatarColor={config.avatarColor}
                         icon={config.icon}
-                        iconSize={config.iconSize}
-                        iconColor={config.iconColor}
-                        iconShape={config.iconShape}
                         suggestions={config.suggestions} // Add this line
                         showPreviewControls={true}
                     />

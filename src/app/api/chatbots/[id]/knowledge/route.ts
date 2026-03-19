@@ -6,7 +6,7 @@ import { prisma } from '@/lib/prisma';
 
 import { embedAndStore } from '@/lib/langchain/vector-store';
 import { processURL } from '@/lib/langchain/knowledge/web-scraper';
-import { processFile, processTable } from '@/lib/langchain/knowledge/processor';
+import { extractTextFromPDF, processFile, processTable } from '@/lib/langchain/knowledge/processor';
 
 const config = {
   runtime: 'nodejs',
@@ -129,24 +129,22 @@ export async function POST(
         if (pages && pages.length > 0) {
           // Store each page as a separate document
           const documentPromises = pages.map(async (page) => {
-            const existingDocument = await prisma.document.findFirst({
+            // Use upsert to handle the unique constraint on 'source' automatically
+            const document = await prisma.document.upsert({
               where: {
-                knowledgeBaseId: knowledgeBase.id,
                 source: page.url,
               },
-            })
-
-            if (existingDocument) {
-              return {
-                success: true,
-                url: page.url,
-                title: page.title,
-                documentId: existingDocument.id,
-              };
-            }
-            
-            const document = await prisma.document.create({
-              data: {
+              update: {
+                // Update the content and metadata if the URL already exists
+                content: page.content,
+                knowledgeBaseId: knowledgeBase.id, // Re-link to current KB if needed
+                metadata: {
+                  ...page.metadata,
+                  title: page.title,
+                  url: page.url,
+                },
+              },
+              create: {
                 knowledgeBaseId: knowledgeBase.id,
                 source: page.url,
                 content: page.content,
@@ -335,15 +333,163 @@ export async function POST(
       const results = [];
 
       for (const file of files) {
+        const isPDF = file.name.toLowerCase().endsWith('.pdf');
+ 
+        try {
+          if (isPDF) {
+            const pdf = await extractTextFromPDF(file);
+ 
+            // One parent document row that stores the full text for reference.
+            const parentDoc = await prisma.document.create({
+              data: {
+                knowledgeBaseId: knowledgeBase.id,
+                source: file.name,
+                content: pdf.fullText,
+                metadata: {
+                  ...pdf.metadata,
+                  extractionMethod: 'gemini',
+                  isParent: true,
+                },
+              },
+            });
+ 
+            // One child document row + one vector per chunk.
+            let successChunks = 0;
+            let failedChunks  = 0;
+ 
+            for (const chunk of pdf.chunks) {
+              try {
+                // 1-based page in the source fragment for human readability.
+                const sourceFragment = `${file.name}#page=${chunk.page + 1}&chunk=${chunk.chunkIndex + 1}`;
+ 
+                const chunkDoc = await prisma.document.create({
+                  data: {
+                    knowledgeBaseId: knowledgeBase.id,
+                    source: sourceFragment,
+                    content: chunk.content,
+                    metadata: {
+                      fileName:           file.name,
+                      fileSize:           file.size,
+                      fileType:           file.type,
+                      extractionMethod:   'gemini',
+                      // Provenance — used at query time to cite the source.
+                      page:               chunk.page + 1,   // 1-based for display
+                      chunkIndex:         chunk.chunkIndex,
+                      totalChunksOnPage:  chunk.totalChunksOnPage,
+                      totalPages:         chunk.totalPages,
+                      pageContext:        chunk.pageContext ?? null,
+                      parentDocumentId:   parentDoc.id,
+                      isChunk:            true,
+                    },
+                  },
+                });
+ 
+                await embedAndStore({
+                  documentId: chunkDoc.id,
+                  content: chunk.content,
+                  metadata: {
+                    chatbotId,
+                    knowledgeBaseId:  knowledgeBase.id,
+                    source:           sourceFragment,
+                    fileName:         file.name,
+                    // These fields flow into the vector store metadata so the
+                    // retriever can surface "Page 3 of annual-report.pdf" in
+                    // the chatbot's citations.
+                    page:             chunk.page + 1,
+                    chunkIndex:       chunk.chunkIndex,
+                    totalPages:       chunk.totalPages,
+                  },
+                  chatbotId,
+                  knowledgeBaseId: knowledgeBase.id,
+                });
+ 
+                successChunks++;
+              } catch (chunkErr) {
+                console.error(`Chunk error (page ${chunk.page + 1}, chunk ${chunk.chunkIndex}):`, chunkErr);
+                failedChunks++;
+              }
+            }
+ 
+            results.push({
+              success:       successChunks > 0,
+              fileName:      file.name,
+              documentId:    parentDoc.id,
+              pages:         pdf.metadata.pageCount,
+              totalChunks:   pdf.chunks.length,
+              successChunks,
+              failedChunks,
+              extractionMethod: 'gemini',
+            });
+          } else {
+            // ── Non-PDF → single vector (existing behaviour) ────────────────
+ 
+            const { content, metadata } = await processFile(file);
+ 
+            const document = await prisma.document.create({
+              data: {
+                knowledgeBaseId: knowledgeBase.id,
+                source: file.name,
+                content,
+                metadata: {
+                  ...metadata,
+                  fileName: file.name,
+                  fileSize: file.size,
+                  fileType: file.type,
+                },
+              },
+            });
+ 
+            await embedAndStore({
+              documentId: document.id,
+              content,
+              metadata: { chatbotId, knowledgeBaseId: knowledgeBase.id, source: file.name },
+              chatbotId,
+              knowledgeBaseId: knowledgeBase.id,
+            });
+ 
+            results.push({ success: true, fileName: file.name, documentId: document.id });
+          }
+        } catch (error) {
+          results.push({
+            success:  false,
+            fileName: file.name,
+            error:    error instanceof Error ? error.message : 'Unknown error',
+          });
+        }
+      }
+ 
+      return NextResponse.json({ knowledgeBaseId: knowledgeBase.id, results });
+    }
+ 
+    // ── Table uploads ────────────────────────────────────────────────────────
+ 
+    if (type === 'table') {
+      const files = formData.getAll('files') as File[];
+ 
+      if (files.length === 0) {
+        return NextResponse.json({ error: 'No files provided' }, { status: 400 });
+      }
+ 
+      const knowledgeBase = await prisma.knowledgeBase.create({
+        data: {
+          chatbotId,
+          name: name || `Tables - ${new Date().toLocaleDateString()}`,
+          type: 'FAQ',
+          indexName: `kb_${chatbotId}_${Date.now()}`,
+        },
+      });
+ 
+      const results = [];
+ 
+      for (const file of files) {
         try {
           const { rows, metadata } = await processTable(file);
-
           const chunks = chunkArray(rows, 100);
-
+ 
           for (let i = 0; i < chunks.length; i++) {
-            const chunk = chunks[i];
+            const chunk   = chunks[i];
             const content = formatTableContent(chunk, metadata);
-
+ 
             const document = await prisma.document.create({
               data: {
                 knowledgeBaseId: knowledgeBase.id,
@@ -351,16 +497,16 @@ export async function POST(
                 content,
                 metadata: {
                   ...metadata,
-                  fileName: file.name,
-                  fileSize: file.size,
-                  fileType: file.type,
-                  batchNumber: i + 1,
+                  fileName:     file.name,
+                  fileSize:     file.size,
+                  fileType:     file.type,
+                  batchNumber:  i + 1,
                   totalBatches: chunks.length,
-                  rowCount: chunk.length,
+                  rowCount:     chunk.length,
                 },
               },
             });
-
+ 
             await embedAndStore({
               documentId: document.id,
               content,
@@ -374,26 +520,23 @@ export async function POST(
               knowledgeBaseId: knowledgeBase.id,
             });
           }
-
+ 
           results.push({
-            success: true,
+            success:  true,
             fileName: file.name,
             rowCount: rows.length,
-            batches: chunks.length,
+            batches:  chunks.length,
           });
         } catch (error) {
           results.push({
-            success: false,
+            success:  false,
             fileName: file.name,
-            error: error instanceof Error ? error.message : 'Unknown error',
+            error:    error instanceof Error ? error.message : 'Unknown error',
           });
         }
       }
-
-      return NextResponse.json({
-        knowledgeBaseId: knowledgeBase.id,
-        results,
-      });
+ 
+      return NextResponse.json({ knowledgeBaseId: knowledgeBase.id, results });
     }
 
     return NextResponse.json({ error: 'Invalid type' }, { status: 400 });
