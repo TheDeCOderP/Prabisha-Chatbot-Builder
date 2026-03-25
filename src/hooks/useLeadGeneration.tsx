@@ -1,4 +1,3 @@
-// hooks/useLeadGeneration.ts
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
@@ -22,7 +21,7 @@ interface LeadForm {
 
 interface UseLeadGenerationProps {
   chatbotId: string;
-  conversationId: string | null;
+  // ✅ conversationId removed from props — it's accepted at call-time instead
   onLeadCollected?: (leadData: any) => void;
 }
 
@@ -33,7 +32,7 @@ interface UseLeadGenerationReturn {
   isLoadingLeadConfig: boolean;
   leadFormError: string | null;
   hasSubmittedLead: boolean;
-  /** 
+  /**
    * When leadFormStyle === 'MESSAGES', this is populated so the chatbot widget
    * can pass it to useConversationalLead instead of showing the modal.
    */
@@ -43,8 +42,18 @@ interface UseLeadGenerationReturn {
 
   showLeadForm: () => void;
   hideLeadForm: () => void;
-  submitLeadForm: (formData: Record<string, string>) => Promise<boolean>;
-  checkLeadRequirements: () => Promise<void>;
+  /**
+   * ✅ conversationId accepted here at call-time so this hook never needs to
+   * receive it as a prop, breaking the circular dependency.
+   */
+  submitLeadForm: (
+    formData: Record<string, string>,
+    conversationId: string
+  ) => Promise<boolean>;
+  /**
+   * ✅ conversationId accepted here at call-time for the same reason.
+   */
+  checkLeadRequirements: (conversationId: string) => Promise<void>;
   markLeadAsSubmitted: () => void;
 }
 
@@ -52,37 +61,39 @@ interface UseLeadGenerationReturn {
 
 export function useLeadGeneration({
   chatbotId,
-  conversationId,
   onLeadCollected,
 }: UseLeadGenerationProps): UseLeadGenerationReturn {
   const [activeLeadForm, setActiveLeadForm] = useState<LeadForm | null>(null);
-  const [conversationalLeadConfig, setConversationalLeadConfig] = useState<ConversationalLeadConfig | null>(null);
+  const [conversationalLeadConfig, setConversationalLeadConfig] =
+    useState<ConversationalLeadConfig | null>(null);
   const [isLeadFormVisible, setIsLeadFormVisible] = useState(false);
   const [shouldShowLeadForm, setShouldShowLeadForm] = useState(false);
   const [isLoadingLeadConfig, setIsLoadingLeadConfig] = useState(false);
   const [leadFormError, setLeadFormError] = useState<string | null>(null);
   const [hasSubmittedLead, setHasSubmittedLead] = useState(false);
-  const [keywords, setKeywords] = useState<string[]>([]);
 
   // ── Fetch lead config ──────────────────────────────────────────────────────
+
   const fetchLeadConfig = useCallback(async () => {
     if (!chatbotId || hasSubmittedLead) return;
     setIsLoadingLeadConfig(true);
     setLeadFormError(null);
     try {
-      const response = await fetch(`/api/chatbots/${chatbotId}/lead`, { cache: 'no-store' });
+      const response = await fetch(`/api/chatbots/${chatbotId}/lead`, {
+        cache: 'no-store',
+      });
       if (response.ok) {
         const data = await response.json();
         if (data && data.isActive) {
           setActiveLeadForm(data.config);
-          setKeywords(data.triggerKeywords || []);
 
           // Parse fields from JSON string (schema stores fields as Json)
-          let parsedFields = [];
+          let parsedFields: any[] = [];
           try {
-            parsedFields = typeof data.config?.fields === 'string'
-              ? JSON.parse(data.config.fields)
-              : (data.config?.fields ?? []);
+            parsedFields =
+              typeof data.config?.fields === 'string'
+                ? JSON.parse(data.config.fields)
+                : (data.config?.fields ?? []);
           } catch {
             parsedFields = [];
           }
@@ -98,7 +109,10 @@ export function useLeadGeneration({
             setConversationalLeadConfig(null);
           }
 
-          if (data.triggerType === 'ALWAYS' || data.triggerType === 'BEGINNING') {
+          if (
+            data.triggerType === 'ALWAYS' ||
+            data.triggerType === 'BEGINNING'
+          ) {
             setShouldShowLeadForm(true);
           }
         }
@@ -112,36 +126,55 @@ export function useLeadGeneration({
   }, [chatbotId, hasSubmittedLead]);
 
   // ── Init ───────────────────────────────────────────────────────────────────
+
   useEffect(() => {
     fetchLeadConfig();
-    const hasSubmitted = localStorage.getItem(`chatbot_${chatbotId}_lead_submitted`);
+    const hasSubmitted = localStorage.getItem(
+      `chatbot_${chatbotId}_lead_submitted`
+    );
     if (hasSubmitted === 'true') setHasSubmittedLead(true);
   }, [chatbotId, fetchLeadConfig]);
 
   // ── Check requirements ─────────────────────────────────────────────────────
-  const checkLeadRequirements = useCallback(async () => {
-    if (!chatbotId || !conversationId || hasSubmittedLead || !activeLeadForm) return;
-    try {
-      const response = await fetch(
-        `/api/chatbots/${chatbotId}/check-lead-requirements?conversationId=${conversationId}`
-      );
-      if (response.ok) {
-        const data = await response.json();
-        if (data.shouldShowForm) setShouldShowLeadForm(true);
+  // ✅ conversationId is now a parameter, not closed over from props.
+
+  const checkLeadRequirements = useCallback(
+    async (conversationId: string) => {
+      if (!chatbotId || !conversationId || hasSubmittedLead || !activeLeadForm)
+        return;
+      try {
+        const response = await fetch(
+          `/api/chatbots/${chatbotId}/check-lead-requirements?conversationId=${conversationId}`
+        );
+        if (response.ok) {
+          const data = await response.json();
+          if (data.shouldShowForm) setShouldShowLeadForm(true);
+        }
+      } catch (error) {
+        console.error('Error checking lead requirements:', error);
       }
-    } catch (error) {
-      console.error('Error checking lead requirements:', error);
-    }
-  }, [chatbotId, conversationId, hasSubmittedLead, activeLeadForm]);
+    },
+    [chatbotId, hasSubmittedLead, activeLeadForm]
+  );
 
   // ── Modal submit (EMBEDDED mode) ───────────────────────────────────────────
-  const submitLeadForm = async (formData: Record<string, string>): Promise<boolean> => {
+  // ✅ conversationId is now a parameter, not closed over from props.
+
+  const submitLeadForm = async (
+    formData: Record<string, string>,
+    conversationId: string
+  ): Promise<boolean> => {
     if (!chatbotId || !conversationId || !activeLeadForm) return false;
     try {
       const response = await fetch('/api/leads', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ formId: activeLeadForm.id, data: formData, conversationId, chatbotId }),
+        body: JSON.stringify({
+          formId: activeLeadForm.id,
+          data: formData,
+          conversationId,
+          chatbotId,
+        }),
       });
       if (response.ok) {
         const result = await response.json();
