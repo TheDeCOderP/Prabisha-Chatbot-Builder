@@ -448,17 +448,22 @@ function LanguageSelector({
 // ChatbotWidget — root export
 // ─────────────────────────────────────────────────────────────────────────────
 
-export default function ChatbotWidget({ chatbotId, initialChatbotData, onLanguageChange }: ChatbotWidgetProps) {
+export default function ChatbotWidget({
+  chatbotId,
+  initialChatbotData,
+  onLanguageChange,
+}: ChatbotWidgetProps) {
   const [isInitialized, setIsInitialized] = useState(false);
   const [liveTheme, setLiveTheme] = useState<any>(null);
   const [selectedLang, setSelectedLang] = useState<LanguageCode>('en');
-
+ 
   const handleLanguageChange = (code: LanguageCode) => {
     setSelectedLang(code);
     chatbotI18n.changeLanguage(code);
     onLanguageChange?.(code);
   };
-
+ 
+  // ✅ conversationId is no longer passed here — it caused the circular dep.
   const {
     activeLeadForm,
     isLeadFormVisible,
@@ -469,15 +474,14 @@ export default function ChatbotWidget({ chatbotId, initialChatbotData, onLanguag
     isConversationalMode,
     showLeadForm,
     hideLeadForm,
-    submitLeadForm,
+    submitLeadForm,       
     checkLeadRequirements,
     markLeadAsSubmitted,
   } = useLeadGeneration({
     chatbotId,
-    conversationId: null,
     onLeadCollected: (data) => console.log('Lead collected:', data),
   });
-
+ 
   const {
     chatbot,
     isLoadingChatbot,
@@ -490,7 +494,7 @@ export default function ChatbotWidget({ chatbotId, initialChatbotData, onLanguag
     error,
     hasLoadedInitialMessages,
     quickQuestions,
-    conversationId,
+    conversationId,        // ✅ source of truth lives here
     mode,
     setMode,
     handleSubmit,
@@ -514,7 +518,7 @@ export default function ChatbotWidget({ chatbotId, initialChatbotData, onLanguag
     },
     language: selectedLang,
   });
-
+ 
   useEffect(() => {
     const handler = (e: MessageEvent) => {
       if (e.data.type === 'theme-update') setLiveTheme(e.data.theme);
@@ -522,7 +526,7 @@ export default function ChatbotWidget({ chatbotId, initialChatbotData, onLanguag
     window.addEventListener('message', handler);
     return () => window.removeEventListener('message', handler);
   }, []);
-
+ 
   useEffect(() => {
     if (!chatbotId) return;
     const sid =
@@ -532,38 +536,61 @@ export default function ChatbotWidget({ chatbotId, initialChatbotData, onLanguag
     setIsInitialized(true);
     window.parent.postMessage({ type: 'chatbot-loaded', chatbotId }, '*');
   }, [chatbotId]);
-
+ 
+  // ✅ Now we pass conversationId directly at call-time — no circular dep.
   useEffect(() => {
     if (messages.length > 0 && !hasSubmittedLead && conversationId) {
-      checkLeadRequirements();
+      checkLeadRequirements(conversationId);
     }
   }, [messages, hasSubmittedLead, conversationId, checkLeadRequirements]);
-
+ 
   useEffect(() => {
-    if (!shouldShowLeadForm || !activeLeadForm || isLeadFormVisible || loading) return;
+    if (!shouldShowLeadForm || !activeLeadForm || isLeadFormVisible || loading)
+      return;
     const timer = setTimeout(() => {
       if (isConversationalMode) startLeadCollection();
       else showLeadForm();
     }, 1000);
     return () => clearTimeout(timer);
   }, [
-    shouldShowLeadForm, activeLeadForm, isLeadFormVisible, loading,
-    isConversationalMode, startLeadCollection, showLeadForm,
+    shouldShowLeadForm,
+    activeLeadForm,
+    isLeadFormVisible,
+    loading,
+    isConversationalMode,
+    startLeadCollection,
+    showLeadForm,
   ]);
-
+ 
   if (!isInitialized || isLoadingChatbot) return <LoadingSpinner />;
-  if (chatbotError) return <ErrorDisplay error="Failed to load chatbot" onRetry={() => window.location.reload()} />;
+  if (chatbotError)
+    return (
+      <ErrorDisplay
+        error="Failed to load chatbot"
+        onRetry={() => window.location.reload()}
+      />
+    );
   if (!chatbot) return null;
-
-  // Merge live theme override on top of db theme
+ 
   const effectiveChatbot = liveTheme
     ? { ...chatbot, theme: { ...chatbot.theme, ...liveTheme } }
     : chatbot;
-
+ 
+  // ✅ Wrap submitLeadForm so callers in ChatBot don't need to supply
+  //    conversationId themselves — we bind it here where we have it.
+  const boundSubmitLeadForm = async (
+    formData: Record<string, string>
+  ): Promise<boolean> => {
+    if (!conversationId) return false;
+    return submitLeadForm(formData, conversationId);
+  };
+ 
   return (
     <ChatBot
       chatbot={effectiveChatbot}
-      onClose={() => window.parent.postMessage({ type: 'chatbot-close', chatbotId }, '*')}
+      onClose={() =>
+        window.parent.postMessage({ type: 'chatbot-close', chatbotId }, '*')
+      }
       text={text}
       setText={setText}
       status={status}
@@ -592,7 +619,7 @@ export default function ChatbotWidget({ chatbotId, initialChatbotData, onLanguag
       leadCollectionStatus={leadCollectionStatus}
       showLeadForm={showLeadForm}
       hideLeadForm={hideLeadForm}
-      submitLeadForm={submitLeadForm}
+      submitLeadForm={boundSubmitLeadForm}
       startLeadCollection={startLeadCollection}
       markLeadAsSubmitted={markLeadAsSubmitted}
       selectedLang={selectedLang}

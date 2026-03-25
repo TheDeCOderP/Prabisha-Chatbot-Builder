@@ -3,14 +3,14 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { useParams, usePathname, useSearchParams } from "next/navigation"
-import AppSidebar from "@/components/layout/sidebar"
-import { Separator } from "@/components/ui/separator"
+import { useParams, usePathname, useSearchParams } from "next/navigation";
+import AppSidebar from "@/components/layout/sidebar";
+import { Separator } from "@/components/ui/separator";
 import {
   SidebarInset,
   SidebarProvider,
   SidebarTrigger,
-} from "@/components/ui/sidebar"
+} from "@/components/ui/sidebar";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -18,28 +18,42 @@ import {
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb"
+} from "@/components/ui/breadcrumb";
 import { WorkspaceProvider } from "@/providers/workspace-provider";
-import { Loader2 } from "lucide-react"; // Optional: for loading spinner
+import { Loader2 } from "lucide-react";
 
-// Define breadcrumb mappings
-const BREADCRUMB_MAPPINGS: Record<string, { label: string; href: string }> = {
-  "dashboard": { label: "Dashboard", href: "/dashboard" },
-  "chatbots": { label: "Chatbots", href: "/chatbots" },
-  "instructions": { label: "Instructions", href: "/instructions" },
-  "integrations": { label: "Integrations", href: "/integrations" },
-  "knowledge": { label: "Knowledge Base", href: "/knowledge" },
-  "logic": { label: "Logic & Flows", href: "/logic" },
-  "models": { label: "AI Models", href: "/models" },
-  "settings": { label: "Settings", href: "/settings" },
-  "theme": { label: "Theme", href: "/theme" },
+// Breadcrumb label mappings
+const BREADCRUMB_MAPPINGS: Record<string, string> = {
+  dashboard:   "Dashboard",
+  workspaces:  "Workspaces",
+  management:  "Management",
+  projects:    "Projects",
+  skills:      "Skills",
+  teams:       "Teams",
+  chatbots:    "Chatbots",
+  instructions: "Instructions",
+  integrations: "Integrations",
+  knowledge:   "Knowledge Base",
+  logic:       "Logic & Flows",
+  models:      "AI Models",
+  settings:    "Settings",
+  theme:       "Theme",
 };
 
-// Define the structure for nested breadcrumbs
+// Segment IDs to skip in breadcrumb display (dynamic route params like [id])
+const SKIP_PATTERNS = [
+  /^[a-z0-9]{20,}$/i,     // cuid / uuid — long alphanumeric IDs
+  /^c[a-z0-9]{20,}$/i,    // cuid with 'c' prefix
+];
+
+function shouldSkip(segment: string) {
+  return SKIP_PATTERNS.some((re) => re.test(segment));
+}
+
 interface BreadcrumbItemData {
   label: string;
   href: string;
-  isCurrent?: boolean;
+  isCurrent: boolean;
 }
 
 export default function UserLayout({ children }: { children: React.ReactNode }) {
@@ -49,7 +63,6 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
   const params = useParams();
   const pathname = usePathname();
 
-  // Check session and redirect if not authenticated
   useEffect(() => {
     if (status === "unauthenticated") {
       const queryString = searchParams.toString();
@@ -58,118 +71,81 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
     }
   }, [status, pathname, searchParams, router]);
 
-  // Generate breadcrumbs based on the current path
   const generateBreadcrumbs = (): BreadcrumbItemData[] => {
     if (!pathname) return [];
-    
-    // Split the pathname into segments
-    const segments = pathname.split('/').filter(segment => segment.length > 0);
-    
-    // Start with home
-    const breadcrumbs: BreadcrumbItemData[] = [
-      { label: "Home", href: "/" }
-    ];
-    
-    // Build the path incrementally
+    const segments = pathname.split("/").filter(Boolean);
+    const breadcrumbs: BreadcrumbItemData[] = [{ label: "Home", href: "/", isCurrent: false }];
+
     let currentPath = "";
-    
-    segments.forEach((segment, index) => {
-      // Skip the id parameter
-      if (segment === params.id) {
-        currentPath += `/${segment}`;
-        return;
-      }
-      
-      currentPath += `/${segment}`;
-      
-      // Check if this segment has a mapping
-      const mapping = BREADCRUMB_MAPPINGS[segment];
-      
-      if (mapping) {
-        breadcrumbs.push({
-          label: mapping.label,
-          href: currentPath,
-          isCurrent: index === segments.length - 1
-        });
-      } else {
-        // Fallback: capitalize the segment
-        breadcrumbs.push({
-          label: segment.charAt(0).toUpperCase() + segment.slice(1),
-          href: currentPath,
-          isCurrent: index === segments.length - 1
-        });
-      }
+    const visible = segments.filter((seg) => !shouldSkip(seg));
+
+    visible.forEach((segment, index) => {
+      // Reconstruct the actual path (including skipped ID segments)
+      const segIdx = segments.indexOf(segment, segments.indexOf(segment));
+      currentPath = "/" + segments.slice(0, segIdx + 1).join("/");
+
+      breadcrumbs.push({
+        label: BREADCRUMB_MAPPINGS[segment] ?? (segment.charAt(0).toUpperCase() + segment.slice(1)),
+        href: currentPath,
+        isCurrent: index === visible.length - 1,
+      });
     });
-    
+
     return breadcrumbs;
   };
 
   const breadcrumbs = generateBreadcrumbs();
 
-  // Show loading state while checking session
   if (status === "loading") {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        <span className="ml-2">Loading...</span>
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
-  // Don't render anything if not authenticated (will redirect)
-  if (status === "unauthenticated") {
-    return null;
-  }
+  if (status === "unauthenticated") return null;
 
-  // Only render the layout when authenticated
   return (
     <WorkspaceProvider>
       <SidebarProvider>
-        <AppSidebar id={params.id as string}/>
+        <AppSidebar id={params.id as string} />
         <SidebarInset>
-          <header className="flex h-16 shrink-0 items-center gap-2">
-            <div className="flex items-center gap-2 px-4">
-              <SidebarTrigger className="-ml-1" />
-              <Separator
-                orientation="vertical"
-                className="mr-2 data-[orientation=vertical]:h-4"
-              />
-              <Breadcrumb>
-                <BreadcrumbList>
-                  {breadcrumbs.map((crumb, index) => (
-                    <div key={crumb.href} className="flex items-center">
-                      <BreadcrumbItem>
-                        {index === breadcrumbs.length - 1 ? (
-                          // Current page (no link)
-                          <BreadcrumbPage className="font-semibold">
-                            {crumb.label}
-                          </BreadcrumbPage>
-                        ) : (
-                          // Clickable breadcrumb
-                          <BreadcrumbLink 
-                            href={crumb.href}
-                            className="hover:text-primary transition-colors"
-                          >
-                            {crumb.label}
-                          </BreadcrumbLink>
-                        )}
-                      </BreadcrumbItem>
-                      
-                      {/* Add separator except for the last item */}
-                      {index < breadcrumbs.length - 1 && (
-                        <BreadcrumbSeparator className="mx-2" />
+          <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
+            <SidebarTrigger className="-ml-1" />
+            <Separator orientation="vertical" className="mx-2 h-4" />
+            <Breadcrumb>
+              <BreadcrumbList>
+                {breadcrumbs.map((crumb, index) => (
+                  <div key={crumb.href} className="flex items-center">
+                    <BreadcrumbItem>
+                      {crumb.isCurrent ? (
+                        <BreadcrumbPage className="font-medium text-sm">
+                          {crumb.label}
+                        </BreadcrumbPage>
+                      ) : (
+                        <BreadcrumbLink
+                          href={crumb.href}
+                          className="text-sm hover:text-foreground transition-colors"
+                        >
+                          {crumb.label}
+                        </BreadcrumbLink>
                       )}
-                    </div>
-                  ))}
-                </BreadcrumbList>
-              </Breadcrumb>
-            </div>
+                    </BreadcrumbItem>
+                    {index < breadcrumbs.length - 1 && (
+                      <BreadcrumbSeparator className="mx-1" />
+                    )}
+                  </div>
+                ))}
+              </BreadcrumbList>
+            </Breadcrumb>
           </header>
-          <div className="flex flex-1 flex-col gap-4 m-4 border max-h-[calc(100vh-7rem)] overflow-auto rounded-xl no-scrollbar">
+
+          <div className="flex flex-1 flex-col overflow-auto">
             {children}
           </div>
         </SidebarInset>
       </SidebarProvider>
     </WorkspaceProvider>
-  )
+  );
 }
