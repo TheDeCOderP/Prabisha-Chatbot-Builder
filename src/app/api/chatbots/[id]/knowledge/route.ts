@@ -209,7 +209,7 @@ export async function POST(
               knowledgeBaseId: knowledgeBase.id,
               source: url,
               content,
-              metadata,
+              metadata: metadata as Record<string, string | number | boolean | null>,
             },
           });
 
