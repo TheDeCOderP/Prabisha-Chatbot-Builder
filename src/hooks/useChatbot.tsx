@@ -396,6 +396,9 @@ export function useChatbot({
           conversationId,
           chatbotId,
           language: languageRef.current,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          pageUrl: window.location.href,
+          isReturning: !!conversationId,
         }),
       });
 
@@ -468,6 +471,9 @@ export function useChatbot({
           conversationId,
           chatbotId,
           language: languageRef.current,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          pageUrl: window.location.href,
+          isReturning: !!conversationId,
         }),
       });
 

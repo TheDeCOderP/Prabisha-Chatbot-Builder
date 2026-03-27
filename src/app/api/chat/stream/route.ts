@@ -3,7 +3,7 @@ import { prisma } from '@/lib/prisma';
 
 export async function POST(req: Request) {
   try {
-    const { chatbotId, conversationId, message, language = 'en' } = await req.json();
+    const { chatbotId, conversationId, message, language = 'en', timezone, pageUrl, isReturning } = await req.json();
 
     const chatbot = await prisma.chatbot.findUnique({
       where: { id: chatbotId },
@@ -32,7 +32,7 @@ export async function POST(req: Request) {
       data: { content: message, senderType: 'USER', conversationId: conversation.id },
     });
 
-    const stringStream = await streamRAGResponse(chatbot, message, conversation.id, undefined, language);
+    const stringStream = await streamRAGResponse(chatbot, message, conversation.id, undefined, language, { timezone, pageUrl, isReturning });
 
     // Encode string chunks to Uint8Array so Response can stream them correctly
     const encoder = new TextEncoder();

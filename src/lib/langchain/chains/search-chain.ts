@@ -20,6 +20,12 @@ export interface SearchChainConfig {
    * Defaults to 'en'.
    */
   language?: string;
+  /** Browser context passed from the frontend for richer humanised responses */
+  clientContext?: {
+    timezone?: string;
+    pageUrl?: string;
+    isReturning?: boolean;
+  };
 }
 
 export interface SearchChainResult {
@@ -381,17 +387,41 @@ export async function getLogicContext(chatbot: any, message: string, preloadedLo
   return ctx;
 }
 
-function generateSystemPrompt(chatbot: any): string {
+function generateSystemPrompt(chatbot: any, clientContext?: { timezone?: string; pageUrl?: string; isReturning?: boolean }): string {
   const directive = chatbot.directive?.trim() || "You are a helpful assistant.";
   const name = chatbot.name ? `Your name is ${chatbot.name}.` : '';
   const personality = chatbot.description?.trim()
     ? `About you: ${chatbot.description}`
     : '';
 
+  // Real-time context
+  const now = new Date();
+  const tz = clientContext?.timezone || 'UTC';
+
+  const userLocalTime = now.toLocaleString('en-US', {
+    timeZone: tz,
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+    hour: '2-digit', minute: '2-digit', timeZoneName: 'short'
+  });
+
+  const timeContext = `Current date & time (user's local): ${userLocalTime}`;
+
+  const pageContext = clientContext?.pageUrl
+    ? `User is currently on: ${clientContext.pageUrl}`
+    : '';
+
+  const returningContext = clientContext?.isReturning
+    ? `This is a returning user continuing a previous conversation.`
+    : `This is a new user — first interaction.`;
+
+  const contextBlock = [timeContext, pageContext, returningContext].filter(Boolean).join('\n');
+
   return `${directive}
 
 ${name}
 ${personality}
+
+${contextBlock}
 
 Tone & style:
 - Talk like a real person, not a corporate FAQ bot
@@ -1064,7 +1094,8 @@ export async function streamRAGResponse(
   userMessage: string,
   conversationId: string,
   onChunk?: (chunk: string) => void,
-  language = 'en'   // ← new param, safe default
+  language = 'en',
+  clientContext?: { timezone?: string; pageUrl?: string; isReturning?: boolean }
 ): Promise<ReadableStream<string>> {
   console.group('🌊 streamRAGResponse');
   const tTotal = timer('streamRAGResponse setup [total before stream starts]');
@@ -1127,7 +1158,7 @@ export async function streamRAGResponse(
   tLogic.end();
 
   // Language directive injected into both prompt branches
-  const systemPrompt = generateSystemPrompt(chatbot);
+  const systemPrompt = generateSystemPrompt(chatbot, clientContext);
   const prompt = knowledgeContext
     ? RAG_ANSWER_PROMPT
         .replace('{languageDirective}', langDirective)

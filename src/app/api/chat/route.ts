@@ -24,8 +24,12 @@ export async function POST(request: NextRequest) {
     const message = body.message || body.input;
     const chatbotId = body.chatbotId;
     let conversationId = body.conversationId;
-    // BCP-47 language code from the frontend language selector (e.g. 'en', 'ja', 'ar')
     const language: string = body.language || 'en';
+    const clientContext = {
+      timezone: body.timezone,
+      pageUrl: body.pageUrl,
+      isReturning: body.isReturning,
+    };
 
     if (!message?.trim()) {
       return NextResponse.json({ error: 'Message required' }, { status: 400 });
@@ -74,7 +78,8 @@ export async function POST(request: NextRequest) {
       conversationId,
       userMessage: message,
       chatbot,
-      language, // ← forwarded to the LLM prompts
+      language,
+      clientContext,
     });
     tChain.end();
 
