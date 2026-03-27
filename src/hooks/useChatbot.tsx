@@ -177,7 +177,7 @@ export function useChatbot({
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [hasLoadedInitialMessages, setHasLoadedInitialMessages] = useState<boolean>(false);
   const [quickQuestions, setQuickQuestions] = useState<MultilingualSuggestion[]>([]);
-  const [mode, setMode] = useState<'streaming' | 'standard'>('streaming');
+  const [mode, setMode] = useState<'streaming' | 'standard'>('standard');
   const [pendingMessage, setPendingMessage] = useState<string | null>(null);
 
   const languageRef = useRef(language);

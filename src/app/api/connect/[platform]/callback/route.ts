@@ -102,15 +102,23 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ plat
       refreshToken = tokenData.refresh_token || null;
       expiresAt = new Date(Date.now() + tokenData.expires_in * 1000);
 
-      // Fetch LinkedIn Profile
-      const pRes = await fetch("https://api.linkedin.com/v2/userinfo", {
-        headers: { Authorization: `Bearer ${accessToken}` },
+      const pRes = await fetch("https://api.linkedin.com/v2/me", {
+        headers: { 
+          Authorization: `Bearer ${accessToken}`,
+          "X-Restli-Protocol-Version": "2.0.0"
+        },
       });
+      
       const pData = await pRes.json();
+      
+      if (!pRes.ok) {
+        throw new Error(`LinkedIn Profile Error: ${pRes.statusText}`);
+      }
+
       profileData = {
-        id: pData.sub, // 'sub' is the unique ID in userinfo
-        name: pData.name || `${pData.given_name} ${pData.family_name}`,
-        image: pData.picture || null
+        id: pData.id,
+        name: `${pData.localizedFirstName} ${pData.localizedLastName}`.trim() || 'LinkedIn User',
+        image: null
       };
     } else {
       throw new Error("Unsupported platform");
