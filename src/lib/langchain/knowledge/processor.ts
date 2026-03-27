@@ -115,7 +115,7 @@ function chunkPageText(text: string): string[] {
 
 // ─── extractPDFWithGemini ─────────────────────────────────────────────────────
 //
-// Uses @google/genai with gemini-2.0-flash.
+// Uses @google/genai with gemini-2.5-flash.
 // The PDF is sent as an inline base64 blob — Gemini natively understands PDFs
 // and returns structured per-page JSON in a single round-trip.
 
@@ -152,7 +152,7 @@ Rules:
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-2.0-flash',
+      model: 'gemini-2.5-flash',
       contents: [
         {
           role: 'user',
