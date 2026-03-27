@@ -42,7 +42,56 @@ interface ChatProps {
   useDbConfig?: boolean
 }
 
-const sanitizedHTML = (html: string) => DOMPurify.sanitize(html);
+// ─── Lightweight markdown → HTML converter ────────────────────────────────
+// Handles what Gemini commonly outputs: headings, bold, lists, paragraphs
+function markdownToHtml(text: string): string {
+  if (!text) return '';
+  // Already HTML — pass through
+  if (/<[a-z][\s\S]*>/i.test(text)) return DOMPurify.sanitize(text);
+
+  const lines = text.split('\n');
+  const out: string[] = [];
+  let listBuffer: string[] = [];
+
+  const flushList = () => {
+    if (listBuffer.length) {
+      out.push(`<ul style="margin:8px 0;padding-left:20px;">${listBuffer.join('')}</ul>`);
+      listBuffer = [];
+    }
+  };
+
+  const inlineFormat = (s: string) =>
+    s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+     .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+     .replace(/`([^`]+)`/g, '<code style="background:#f1f5f9;padding:1px 4px;border-radius:3px;font-size:0.85em;">$1</code>');
+
+  for (const raw of lines) {
+    const line = raw.trimEnd();
+
+    if (!line.trim()) { flushList(); continue; }
+
+    // Headings
+    if (/^### /.test(line)) { flushList(); out.push(`<p style="font-weight:700;margin:12px 0 4px;font-size:0.95em;">${inlineFormat(line.slice(4))}</p>`); continue; }
+    if (/^## /.test(line))  { flushList(); out.push(`<p style="font-weight:700;margin:14px 0 4px;">${inlineFormat(line.slice(3))}</p>`); continue; }
+    if (/^# /.test(line))   { flushList(); out.push(`<p style="font-weight:700;margin:14px 0 4px;font-size:1.05em;">${inlineFormat(line.slice(2))}</p>`); continue; }
+
+    // Bold-only line as heading
+    if (/^\*\*[^*]+\*\*$/.test(line.trim())) { flushList(); out.push(`<p style="font-weight:700;margin:12px 0 4px;">${line.trim().replace(/^\*\*|\*\*$/g, '')}</p>`); continue; }
+
+    // List items
+    if (/^[-*•] /.test(line.trim()) || /^\d+\. /.test(line.trim())) {
+      const txt = line.trim().replace(/^[-*•] /, '').replace(/^\d+\. /, '');
+      listBuffer.push(`<li style="margin-bottom:4px;">${inlineFormat(txt)}</li>`);
+      continue;
+    }
+
+    flushList();
+    out.push(`<p style="margin:6px 0;">${inlineFormat(line.trim())}</p>`);
+  }
+
+  flushList();
+  return DOMPurify.sanitize(out.join(''));
+}
 
 // ─── Phone dimensions (natural / unscaled) ────────────────────────────────
 const PHONE_W = 375;
@@ -120,6 +169,8 @@ export default function ChatPreview({
   const [isLoading, setIsLoading] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const chatAreaRef = useRef<HTMLDivElement>(null)
+  const lastBotMsgRef = useRef<HTMLDivElement>(null)
+  const isStreamingRef = useRef(false)
   const [showSuggestions, setShowSuggestions] = useState(true)
   const [liveTheme, setLiveTheme] = useState<any>(null)
   const [previewMode, setPreviewMode] = useState<"desktop" | "mobile">("desktop")
@@ -252,7 +303,7 @@ export default function ChatPreview({
     }
   }, [autoGreeting, greetingText, messages.length]);
 
-  useEffect(() => { scrollToBottom() }, [])
+  useEffect(() => { scrollToLatestBotMessage() }, [])
 
   useEffect(() => {
     if (autoOpenChat && !showPreviewControls) {
@@ -261,10 +312,22 @@ export default function ChatPreview({
     }
   }, [autoOpenChat, showPreviewControls])
 
-  useEffect(() => { scrollToBottom() }, [messages])
+  useEffect(() => {
+    // Only scroll to pin the top of the latest bot message, not chase the bottom
+    if (!isStreamingRef.current) {
+      scrollToLatestBotMessage();
+    }
+  }, [messages])
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+  const scrollToLatestBotMessage = () => {
+    requestAnimationFrame(() => {
+      if (lastBotMsgRef.current && chatAreaRef.current) {
+        chatAreaRef.current.scrollTo({
+          top: lastBotMsgRef.current.offsetTop - 12,
+          behavior: 'smooth',
+        });
+      }
+    });
   }
 
   // ─── Message handlers ─────────────────────────────────────────────────────
@@ -276,42 +339,61 @@ export default function ChatPreview({
     if (!messageText) setMessage("")
     setShowSuggestions(false);
 
-    const newMessages: Message[] = [...messages, { role: "user", content: textToSend }]
-    setMessages(newMessages)
+    setMessages(prev => [...prev, { role: "user", content: textToSend }])
     setIsLoading(true)
+
+    // Add placeholder bot message — scroll to it immediately
+    setMessages(prev => [...prev, { role: "assistant", content: "" }])
+    isStreamingRef.current = true;
+    requestAnimationFrame(() => scrollToLatestBotMessage());
 
     try {
       if (onSendMessage) {
-        const response = await onSendMessage(textToSend, newMessages.slice(0, -1))
+        const response = await onSendMessage(textToSend, messages)
         if (response) {
-          setMessages(prev => [...prev, { role: "assistant", content: response }])
+          setMessages(prev => {
+            const updated = [...prev];
+            updated[updated.length - 1] = { role: "assistant", content: response };
+            return updated;
+          })
         }
       } else {
-        const res = await fetch(`/api/chat`, {
+        const res = await fetch(`/api/chat/stream`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            input: textToSend,
-            prompt: directive,
-            messages: newMessages.slice(0, -1),
+            message: textToSend,
             chatbotId: id,
+            language: userLang,
           }),
         })
 
         if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`)
-        const data = await res.json()
-        setMessages(prev => [...prev, {
-          role: "assistant",
-          content: data.message || "I'm sorry, I couldn't process that request."
-        }])
+
+        const reader = res.body!.getReader();
+        const decoder = new TextDecoder();
+        let accumulated = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          accumulated += decoder.decode(value, { stream: true });
+          setMessages(prev => {
+            const updated = [...prev];
+            updated[updated.length - 1] = { role: "assistant", content: accumulated };
+            return updated;
+          })
+        }
       }
     } catch (error) {
       console.error("Error while sending message:", error)
-      setMessages(prev => [...prev, {
-        role: "assistant",
-        content: "Sorry, I encountered an error. Please try again."
-      }])
+      setMessages(prev => {
+        const updated = [...prev];
+        updated[updated.length - 1] = { role: "assistant", content: "Sorry, I encountered an error. Please try again." };
+        return updated;
+      })
     } finally {
+      isStreamingRef.current = false;
       setIsLoading(false)
     }
   }
@@ -463,6 +545,7 @@ export default function ChatPreview({
         {messages.slice(1).map((msg, index) => (
           <div
             key={index}
+            ref={msg.role === "assistant" && index === messages.slice(1).length - 1 ? lastBotMsgRef : null}
             className={`mb-4 ${msg.role === "user" ? "flex justify-end" : "flex gap-3"}`}
           >
             {msg.role === "assistant" && renderAvatarIcon()}
@@ -475,9 +558,9 @@ export default function ChatPreview({
               }}
             >
               <div
-                className="text-sm whitespace-pre-wrap"
+                className="text-sm"
                 dangerouslySetInnerHTML={{
-                  __html: sanitizedHTML(msg.content).replace(
+                  __html: markdownToHtml(msg.content).replace(
                     /<a /g,
                     `<a target="_blank" rel="noopener noreferrer" `
                   )
@@ -488,7 +571,7 @@ export default function ChatPreview({
         ))}
 
         {/* Typing indicator */}
-        {isLoading && (
+        {isLoading && messages[messages.length - 1]?.content === '' && (
           <div className="mb-4 flex gap-3">
             {renderAvatarIcon()}
             <Card

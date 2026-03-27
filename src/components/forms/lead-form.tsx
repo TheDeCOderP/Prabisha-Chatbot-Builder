@@ -4,7 +4,6 @@
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
 import { Loader2, CheckCircle2, X } from 'lucide-react';
 import { toast } from 'sonner';
@@ -206,7 +205,7 @@ export function LeadForm({
       value: formData[field.id] || field.defaultValue || '',
       onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
         handleInputChange(field.id, e.target.value),
-      placeholder: field.placeholder,
+      placeholder: (field.placeholder || field.label).replace(/^enter your\s*/i, ''),
       required: field.required,
       className: errors[field.id] ? 'border-red-500' : '',
       disabled: isSubmitting,
@@ -359,10 +358,6 @@ export function LeadForm({
 
           <div className="space-y-3">
             <div>
-              <Label htmlFor={currentField.id}>
-                {currentField.label}
-                {currentField.required && <span className="text-red-500">*</span>}
-              </Label>
               {renderField(currentField)}
               {errors[currentField.id] && (
                 <p className="text-xs text-red-500 mt-1">
@@ -455,10 +450,6 @@ export function LeadForm({
         <div className="space-y-4">
           {fields.map((field) => (
             <div key={field.id}>
-              <Label htmlFor={field.id}>
-                {field.label}
-                {field.required && <span className="text-red-500">*</span>}
-              </Label>
               {renderField(field)}
               {errors[field.id] && (
                 <p className="text-xs text-red-500 mt-1">{errors[field.id]}</p>

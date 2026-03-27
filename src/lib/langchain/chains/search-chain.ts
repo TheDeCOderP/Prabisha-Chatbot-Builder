@@ -1,8 +1,9 @@
 // lib/langchain/search-chain.ts
 import { searchSimilar } from '@/lib/langchain/vector-store';
-import { createGoogleGenerativeAI } from '@ai-sdk/google';
-import { generateText, streamText } from 'ai';
+import { GoogleGenAI } from '@google/genai';
 import { prisma } from '@/lib/prisma';
+
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
 export interface SearchChainConfig {
   chatbotId: string;
@@ -32,9 +33,6 @@ export interface SearchChainResult {
   sourceUrls?: Array<{ title: string; url: string }>;
 }
 
-const googleAI = createGoogleGenerativeAI({
-  apiKey: process.env.GEMINI_API_KEY ?? '',
-});
 
 // ─── Timer utility ────────────────────────────────────────────────────────────
 function timer(label: string) {
@@ -102,61 +100,42 @@ Output format (plain text, one per line, no numbering):
 
 const RAG_ANSWER_PROMPT = `
 {languageDirective}
-You are a domain-specific AI assistant.
+{systemPrompt}
 
-You MUST answer using ONLY the provided CONTEXT.
-You are strictly forbidden from adding external knowledge.
-
-────────────────────────
-CORE BEHAVIOR RULES
-────────────────────────
-1. Use ONLY facts explicitly present in the context.
-2. If the answer is not fully available, clearly say what is missing.
-3. If context is partially relevant, answer only the relevant portion.
-4. If multiple chunks overlap, prioritize the highest relevance information.
-5. If information conflicts, acknowledge the inconsistency.
-6. Never fabricate URLs, pricing, features, policies, or claims.
+You have access to relevant knowledge below. Use it to answer the user's question naturally — like a knowledgeable person who happens to have read this material, not like a search engine returning results.
 
 ────────────────────────
-RESPONSE STYLE
+HOW TO USE THE CONTEXT
 ────────────────────────
-- Clear, structured, and easy to scan
-- 2-5 concise paragraphs OR a short bullet list
-- Professional, warm, confident tone
-- No fluff, no repetition
-- Lead with the most directly helpful information first
+- Answer from the context, but write like a human — don't quote chunks verbatim
+- Synthesize information across chunks into a coherent, flowing answer
+- If something isn't in the context, say so honestly rather than guessing
+- Never fabricate URLs, prices, features, or policies
 
 ────────────────────────
-HTML STRICT FORMAT
+TONE & STYLE
 ────────────────────────
-- Wrap every paragraph in <p>
-- Use <ul><li> for lists (no extra newlines)
-- Use <strong> only for product names or critical terms
-- No markdown
-- No <br> tags
-- Output compact HTML only
+- Conversational and direct — get to the point fast
+- Use "I" naturally: "From what I can see...", "Based on this..."
+- Vary sentence length — mix short punchy sentences with longer ones
+- No corporate filler: no "Certainly!", "Great question!", "Of course!"
+- If the answer is simple, keep it short. Don't pad.
+
+────────────────────────
+FORMAT
+────────────────────────
+- Wrap paragraphs in <p>
+- Use <ul><li> for genuine lists (3+ items that are truly list-like)
+- Use <strong> only for genuinely important terms or names
+- No markdown, no <br> tags
+- End with ONE natural follow-up question in <p class="follow-up-question">...</p>
 
 ────────────────────────
 CITATION RULES
 ────────────────────────
-Each context chunk may include:
-[Chunk X | Source: Page Title (https://example.com)]
-
-When using information from a chunk with a URL:
-- Add citation immediately after that sentence
-- Format:
+When using info from a chunk that has a URL, cite inline:
 <cite data-url="FULL_URL">Page Title</cite>
-- Place inside the same <p> or <li>
-- Do NOT invent URLs
-- Do NOT cite if no URL exists in label
-
-────────────────────────
-FOLLOW-UP RULE
-────────────────────────
-End with exactly ONE relevant next-step question.
-Wrap it as:
-<p class="follow-up-question">...</p>
-This must be the final element.
+Do NOT invent URLs. Skip citation if no URL exists.
 
 ────────────────────────
 CONTEXT:
@@ -165,37 +144,17 @@ CONTEXT:
 CONVERSATION HISTORY:
 {history}
 
-USER QUESTION:
+USER:
 {question}
 
-Return ONLY clean, compact HTML.
+Return ONLY clean HTML.
 `;
 
 const GENERAL_ANSWER_PROMPT = `
 {languageDirective}
 {systemPrompt}
 
-You are responding in an ongoing conversation.
-
 ────────────────────────
-BEHAVIOR RULES
-────────────────────────
-- Be helpful, natural, and solution-oriented
-- If unsure, say so honestly
-- If an action is available (from logicContext), introduce it naturally
-- Do NOT be robotic or overly verbose
-- Avoid generic filler responses
-
-────────────────────────
-RESPONSE FORMAT (STRICT)
-────────────────────────
-- Wrap paragraphs in <p>
-- Use <ul><li> for lists (no extra spacing)
-- Use <strong> sparingly for key terms
-- No markdown
-- No <br> tags
-- Output compact HTML only
-
 CONVERSATION HISTORY:
 {history}
 
@@ -205,7 +164,15 @@ AVAILABLE ACTIONS:
 USER:
 {question}
 
-Return ONLY clean, compact HTML.
+────────────────────────
+FORMAT
+────────────────────────
+- Wrap paragraphs in <p>
+- Use <ul><li> for lists (3+ items)
+- Use <strong> sparingly
+- No markdown, no <br> tags
+
+Return ONLY clean HTML.
 `;
 
 // ─── rewriteQuery ─────────────────────────────────────────────────────────────
@@ -217,14 +184,14 @@ export async function rewriteQuery(userMessage: string): Promise<string[]> {
 
   const t = timer('rewriteQuery (LLM call)');
   try {
-    const { text } = await generateText({
-      model: googleAI('gemini-2.5-flash'),
-      prompt: QUERY_REWRITE_PROMPT.replace('{question}', userMessage),
-      maxOutputTokens: 100,
-      temperature: 0.3,
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: [{ role: 'user', parts: [{ text: QUERY_REWRITE_PROMPT.replace('{question}', userMessage) }] }],
+      config: { maxOutputTokens: 100, temperature: 0.3 },
     });
     t.end();
 
+    const text = response.text ?? '';
     const variations = text
       .split('\n')
       .filter(line => line.trim())
@@ -314,9 +281,13 @@ export async function searchKnowledgeBases(
   console.log(`   Score range: ${top[0]?.score.toFixed(3)} - ${top[top.length - 1]?.score.toFixed(3)}`);
 
   const formatted = top.map((r, i) => {
-    const scorePercent = (r.score * 100).toFixed(1);
-    const source = r.metadata?.title || r.kbName || 'Knowledge Base';
-    return `[Chunk ${i + 1} | Relevance: ${scorePercent}% | Source: ${source}]\n${r.content}`;
+    const src = r.metadata?.source || r.metadata?.url;
+    const title = r.metadata?.title;
+    // Only include a label when there's a real URL to cite — KB names get echoed by the model
+    if (src && (src.startsWith('http://') || src.startsWith('https://')) && title) {
+      return `[Source: ${title} (${src})]\n${r.content}`;
+    }
+    return r.content;
   }).join('\n\n---\n\n');
 
   const context = `KNOWLEDGE BASE CONTEXT:\n\n${formatted}\n\n(Total sources: ${top.length})`;
@@ -411,15 +382,25 @@ export async function getLogicContext(chatbot: any, message: string, preloadedLo
 }
 
 function generateSystemPrompt(chatbot: any): string {
-  const base = chatbot.directive || "You are a helpful, knowledgeable assistant.";
-  const personality = chatbot.description ? `\n\nYour personality: ${chatbot.description}` : "";
-  const guidelines = `\n\nGuidelines:
-- Be conversational and helpful
-- Provide specific details when available
-- If unsure, explicitly state: "I don't have that information available right now."
-- Stay professional but friendly
-- Format responses in HTML for better readability`;
-  return `${base}${personality}${guidelines}`;
+  const directive = chatbot.directive?.trim() || "You are a helpful assistant.";
+  const name = chatbot.name ? `Your name is ${chatbot.name}.` : '';
+  const personality = chatbot.description?.trim()
+    ? `About you: ${chatbot.description}`
+    : '';
+
+  return `${directive}
+
+${name}
+${personality}
+
+Tone & style:
+- Talk like a real person, not a corporate FAQ bot
+- Be warm, direct, and conversational — like a knowledgeable friend helping out
+- Use "I" naturally. Say things like "I'd suggest...", "Honestly...", "The thing is..."
+- Match the user's energy — casual if they're casual, detailed if they ask for detail
+- Never start with "Certainly!", "Of course!", "Great question!" or similar filler
+- If you don't know something, say so plainly — don't pad it with apologies
+- Keep answers focused. Don't repeat yourself or over-explain`.trim();
 }
 
 export async function checkLogicTriggers(chatbot: any, message: string, preloadedLogic?: any) {
@@ -535,20 +516,58 @@ function cleanHtmlResponse(html: string): string {
 }
 
 function ensureHtmlFormat(text: string): string {
+  // Already has HTML — pass through
   if (/<[^>]+>/.test(text)) return text;
 
-  const paragraphs = text.split('\n\n').filter(p => p.trim());
-  return paragraphs.map(p => {
-    if (p.includes('\n- ') || p.includes('\n• ')) {
-      const lines = p.split('\n').filter(line => line.trim());
-      const listItems = lines
-        .filter(item => item.trim().startsWith('- ') || item.trim().startsWith('• '))
-        .map(item => `<li style="margin-bottom: 6px;">${item.replace(/^[-•]\s*/, '').trim()}</li>`)
-        .join('');
-      return `<ul style="margin: 12px 0; padding-left: 24px;">${listItems}</ul>`;
+  const lines = text.split('\n');
+  const output: string[] = [];
+  let listBuffer: string[] = [];
+
+  const flushList = () => {
+    if (listBuffer.length > 0) {
+      output.push(`<ul style="margin:10px 0;padding-left:22px;">${listBuffer.join('')}</ul>`);
+      listBuffer = [];
     }
-    return `<p style="margin-top: 12px;">${p.trim()}</p>`;
-  }).join('');
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) { flushList(); continue; }
+
+    // Heading patterns: "## Foo", "**Foo**", "Foo:" at start of a block
+    if (/^#{1,3}\s+/.test(line)) {
+      flushList();
+      const txt = line.replace(/^#{1,3}\s+/, '');
+      output.push(`<p style="margin:14px 0 4px;font-weight:600;color:#111;">${txt}</p>`);
+      continue;
+    }
+
+    // Bold-only line used as heading: **Foo** or __Foo__
+    if (/^\*\*[^*]+\*\*$/.test(line) || /^__[^_]+__$/.test(line)) {
+      flushList();
+      const txt = line.replace(/^\*\*|\*\*$|^__|__$/g, '');
+      output.push(`<p style="margin:14px 0 4px;font-weight:600;color:#111;">${txt}</p>`);
+      continue;
+    }
+
+    // List items: "- foo", "• foo", "* foo", "1. foo"
+    if (/^[-•*]\s+/.test(line) || /^\d+\.\s+/.test(line)) {
+      const txt = line.replace(/^[-•*]\s+/, '').replace(/^\d+\.\s+/, '');
+      // inline bold
+      const formatted = txt.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+      listBuffer.push(`<li style="margin-bottom:5px;">${formatted}</li>`);
+      continue;
+    }
+
+    // Regular paragraph line — flush any open list first
+    flushList();
+    // inline bold
+    const formatted = line.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    output.push(`<p style="margin:8px 0;">${formatted}</p>`);
+  }
+
+  flushList();
+  return output.join('');
 }
 
 function appendReadMoreSection(
@@ -710,14 +729,13 @@ ${lastAssistant.content}
     } else {
       const tGreeting = timer('greeting fast-path LLM (non-English)');
       try {
-        const { text } = await generateText({
-          model: googleAI('gemini-2.5-flash'),
-          prompt: `${langDirective}Reply to a friendly greeting in one short sentence wrapped in a <p> tag. Output only the HTML.`,
-          maxOutputTokens: 60,
-          temperature: 0.5,
+        const response = await ai.models.generateContent({
+          model: chatbot.model || 'gemini-2.5-flash',
+          contents: [{ role: 'user', parts: [{ text: `${langDirective}Reply to a friendly greeting in one short sentence wrapped in a <p> tag. Output only the HTML.` }] }],
+          config: { maxOutputTokens: 60, temperature: 0.5 },
         });
         tGreeting.end();
-        greetingText = text.trim() || `<p>👋</p>`;
+        greetingText = response.text?.trim() || `<p>👋</p>`;
       } catch {
         tGreeting.end();
         greetingText = `<p>👋</p>`;
@@ -771,26 +789,31 @@ ${lastAssistant.content}
   const strongContext = bestScore >= 0.45 && knowledgeContext.length > 0;
 
   // STEP 3: LLM generation — language directive injected into both prompt branches
+  const systemPrompt = generateSystemPrompt(chatbot);
   const prompt = strongContext
     ? RAG_ANSWER_PROMPT
         .replace('{languageDirective}', langDirective)
+        .replace('{systemPrompt}', systemPrompt)
         .replace('{context}', knowledgeContext)
         .replace('{history}', formattedHistory)
         .replace('{question}', enrichedUserMessage)
     : GENERAL_ANSWER_PROMPT
         .replace('{languageDirective}', langDirective)
-        .replace('{systemPrompt}', generateSystemPrompt(chatbot))
+        .replace('{systemPrompt}', systemPrompt)
         .replace('{history}', formattedHistory)
         .replace('{logicContext}', logicContext)
         .replace('{question}', enrichedUserMessage);
 
-  const tLLM = timer('Step 3: LLM generateText (gemini-2.5-flash)');
-  const { text } = await generateText({
-    model: googleAI('gemini-2.5-flash'),
-    prompt,
-    maxOutputTokens: chatbot.max_tokens || 400,
-    temperature: chatbot.temperature ?? 0.82,
+  const tLLM = timer(`Step 3: LLM generateText (${chatbot.model || 'gemini-2.5-flash'})`);
+  const response = await ai.models.generateContent({
+    model: chatbot.model || 'gemini-2.5-flash',
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    config: {
+      maxOutputTokens: chatbot.max_tokens || 800,
+      temperature: chatbot.temperature ?? 0.9,
+    },
   });
+  const text = response.text ?? '';
   tLLM.end();
 
   console.log(`   └─ LLM output length: ${text.length} chars`);
@@ -867,8 +890,12 @@ function processSearchResults(allResults: any[], chatbot: any) {
 
   const context = uniqueResults.map((r, i) => {
     const src = extractSourceUrl(r);
-    const label = src?.title || r.metadata?.title || `Source ${i + 1}`;
-    return `[${label}]\n${r.content}`;
+    // Only label chunks that have a real URL — the model uses these for citations
+    // KB name labels (e.g. "Files - 3/26/2026") get echoed verbatim, so skip them
+    if (src?.url && src?.title) {
+      return `[Source: ${src.title} (${src.url})]\n${r.content}`;
+    }
+    return r.content;
   }).join('\n\n');
 
   const sourceMap = new Map<string, { title: string; url: string }>();
@@ -1066,13 +1093,12 @@ export async function streamRAGResponse(
       greetingText = `<p>Hi there 👋 How can I help you today?</p>`;
     } else {
       try {
-        const { text } = await generateText({
-          model: googleAI('gemini-2.5-flash'),
-          prompt: `${langDirective}Reply to a friendly greeting in one short sentence wrapped in a <p> tag. Output only the HTML.`,
-          maxOutputTokens: 60,
-          temperature: 0.5,
+        const response = await ai.models.generateContent({
+          model: chatbot.model || 'gemini-2.5-flash',
+          contents: [{ role: 'user', parts: [{ text: `${langDirective}Reply to a friendly greeting in one short sentence wrapped in a <p> tag. Output only the HTML.` }] }],
+          config: { maxOutputTokens: 60, temperature: 0.5 },
         });
-        greetingText = text.trim() || `<p>👋</p>`;
+        greetingText = response.text?.trim() || `<p>👋</p>`;
       } catch {
         greetingText = `<p>👋</p>`;
       }
@@ -1101,25 +1127,29 @@ export async function streamRAGResponse(
   tLogic.end();
 
   // Language directive injected into both prompt branches
+  const systemPrompt = generateSystemPrompt(chatbot);
   const prompt = knowledgeContext
     ? RAG_ANSWER_PROMPT
         .replace('{languageDirective}', langDirective)
+        .replace('{systemPrompt}', systemPrompt)
         .replace('{context}', knowledgeContext)
         .replace('{history}', formattedHistory)
         .replace('{question}', userMessage)
     : GENERAL_ANSWER_PROMPT
         .replace('{languageDirective}', langDirective)
-        .replace('{systemPrompt}', generateSystemPrompt(chatbot))
+        .replace('{systemPrompt}', systemPrompt)
         .replace('{history}', formattedHistory)
         .replace('{logicContext}', logicContext)
         .replace('{question}', userMessage);
 
   const tStreamInit = timer('streamText init (LLM call start)');
-  const result = await streamText({
-    model: googleAI('gemini-2.5-flash'),
-    prompt,
-    maxOutputTokens: chatbot.max_tokens || 400,
-    temperature: chatbot.temperature ?? 0.82,
+  const streamResult = await ai.models.generateContentStream({
+    model: chatbot.model || 'gemini-2.5-flash',
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    config: {
+      maxOutputTokens: chatbot.max_tokens || 800,
+      temperature: chatbot.temperature ?? 0.9,
+    },
   });
   tStreamInit.end();
 
@@ -1133,11 +1163,13 @@ export async function streamRAGResponse(
 
   const stream = new ReadableStream<string>({
     async start(controller) {
-      for await (const chunk of result.textStream) {
+      for await (const chunk of streamResult) {
+        const piece = chunk.text ?? '';
+        if (!piece) continue;
         chunkCount++;
-        fullText += chunk;
-        controller.enqueue(chunk);
-        onChunk?.(chunk);
+        fullText += piece;
+        controller.enqueue(piece);
+        onChunk?.(piece);
       }
 
       tStreamRead.end();

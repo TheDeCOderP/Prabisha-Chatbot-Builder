@@ -132,26 +132,33 @@ export async function searchSimilar({
   query,
   chatbotId,
   knowledgeBaseId,
-  limit = 5, // Reduced for speed
+  limit = 5,
   threshold = 0.5,
 }: SearchParams) {
   try {
     const queryEmbedding = await generateEmbedding(query);
     const vectorString = `[${queryEmbedding.join(',')}]`;
 
-    // Use parameterized queries for performance and security
-    // We search by distance directly to utilize the HNSW/IVFFlat index effectively
-    // Inside searchSimilar function
-    const results = await prisma.$queryRawUnsafe<any[]>(`
-      SELECT 
-        "id", "content", "metadata",
-        1 - (embedding <=> $1::vector(3072)) as similarity -- Update here
-      FROM "DocumentVector"
-      WHERE "chatbotId" = $2
-      ${knowledgeBaseId ? 'AND "knowledgeBaseId" = $3' : ''}
-      ORDER BY embedding <=> $1::vector(3072) -- And here
-      LIMIT $4
-    `, vectorString, chatbotId, ...(knowledgeBaseId ? [knowledgeBaseId] : []), limit);
+    // Use two separate static queries to avoid dynamic $N parameter position issues
+    // with the Prisma pg adapter (causes "could not determine data type of parameter" error)
+    const results = knowledgeBaseId
+      ? await prisma.$queryRawUnsafe<any[]>(`
+          SELECT "id", "content", "metadata",
+            1 - (embedding <=> $1::vector(3072)) as similarity
+          FROM "DocumentVector"
+          WHERE "chatbotId" = $2
+            AND "knowledgeBaseId" = $3
+          ORDER BY embedding <=> $1::vector(3072)
+          LIMIT $4
+        `, vectorString, chatbotId, knowledgeBaseId, limit)
+      : await prisma.$queryRawUnsafe<any[]>(`
+          SELECT "id", "content", "metadata",
+            1 - (embedding <=> $1::vector(3072)) as similarity
+          FROM "DocumentVector"
+          WHERE "chatbotId" = $2
+          ORDER BY embedding <=> $1::vector(3072)
+          LIMIT $3
+        `, vectorString, chatbotId, limit);
 
     return results
       .filter(r => r.similarity >= threshold)

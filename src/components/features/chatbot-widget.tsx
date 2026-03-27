@@ -221,9 +221,52 @@ type LanguageCode = typeof LANGUAGES[number]['code'];
 // Utilities
 // ─────────────────────────────────────────────────────────────────────────────
 
+function markdownToHtml(text: string): string {
+  if (!text) return '';
+  if (/<[a-z][\s\S]*>/i.test(text)) return DOMPurify.sanitize(text);
+
+  const lines = text.split('\n');
+  const out: string[] = [];
+  let listBuffer: string[] = [];
+
+  const flushList = () => {
+    if (listBuffer.length) {
+      out.push(`<ul style="margin:8px 0;padding-left:20px;">${listBuffer.join('')}</ul>`);
+      listBuffer = [];
+    }
+  };
+
+  const inlineFormat = (s: string) =>
+    s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+     .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+     .replace(/`([^`]+)`/g, '<code style="background:#f1f5f9;padding:1px 4px;border-radius:3px;font-size:0.85em;">$1</code>');
+
+  for (const raw of lines) {
+    const line = raw.trimEnd();
+    if (!line.trim()) { flushList(); continue; }
+
+    if (/^### /.test(line)) { flushList(); out.push(`<p style="font-weight:700;margin:12px 0 4px;font-size:0.95em;">${inlineFormat(line.slice(4))}</p>`); continue; }
+    if (/^## /.test(line))  { flushList(); out.push(`<p style="font-weight:700;margin:14px 0 4px;">${inlineFormat(line.slice(3))}</p>`); continue; }
+    if (/^# /.test(line))   { flushList(); out.push(`<p style="font-weight:700;margin:14px 0 4px;font-size:1.05em;">${inlineFormat(line.slice(2))}</p>`); continue; }
+
+    if (/^\*\*[^*]+\*\*$/.test(line.trim())) { flushList(); out.push(`<p style="font-weight:700;margin:12px 0 4px;">${line.trim().replace(/^\*\*|\*\*$/g, '')}</p>`); continue; }
+
+    if (/^[-*•] /.test(line.trim()) || /^\d+\. /.test(line.trim())) {
+      const txt = line.trim().replace(/^[-*•] /, '').replace(/^\d+\. /, '');
+      listBuffer.push(`<li style="margin-bottom:4px;">${inlineFormat(txt)}</li>`);
+      continue;
+    }
+
+    flushList();
+    out.push(`<p style="margin:6px 0;">${inlineFormat(line.trim())}</p>`);
+  }
+
+  flushList();
+  return DOMPurify.sanitize(out.join(''));
+}
+
 const sanitizeHtml = (html: string): string => {
-  const clean = DOMPurify.sanitize(html);
-  return clean.replace(/<a /g, '<a target="_blank" rel="noopener noreferrer" ');
+  return markdownToHtml(html).replace(/<a /g, '<a target="_blank" rel="noopener noreferrer" ');
 };
 
 function resolveSuggestion(
@@ -769,6 +812,11 @@ function ChatBot({
     else showLeadForm();
   };
 
+  const handleSkipLead = () => {
+    localStorage.setItem(`chatbot_${chatbot.id}_lead_submitted`, 'true');
+    markLeadAsSubmitted();
+  };
+
   const currentLangMeta = LANGUAGES.find(l => l.code === selectedLang);
   const dir = currentLangMeta?.dir ?? 'ltr';
 
@@ -842,6 +890,7 @@ function ChatBot({
             isConversationalMode={isConversationalMode}
             leadCollectionStatus={leadCollectionStatus}
             onLeadAction={!hasSubmittedLead && activeLeadForm ? handleLeadAction : undefined}
+            onSkipLead={!hasSubmittedLead && activeLeadForm ? handleSkipLead : undefined}
             t={t}
             selectedLang={selectedLang}
           />
@@ -1028,6 +1077,7 @@ interface ChatMessagesProps {
   isConversationalMode: boolean;
   leadCollectionStatus: 'idle' | 'collecting' | 'submitting' | 'done' | 'error';
   onLeadAction?: () => void;
+  onSkipLead?: () => void;
   t: (key: string) => string;
   selectedLang: LanguageCode;
 }
@@ -1035,7 +1085,7 @@ interface ChatMessagesProps {
 function ChatMessages({
   messages, loading, status, quickQuestions, onQuickQuestion,
   chatContainerRef, messagesEndRef, lastBotMessageRef, formatTime, chatbot,
-  hasSubmittedLead, isConversationalMode, leadCollectionStatus, onLeadAction, t, selectedLang,
+  hasSubmittedLead, isConversationalMode, leadCollectionStatus, onLeadAction, onSkipLead, t, selectedLang,
 }: ChatMessagesProps) {
   const { speak, stop, isPlaying } = useTextToSpeech();
   const [activeSpeakingId, setActiveSpeakingId] = useState<string | null>(null);
@@ -1066,20 +1116,15 @@ function ChatMessages({
 
   // Avatar uses chatbot.avatar or chatbot.icon; size from theme
   const ChatbotAvatar = ({ small = false }: { small?: boolean }) => {
-    const size = small ? 32 : (th.widgetSize || 50);
+    const size = small ? 24 : 36;
     return (
-      <div className={`shrink-0 flex flex-col items-center ${small ? '' : ''}`} style={{ width: small ? 32 : size }}>
+      <div className="shrink-0 flex flex-col items-center" style={{ width: size }}>
         <Image
           src={chatIconSrc}
           height={size} width={size}
           alt={chatbot.name || 'Assistant'}
-          className={`${small ? 'p-0.5' : 'p-1'} rounded-full bg-primary/10 object-cover ${iconShapeClass}`}
+          className={`${small ? 'p-0' : 'p-0.5'} rounded-full bg-primary/10 object-cover ${iconShapeClass}`}
         />
-        {!small && (
-          <span className="text-[10px] text-center break-words w-full leading-tight mt-1">
-            {chatbot.name || 'Assistant'}
-          </span>
-        )}
       </div>
     );
   };
@@ -1180,38 +1225,34 @@ function ChatMessages({
   );
 
   const LeadCard = () => {
-    const isCollecting = leadCollectionStatus === 'collecting' || leadCollectionStatus === 'submitting';
     if (leadCollectionStatus === 'done' || hasSubmittedLead) return null;
+    const isCollecting = leadCollectionStatus === 'collecting' || leadCollectionStatus === 'submitting';
+    if (isCollecting) return null; // conversational lead hook handles the chat messages
 
     return (
-      <div className="flex justify-center animate-in fade-in zoom-in-95">
-        <div className="bg-gradient-to-r from-primary/10 to-primary/5 border border-primary/20 rounded-xl p-4 w-full">
-          <div className="flex items-start gap-3">
-            <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-              {isConversationalMode
-                ? <MessageCircle className="h-5 w-5 text-primary" />
-                : <UserPlus className="h-5 w-5 text-primary" />}
-            </div>
-            <div className="flex-1 min-w-0">
-              <h4 className="font-semibold text-sm mb-1">
-                {isCollecting ? t('collectingDetails') : t('readyToStart')}
-              </h4>
-              <p className="text-xs text-muted-foreground mb-3">
-                {isConversationalMode
-                  ? isCollecting ? t('answerAbove') : t('askQuestions')
-                  : t('shareDetails')}
-              </p>
-              {!isCollecting && (
-                <button
-                  onClick={onLeadAction}
-                  className="w-full py-2 px-4 rounded-lg hover:opacity-90 transition-opacity text-sm font-medium flex items-center justify-center gap-2 cursor-pointer"
-                  style={{ backgroundColor: accentColor, color: '#ffffff' }}
-                >
-                  {isConversationalMode
-                    ? <><MessageCircle className="h-4 w-4" /> {t('startChatForm')}</>
-                    : <><CheckCircle2 className="h-4 w-4" /> {t('getStarted')}</>}
-                </button>
-              )}
+      <div className="flex gap-3 animate-in fade-in">
+        <ChatbotAvatar />
+        <div className="max-w-[85%]">
+          <div
+            className="rounded-2xl rounded-tl-none px-4 py-3 border border-black/5 shadow-[0_4px_16px_rgba(0,0,0,0.05)] text-[13.5px] leading-relaxed"
+            style={{ backgroundColor: botBg, color: botText }}
+          >
+            <p className="mb-3">Before we continue, mind sharing a few quick details? Totally optional.</p>
+            <div className="flex gap-2">
+              <button
+                onClick={onLeadAction}
+                className="flex-1 py-1.5 px-3 rounded-lg text-xs font-medium transition-opacity hover:opacity-90 cursor-pointer"
+                style={{ backgroundColor: accentColor, color: '#fff' }}
+              >
+                Sure, go ahead
+              </button>
+              <button
+                onClick={() => onSkipLead?.()}
+                className="py-1.5 px-3 rounded-lg text-xs font-medium border transition-colors hover:bg-muted cursor-pointer"
+                style={{ borderColor: botText + '30', color: botText }}
+              >
+                Skip
+              </button>
             </div>
           </div>
         </div>
@@ -1225,21 +1266,27 @@ function ChatMessages({
       className="flex-1 overflow-y-auto overflow-x-hidden bg-linear-to-b from-background to-muted/30 relative"
     >
       <div className="p-4 space-y-6">
-        {messages.map((message, index) => (
-          <MessageBubble
-            key={index}
-            index={index}
-            message={message}
-            isUser={message.senderType === 'USER'}
-            isLastBot={index === lastBotIndex}
-          />
-        ))}
+        {messages.map((message, index) => {
+          // Empty bot placeholder — show typing indicator inline instead of empty bubble
+          if (message.senderType === 'BOT' && !message.content && index === messages.length - 1) {
+            return <LoadingDots key={index} text={t('thinking')} />;
+          }
+          return (
+            <MessageBubble
+              key={index}
+              index={index}
+              message={message}
+              isUser={message.senderType === 'USER'}
+              isLastBot={index === lastBotIndex}
+            />
+          );
+        })}
 
         {onLeadAction && hasMultipleMessages && !hasSubmittedLead && !loading && (
           <LeadCard />
         )}
 
-        {loading && status === 'submitted' && <LoadingDots text={t('thinking')} />}
+        {loading && status === 'submitted' && messages[messages.length - 1]?.content !== '' && <LoadingDots text={t('thinking')} />}
         {loading && status === 'streaming'  && <LoadingDots text={t('searching')} small />}
 
         {/* Quick suggestions — shown only before any user message */}

@@ -35,13 +35,14 @@ export async function GET(
     let triggers = [];
     if (chatbotLogic.triggers) {
       try {
-        triggers = JSON.parse(chatbotLogic.triggers as string);
+        const raw = chatbotLogic.triggers;
+        triggers = typeof raw === 'string' ? JSON.parse(raw) : raw;
         if (!Array.isArray(triggers)) {
           triggers = [];
         }
       } catch (e) {
         console.error('Error parsing triggers:', e);
-        return NextResponse.json({ shouldShowForm: false });
+        triggers = [];
       }
     }
 

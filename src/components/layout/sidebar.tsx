@@ -327,7 +327,7 @@ export function NavUser({ session }: { session: Session | null }) {
   const user = {
     name: session?.user?.name || "Guest",
     email: session?.user?.email || "guest@example.com",
-    avatar: session?.user?.image || "/avatars/default.jpg",
+    avatar: session?.user?.image || "",
   }
 
   const handleLogout = async () => {

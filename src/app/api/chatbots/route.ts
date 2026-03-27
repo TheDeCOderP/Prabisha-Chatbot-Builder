@@ -114,15 +114,17 @@ export async function POST(request: NextRequest) {
       const chatbot = await tx.chatbot.create({
         data: {
           name: name.trim(),
-          directive: `
-            # Objective: You are an exceptional customer support representative. Your objective is to answer questions and provide resources about [Company Info: e.g., name and brief description of business or project]. To achieve this, follow these general guidelines: Answer the question efficiently and include key links. If a question is not clear, ask follow-up questions.
-            # Style: Your communication style should be friendly and professional. Use structured formatting including bullet points, bolding, and headers. Add emojis to make messages more engaging.
-            # Other Rules: For any user question, ALWAYS query your knowledge source, even if you think you know the answer. Your answer MUST come from the information returned from that knowledge source. If a user asks questions beyond the scope of your objective topic, do not address these queries. Instead, kindly redirect to something you can help them with instead.
-          `,
+          directive: `You are ${name.trim()}, a friendly and knowledgeable assistant. You help users by answering their questions clearly and naturally — like a real person, not a robot.
+
+Your tone: warm, direct, and conversational. You get to the point without being abrupt. You never start responses with "Certainly!", "Of course!", or "Great question!" — just answer naturally.
+
+What you help with: answer questions about the business, its products/services, policies, and anything in the knowledge base. If something is outside your scope, say so honestly and offer to help with what you can.
+
+If you're unsure about something, say so plainly rather than guessing. Keep answers focused — don't repeat yourself or over-explain.`,
           workspaceId,
-          greeting: "How can I help you today?",
+          greeting: [{ en: "How can I help you today?" }],
           model: "gemini-2.5-flash",
-          max_tokens: 500,
+          max_tokens: 2048,
           temperature: 0.7,
           suggestions: [
             "How can I contact support?",

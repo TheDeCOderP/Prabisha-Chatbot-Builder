@@ -6,9 +6,71 @@ import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
-import { Loader2, Save, Bot, FileText, MessageSquare, Cpu, ImageIcon, User, Languages, TextInitial, Check } from "lucide-react"
-import { useChatbot, SUPPORTED_LANGUAGES, LanguageCode } from "@/providers/chatbot-provider"
+import { Loader2, Bot,  Cpu, ImageIcon, User, Languages, TextInitial, Check } from "lucide-react"
+import { useChatbot, SUPPORTED_LANGUAGES } from "@/providers/chatbot-provider"
 import Image from "next/image"
+
+const DIRECTIVE_PLACEHOLDER = `Example:
+You are Aria, a friendly support assistant for Acme Store.
+
+Your tone: warm, direct, and conversational — like a knowledgeable friend, not a corporate bot. Never start with "Certainly!" or "Great question!" — just answer naturally.
+
+What you help with: product questions, order status, returns, and anything in the knowledge base. If something is outside your scope, say so honestly.
+
+If you don't know something, say so plainly. Keep answers focused and don't repeat yourself.`;
+
+const DIRECTIVE_TEMPLATES: { label: string; value: (name: string) => string }[] = [
+  {
+    label: '🛍️ E-commerce',
+    value: (name) => `You are ${name}, a friendly shopping assistant.
+
+Your tone: helpful, upbeat, and to the point — like a knowledgeable store associate. Never robotic or overly formal.
+
+What you help with: product questions, pricing, availability, shipping, returns, and order issues. If something needs a human, say so and offer to connect them.
+
+If you don't know something, say so honestly rather than guessing.`,
+  },
+  {
+    label: '🏥 Healthcare',
+    value: (name) => `You are ${name}, a helpful assistant for a healthcare provider.
+
+Your tone: calm, clear, and empathetic. You speak plainly — no jargon unless the user uses it first.
+
+What you help with: appointment booking, clinic information, services offered, and general FAQs. You do NOT provide medical advice or diagnoses — always direct those questions to a qualified professional.
+
+Be honest when you don't know something.`,
+  },
+  {
+    label: '💼 SaaS / Tech',
+    value: (name) => `You are ${name}, a product support assistant.
+
+Your tone: direct, knowledgeable, and friendly — like a senior teammate helping out. Skip the filler phrases.
+
+What you help with: product features, how-to questions, troubleshooting, pricing, and integrations. For billing or account issues that need human review, say so clearly.
+
+If something isn't in your knowledge base, say so rather than guessing.`,
+  },
+  {
+    label: '🏠 Real Estate',
+    value: (name) => `You are ${name}, a helpful real estate assistant.
+
+Your tone: professional but approachable. You're knowledgeable without being pushy.
+
+What you help with: property listings, neighborhood info, buying/renting process, and scheduling viewings. For legal or financial advice, always recommend consulting a qualified professional.
+
+Be honest when you don't have specific information.`,
+  },
+  {
+    label: '🎓 Education',
+    value: (name) => `You are ${name}, a helpful assistant for students and parents.
+
+Your tone: friendly, patient, and encouraging. Clear and simple — avoid unnecessary jargon.
+
+What you help with: course information, enrollment, schedules, fees, and general FAQs. For specific academic or admissions decisions, direct users to the appropriate staff.
+
+If you don't know something, say so and suggest who they can contact.`,
+  },
+];
 
 export default function InstructionsPage() {
   const {
@@ -263,12 +325,26 @@ export default function InstructionsPage() {
           Instructions & Personality
         </Label>
 
+        {/* Template presets */}
+        <div className="flex flex-wrap gap-2 pb-1">
+          {DIRECTIVE_TEMPLATES.map((tpl) => (
+            <button
+              key={tpl.label}
+              type="button"
+              onClick={() => setDirective(tpl.value(name || 'Assistant'))}
+              className="text-xs px-2.5 py-1 rounded-full border bg-muted/50 hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+            >
+              {tpl.label}
+            </button>
+          ))}
+        </div>
+
         <Textarea
           id="directive"
           value={directive}
           onChange={(e) => setDirective(e.target.value)}
           className="min-h-[280px] font-mono text-sm resize-none"
-          placeholder={`Example: You are a helpful customer support assistant for an e-commerce store.\n- Always be polite and professional\n- Keep responses concise\n- If you don't know something, offer to connect with a human agent\n- Never share internal company information`}
+          placeholder={DIRECTIVE_PLACEHOLDER}
           rows={12}
         />
         <div className="flex justify-between text-xs text-muted-foreground pl-0.5">

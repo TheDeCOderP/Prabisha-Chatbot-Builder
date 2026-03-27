@@ -210,8 +210,8 @@ export async function PUT(request: NextRequest, context: RouterParams) {
     // ── Model settings validation ─────────────────────────────────────────────
     if (max_tokens !== null) {
       const n = parseInt(max_tokens);
-      if (isNaN(n) || n < 1 || n > 4000) {
-        return NextResponse.json({ error: 'max_tokens must be a number between 1 and 4000' }, { status: 400 });
+      if (isNaN(n) || n < 1 || n > 8192) {
+        return NextResponse.json({ error: 'max_tokens must be a number between 1 and 8192' }, { status: 400 });
       }
     }
     if (temperature !== null) {

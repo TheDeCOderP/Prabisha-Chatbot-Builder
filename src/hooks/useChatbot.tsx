@@ -177,7 +177,7 @@ export function useChatbot({
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [hasLoadedInitialMessages, setHasLoadedInitialMessages] = useState<boolean>(false);
   const [quickQuestions, setQuickQuestions] = useState<MultilingualSuggestion[]>([]);
-  const [mode, setMode] = useState<'streaming' | 'standard'>('standard');
+  const [mode, setMode] = useState<'streaming' | 'standard'>('streaming');
   const [pendingMessage, setPendingMessage] = useState<string | null>(null);
 
   const languageRef = useRef(language);
@@ -353,17 +353,17 @@ export function useChatbot({
 
   useEffect(() => {
     if (!hasLoadedInitialMessages) return;
-    const container = chatContainerRef.current;
-    if (!container) return;
 
     if (forceScrollRef.current) {
+      // New user message sent — scroll so the bot reply area is visible at top
       forceScrollRef.current = false;
       requestAnimationFrame(() => {
-        scrollContainerToBottom(chatContainerRef.current, false);
+        scrollToElement(chatContainerRef.current, lastBotMessageRef.current, 12);
       });
       return;
     }
 
+    // During streaming — keep the top of the bot message pinned, don't chase bottom
     requestAnimationFrame(() => {
       scrollToElement(chatContainerRef.current, lastBotMessageRef.current, 12);
     });
@@ -383,7 +383,7 @@ export function useChatbot({
 
     setMessages(prev => [...prev, {
       senderType: 'BOT',
-      content: '...',
+      content: '',
       createdAt: new Date(),
     }]);
 
