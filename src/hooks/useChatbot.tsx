@@ -1,4 +1,4 @@
-'use client';
+"use client"
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useConversationalLead, ConversationalLeadConfig } from './useConversationalLead';
@@ -10,8 +10,6 @@ interface ChatbotData {
   id: string;
   name: string;
   description?: string;
-  // Only the two image URL fields remain on the Chatbot model.
-  // All sizing, shape, border and color styling lives in ChatbotTheme.
   avatar?: string | null;
   icon?: string | null;
   greeting?: MultilingualSuggestion | string | MultilingualSuggestion[] | null;
@@ -602,7 +600,9 @@ export function useChatbot({
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
-  const refetchChatbot = async () => { await fetchChatbotData(); };
+  const refetchChatbot = async () => { 
+    await fetchChatbotData(); 
+  };
 
   return {
     chatbot,

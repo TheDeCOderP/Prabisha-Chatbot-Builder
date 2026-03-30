@@ -1,3 +1,4 @@
+// app/(dashboard)/chatbots/[id]/theme/page.tsx
 "use client"
 
 import { toast } from "sonner"
@@ -15,10 +16,8 @@ import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
-import { useChatbot } from "@/providers/chatbot-provider"
+import { useChatbot } from "@/hooks/useChatbot"
 
-// You would create these form components separately 
-// similar to LinkButtonForm in your Logic page
 import { WidgetThemeForm } from "@/components/forms/widget-form"
 import { WindowThemeForm } from "@/components/forms/window-form"
 
@@ -34,37 +33,40 @@ export default function ThemePage() {
   const params = useParams()
   const router = useRouter()
   const chatbotId = params.id as string
-  const { config, updateConfig } = useChatbot()
+  
+  // Use the chatbot hook
+  const { 
+    chatbot, 
+    isLoadingChatbot, 
+    chatbotError,
+    refetchChatbot 
+  } = useChatbot({
+    chatbotId,
+  });
+
+  console.log("Chatbot data in ThemePage:", chatbot)
+  console.log("Theme data:", chatbot?.theme)
 
   const [activeTab, setActiveTab] = useState("selection")
   const [isLoading, setIsLoading] = useState(false)
-  const [existingTheme, setExistingTheme] = useState<any>(null)
   const [selectedFeature, setSelectedFeature] = useState<string | null>(null)
+  const [isDataReady, setIsDataReady] = useState(false)
 
+  // Show error toast if chatbot fetch fails
   useEffect(() => {
-    fetchTheme()
-  }, [chatbotId])
-
-  const fetchTheme = async () => {
-    try {
-      const response = await fetch(`/api/chatbots/${chatbotId}/theme`)
-      if (!response.ok) throw new Error('Failed to fetch theme')
-      const data = await response.json()
-      setExistingTheme(data.theme || null)
-      // Update the provider's config with the theme
-      if (data.theme) {
-        updateConfig({ theme: data.theme })
-      }
-    } catch (error) {
-      console.error('Error fetching theme:', error)
-      toast.error('Failed to load theme settings')
+    if (chatbotError) {
+      toast.error(chatbotError)
     }
-  }
+  }, [chatbotError])
+
+  // Set data ready when chatbot is loaded
+  useEffect(() => {
+    if (!isLoadingChatbot && chatbot) {
+      setIsDataReady(true)
+    }
+  }, [isLoadingChatbot, chatbot])
 
   const handleLivePreviewUpdate = useCallback((updatedTheme: any) => {
-    // Update the provider's config for live preview
-    updateConfig({ theme: updatedTheme })
-    
     // Send message to embedded chatbot widget iframe to update its theme
     const iframe = document.querySelector('iframe[src*="/embed/widget/"]') as HTMLIFrameElement
     if (iframe && iframe.contentWindow) {
@@ -80,7 +82,7 @@ export default function ThemePage() {
       chatbotId: chatbotId,
       theme: updatedTheme
     }, '*')
-  }, [updateConfig, chatbotId])
+  }, [chatbotId])
 
   const themeFeatures: ThemeFeature[] = [
     {
@@ -109,7 +111,10 @@ export default function ThemePage() {
       if (!response.ok) throw new Error('Failed to save theme')
 
       toast.success('Theme updated successfully!')
-      await fetchTheme()
+      
+      // Refetch chatbot data to get updated theme
+      await refetchChatbot()
+      
       resetForm()
       router.refresh()
     } catch (error) {
@@ -124,6 +129,39 @@ export default function ThemePage() {
     setSelectedFeature(null)
     setActiveTab("selection")
   }
+
+  // Show loading state while fetching chatbot
+  if (isLoadingChatbot || !isDataReady) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="flex flex-col items-center gap-2">
+          <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+          <p className="text-sm text-muted-foreground">Loading theme settings...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // If chatbot is null after loading, show error
+  if (!chatbot) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <p className="text-destructive">Failed to load chatbot data</p>
+          <Button 
+            variant="outline" 
+            className="mt-4"
+            onClick={() => window.location.reload()}
+          >
+            Retry
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  // Now we can safely access chatbot.theme
+  const existingTheme = chatbot.theme
 
   return (
     <div className="space-y-6">
@@ -186,17 +224,20 @@ export default function ThemePage() {
               isLoading={isLoading}
               initial={existingTheme}
               onLiveUpdate={handleLivePreviewUpdate}
+              chatbotData={chatbot}
             />
           </TabsContent>
 
           {/* Window Configuration Form */}
           <TabsContent value="window">
-             <WindowThemeForm 
+            <WindowThemeForm 
               onBack={resetForm}
               onSave={handleSaveTheme}
               isLoading={isLoading}
               initial={existingTheme}
+              chatbotId={chatbotId}
               onLiveUpdate={handleLivePreviewUpdate}
+              chatbotData={chatbot}
             />
           </TabsContent>
 
