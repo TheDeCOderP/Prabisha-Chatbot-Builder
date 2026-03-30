@@ -6,9 +6,8 @@ import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
-import { Loader2, Bot,  Cpu, ImageIcon, User, Languages, TextInitial, Check } from "lucide-react"
+import { Loader2, Bot, Cpu, Languages, TextInitial, Check } from "lucide-react"
 import { useChatbot, SUPPORTED_LANGUAGES } from "@/providers/chatbot-provider"
-import Image from "next/image"
 
 const DIRECTIVE_PLACEHOLDER = `Example:
 You are Aria, a friendly support assistant for Acme Store.
@@ -86,30 +85,14 @@ export default function InstructionsPage() {
   const [name, setName]               = useState("");
   const [directive, setDirective]     = useState("");
   const [description, setDescription] = useState("");
-  const [avatar, setAvatar]           = useState("");
-  const [icon, setIcon]               = useState("");
 
   useEffect(() => {
     if (config.id) {
       setName(config.name || "");
       setDirective(config.directive || "");
       setDescription(config.description || "");
-      setAvatar(config.avatar || "");
-      setIcon(config.icon || "");
     }
-  }, [config.id, config.name, config.directive, config.description, config.avatar, config.icon]);
-
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, type: 'avatar' | 'icon') => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const base64 = reader.result as string;
-        type === 'avatar' ? setAvatar(base64) : setIcon(base64);
-      };
-      reader.readAsDataURL(file);
-    }
-  };
+  }, [config.id, config.name, config.directive, config.description]);
 
   const handleSave = async () => {
     setIsLoading(true);
@@ -121,15 +104,6 @@ export default function InstructionsPage() {
       formData.append("directive", directive);
       formData.append("description", description);
       formData.append("greeting", JSON.stringify([config.greeting]));
-
-      if (avatar?.startsWith('data:image')) {
-        const blob = await fetch(avatar).then(r => r.blob());
-        formData.append("avatar", blob, "avatar.png");
-      }
-      if (icon?.startsWith('data:image')) {
-        const blob = await fetch(icon).then(r => r.blob());
-        formData.append("icon", blob, "icon.png");
-      }
 
       const res = await fetch(`/api/chatbots/${config.id}`, { method: "PUT", body: formData });
       if (!res.ok) {
@@ -190,70 +164,6 @@ export default function InstructionsPage() {
         <p className="text-xs text-muted-foreground pl-0.5">
           A brief description of what your chatbot does.
         </p>
-      </div>
-
-      <hr />
-
-      {/* ── Visuals ───────────────────────────────────────────────────────── */}
-      <div className="space-y-4">
-        <Label>
-          <ImageIcon className="h-5 w-5 text-pink-500" />
-          Images
-        </Label>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Avatar */}
-          <div className="space-y-2 p-3 rounded-lg border bg-muted/30">
-            <div className="flex items-center gap-1.5 mb-1">
-              <User className="h-5 w-5 text-orange-500" />
-              <span className="text-xs font-medium">Avatar</span>
-              <span className="text-[10px] text-muted-foreground ml-auto">Header image</span>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="h-14 w-14 shrink-0 rounded-lg border-2 bg-background flex items-center justify-center overflow-hidden">
-                {avatar
-                  ? <Image src={avatar} alt="Avatar" width={56} height={56} className="h-full w-full object-contain" />
-                  : <ImageIcon className="h-6 w-6 text-muted-foreground" />
-                }
-              </div>
-              <div className="flex-1 space-y-1">
-                <Input
-                  type="file"
-                  accept="image/*"
-                  className="text-xs cursor-pointer h-8"
-                  onChange={(e) => handleImageUpload(e, 'avatar')}
-                />
-                <p className="text-[10px] text-muted-foreground">200×200px PNG recommended</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Icon */}
-          <div className="space-y-2 p-3 rounded-lg border bg-muted/30">
-            <div className="flex items-center gap-1.5 mb-1">
-              <Bot className="h-5 w-5 text-teal-500" />
-              <span className="text-xs font-medium">Bot Icon</span>
-              <span className="text-[10px] text-muted-foreground ml-auto">Message bubble</span>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="h-14 w-14 shrink-0 rounded-lg border-2 bg-background flex items-center justify-center overflow-hidden">
-                {icon
-                  ? <Image src={icon} alt="Icon" width={56} height={56} className="h-full w-full object-contain" />
-                  : <ImageIcon className="h-6 w-6 text-muted-foreground" />
-                }
-              </div>
-              <div className="flex-1 space-y-1">
-                <Input
-                  type="file"
-                  accept="image/*"
-                  className="text-xs cursor-pointer h-8"
-                  onChange={(e) => handleImageUpload(e, 'icon')}
-                />
-                <p className="text-[10px] text-muted-foreground">100×100px PNG recommended</p>
-              </div>
-            </div>
-          </div>
-        </div>
       </div>
 
       <hr />

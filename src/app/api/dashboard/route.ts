@@ -52,9 +52,31 @@ export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
     const timeRange = searchParams.get('timeRange') || '7d';
+    const workspaceId = searchParams.get('workspaceId');
+
+    // Validate workspaceId
+    if (!workspaceId) {
+      return NextResponse.json(
+        { error: 'workspaceId is required' },
+        { status: 400 }
+      );
+    }
+
     const { start, end } = getDateRange(timeRange);
 
-    // Fetch basic stats
+    // First verify that the workspace exists
+    const workspace = await prisma.workspace.findUnique({
+      where: { id: workspaceId },
+    });
+
+    if (!workspace) {
+      return NextResponse.json(
+        { error: 'Workspace not found' },
+        { status: 404 }
+      );
+    }
+
+    // Fetch basic stats filtered by workspace
     const [
       totalChatbots,
       totalConversations,
@@ -63,27 +85,51 @@ export async function GET(request: NextRequest) {
       totalMessages,
       totalWorkspaces,
     ] = await Promise.all([
-      prisma.chatbot.count(),
+      // Count chatbots in this workspace
+      prisma.chatbot.count({
+        where: {
+          workspaceId: workspaceId,
+        },
+      }),
+      // Count conversations for chatbots in this workspace
       prisma.conversation.count({
         where: {
+          chatbot: {
+            workspaceId: workspaceId,
+          },
           createdAt: { gte: start, lte: end },
         },
       }),
+      // Count active conversations for chatbots in this workspace
       prisma.conversation.count({
         where: {
+          chatbot: {
+            workspaceId: workspaceId,
+          },
           isActive: true,
         },
       }),
+      // Count leads for chatbots in this workspace
       prisma.lead.count({
         where: {
+          chatbot: {
+            workspaceId: workspaceId,
+          },
           createdAt: { gte: start, lte: end },
         },
       }),
+      // Count messages for chatbots in this workspace
       prisma.message.count({
         where: {
+          conversation: {
+            chatbot: {
+              workspaceId: workspaceId,
+            },
+          },
           createdAt: { gte: start, lte: end },
         },
       }),
+      // Count total workspaces (still global, but you might want to change this)
       prisma.workspace.count(),
     ]);
 
@@ -92,9 +138,12 @@ export async function GET(request: NextRequest) {
       ? ((totalLeads / totalConversations) * 100).toFixed(1)
       : '0.0';
 
-    // Get conversation trends by day - fixed to include messages count
+    // Get conversation trends by day - filtered by workspace
     const conversationsWithMessages = await prisma.conversation.findMany({
       where: {
+        chatbot: {
+          workspaceId: workspaceId,
+        },
         createdAt: { gte: start, lte: end },
       },
       include: {
@@ -111,9 +160,12 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    // Get all leads separately
+    // Get all leads filtered by workspace
     const allLeads = await prisma.lead.findMany({
       where: {
+        chatbot: {
+          workspaceId: workspaceId,
+        },
         createdAt: { gte: start, lte: end },
       },
       select: {
@@ -153,14 +205,16 @@ export async function GET(request: NextRequest) {
         ...data,
       }))
       .sort((a, b) => {
-        // Parse dates for sorting
         const dateA = new Date(a.date);
         const dateB = new Date(b.date);
         return isNaN(dateA.getTime()) || isNaN(dateB.getTime()) ? 0 : dateA.getTime() - dateB.getTime();
       });
 
-    // Get chatbot performance - fixed with correct relationships
+    // Get chatbot performance - filtered by workspace
     const chatbots = await prisma.chatbot.findMany({
+      where: {
+        workspaceId: workspaceId,
+      },
       select: {
         id: true,
         name: true,
@@ -191,10 +245,15 @@ export async function GET(request: NextRequest) {
         satisfaction: Math.random() * 2 + 3, // Random satisfaction between 3-5
       }))
       .sort((a, b) => b.conversations - a.conversations)
-      .slice(0, 5); // Top 5 chatbots
+      .slice(0, 5);
 
-    // Get lead source data from ChatbotForm
+    // Get lead source data - filtered by workspace
     const chatbotForms = await prisma.chatbotForm.findMany({
+      where: {
+        chatbot: {
+          workspaceId: workspaceId,
+        },
+      },
       select: {
         leadFormStyle: true,
         leads: {
@@ -222,9 +281,14 @@ export async function GET(request: NextRequest) {
       color: generateColor(index),
     }));
 
-    // Get hourly activity (messages per hour)
+    // Get hourly activity - filtered by workspace
     const messages = await prisma.message.findMany({
       where: {
+        conversation: {
+          chatbot: {
+            workspaceId: workspaceId,
+          },
+        },
         createdAt: { gte: start, lte: end },
       },
       select: {
@@ -246,10 +310,15 @@ export async function GET(request: NextRequest) {
         hour: hourKey,
         activity: hourlyMap.get(hourKey) || 0,
       };
-    }).filter((_, i) => i % 2 === 0); // Show every 2 hours
+    }).filter((_, i) => i % 2 === 0);
 
-    // Get ChatbotLogic usage - fixed with correct schema
+    // Get ChatbotLogic usage - filtered by workspace
     const chatbotLogics = await prisma.chatbotLogic.findMany({
+      where: {
+        chatbot: {
+          workspaceId: workspaceId,
+        },
+      },
       select: {
         leadCollectionEnabled: true,
         linkButtonEnabled: true,
@@ -277,7 +346,7 @@ export async function GET(request: NextRequest) {
       percentage: chatbotLogics.length > 0 ? Math.round((value / chatbotLogics.length) * 100) : 0,
     }));
 
-    // Calculate average response time (placeholder - you might want to implement actual calculation)
+    // Calculate average response time (placeholder)
     const avgResponseTime = '1.2s';
 
     const response = {
@@ -288,7 +357,7 @@ export async function GET(request: NextRequest) {
         totalLeads,
         conversionRate: parseFloat(conversionRate),
         avgResponseTime,
-        totalWorkspaces,
+        totalWorkspaces, // This is still global, consider if you want to change this
         totalMessages,
       },
       conversationData: conversationData.length > 0 ? conversationData : [

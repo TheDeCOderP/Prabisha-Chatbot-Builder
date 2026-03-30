@@ -45,149 +45,291 @@ import type { MultilingualSuggestion } from '@/hooks/useChatbot'
 
 const chatbotI18n = i18n.createInstance();
 
+// Load all language resources including Indian regional languages
+const languageResources = {
+  en: {
+    translation: {
+      online: 'Online • Typically replies instantly',
+      thinking: 'Thinking',
+      searching: 'Searching…',
+      quickSuggestions: 'Quick suggestions',
+      typeMessage: 'Type your message here…',
+      typeAnswer: 'Type your answer…',
+      readyToStart: 'Ready to get started?',
+      collectingDetails: 'Collecting your details…',
+      shareDetails: "Share your details and we'll help you get the best solution.",
+      askQuestions: "I'll ask you a few quick questions right here in the chat.",
+      answerAbove: 'Please answer the questions in the chat above.',
+      startChatForm: 'Start Chat Form',
+      getStarted: 'Get Started Now',
+      selectEmoji: 'Select Emoji',
+      search: 'Search...',
+      poweredBy: 'Powered by',
+      openChat: 'Open chatbot',
+      closeChat: 'Close chat',
+      live: 'Live',
+    },
+  },
+  ja: {
+    translation: {
+      online: 'オンライン • すぐに返信します',
+      thinking: '考え中',
+      searching: '検索中…',
+      quickSuggestions: 'クイック提案',
+      typeMessage: 'メッセージを入力してください…',
+      typeAnswer: '回答を入力してください…',
+      readyToStart: '始める準備はできていますか？',
+      collectingDetails: '詳細を収集中…',
+      shareDetails: '詳細を共有してください。最適なソリューションを提供します。',
+      askQuestions: 'チャットでいくつか質問させていただきます。',
+      answerAbove: '上のチャットの質問に答えてください。',
+      startChatForm: 'チャットフォームを開始',
+      getStarted: '今すぐ始める',
+      selectEmoji: '絵文字を選択',
+      search: '検索...',
+      poweredBy: 'Powered by',
+      openChat: 'チャットを開く',
+      closeChat: 'チャットを閉じる',
+      live: 'ライブ',
+    },
+  },
+  hi: {
+    translation: {
+      online: 'ऑनलाइन • तुरंत जवाब देता है',
+      thinking: 'सोच रहा है',
+      searching: 'खोज रहा है…',
+      quickSuggestions: 'त्वरित सुझाव',
+      typeMessage: 'यहाँ अपना संदेश लिखें…',
+      typeAnswer: 'अपना उत्तर लिखें…',
+      readyToStart: 'शुरू करने के लिए तैयार हैं?',
+      collectingDetails: 'विवरण एकत्र हो रहा है…',
+      shareDetails: 'अपना विवरण साझा करें और हम आपको सर्वोत्तम समाधान दिलाएंगे।',
+      askQuestions: 'मैं यहीं चैट में कुछ त्वरित प्रश्न पूछूंगा।',
+      answerAbove: 'कृपया ऊपर चैट के प्रश्नों का उत्तर दें।',
+      startChatForm: 'चैट फॉर्म शुरू करें',
+      getStarted: 'अभी शुरू करें',
+      selectEmoji: 'इमोजी चुनें',
+      search: 'खोजें...',
+      poweredBy: 'Powered by',
+      openChat: 'चैट खोलें',
+      closeChat: 'चैट बंद करें',
+      live: 'लाइव',
+    },
+  },
+  fr: {
+    translation: {
+      online: 'En ligne • Répond instantanément',
+      thinking: 'En train de réfléchir',
+      searching: 'Recherche…',
+      quickSuggestions: 'Suggestions rapides',
+      typeMessage: 'Tapez votre message ici…',
+      typeAnswer: 'Tapez votre réponse…',
+      readyToStart: 'Prêt à commencer ?',
+      collectingDetails: 'Collecte de vos informations…',
+      shareDetails: 'Partagez vos coordonnées et nous vous aiderons à trouver la meilleure solution.',
+      askQuestions: 'Je vais vous poser quelques questions rapides ici dans le chat.',
+      answerAbove: 'Veuillez répondre aux questions dans le chat ci-dessus.',
+      startChatForm: 'Démarrer le formulaire de chat',
+      getStarted: 'Commencer maintenant',
+      selectEmoji: 'Sélectionner un emoji',
+      search: 'Rechercher...',
+      poweredBy: 'Propulsé par',
+      openChat: 'Ouvrir le chat',
+      closeChat: 'Fermer le chat',
+      live: 'En direct',
+    },
+  },
+  es: {
+    translation: {
+      online: 'En línea • Responde al instante',
+      thinking: 'Pensando',
+      searching: 'Buscando…',
+      quickSuggestions: 'Sugerencias rápidas',
+      typeMessage: 'Escribe tu mensaje aquí…',
+      typeAnswer: 'Escribe tu respuesta…',
+      readyToStart: '¿Listo para empezar?',
+      collectingDetails: 'Recopilando tus datos…',
+      shareDetails: 'Comparte tus datos y te ayudaremos a encontrar la mejor solución.',
+      askQuestions: 'Te haré algunas preguntas rápidas aquí en el chat.',
+      answerAbove: 'Por favor responde las preguntas en el chat de arriba.',
+      startChatForm: 'Iniciar formulario de chat',
+      getStarted: 'Empezar ahora',
+      selectEmoji: 'Seleccionar emoji',
+      search: 'Buscar...',
+      poweredBy: 'Desarrollado por',
+      openChat: 'Abrir chat',
+      closeChat: 'Cerrar chat',
+      live: 'En vivo',
+    },
+  },
+  ar: {
+    translation: {
+      online: 'متصل • يرد فورًا',
+      thinking: 'يفكر',
+      searching: 'يبحث…',
+      quickSuggestions: 'اقتراحات سريعة',
+      typeMessage: 'اكتب رسالتك هنا…',
+      typeAnswer: 'اكتب إجابتك…',
+      readyToStart: 'هل أنت مستعد للبدء؟',
+      collectingDetails: 'جاري جمع بياناتك…',
+      shareDetails: 'شارك بياناتك وسنساعدك في الحصول على أفضل حل.',
+      askQuestions: 'سأطرح عليك بعض الأسئلة السريعة هنا في الدردشة.',
+      answerAbove: 'يرجى الإجابة على الأسئلة في الدردشة أعلاه.',
+      startChatForm: 'بدء نموذج الدردشة',
+      getStarted: 'ابدأ الآن',
+      selectEmoji: 'اختر رمزًا تعبيريًا',
+      search: 'بحث...',
+      poweredBy: 'مدعوم من',
+      openChat: 'فتح الدردشة',
+      closeChat: 'إغلاق الدردشة',
+      live: 'مباشر',
+    },
+  },
+  // Indian Regional Languages
+  pa: {
+    translation: {
+      online: "ਆਨਲਾਈਨ • ਆਮ ਤੌਰ 'ਤੇ ਤੁਰੰਤ ਜਵਾਬ ਦਿੰਦਾ ਹੈ",
+      thinking: 'ਸੋਚ ਰਿਹਾ ਹੈ',
+      searching: 'ਖੋਜ ਕਰ ਰਿਹਾ ਹੈ…',
+      quickSuggestions: 'ਤੁਰੰਤ ਸੁਝਾਅ',
+      typeMessage: 'ਆਪਣਾ ਸੁਨੇਹਾ ਇੱਥੇ ਲਿਖੋ…',
+      typeAnswer: 'ਆਪਣਾ ਜਵਾਬ ਲਿਖੋ…',
+      readyToStart: 'ਸ਼ੁਰੂ ਕਰਨ ਲਈ ਤਿਆਰ ਹੋ?',
+      collectingDetails: 'ਤੁਹਾਡੇ ਵੇਰਵੇ ਇਕੱਠੇ ਕੀਤੇ ਜਾ ਰਹੇ ਹਨ…',
+      shareDetails: 'ਆਪਣੇ ਵੇਰਵੇ ਸਾਂਝੇ ਕਰੋ ਅਤੇ ਅਸੀਂ ਤੁਹਾਨੂੰ ਸਭ ਤੋਂ ਵਧੀਆ ਹੱਲ ਦਿਵਾਵਾਂਗੇ।',
+      askQuestions: 'ਮੈਂ ਤੁਹਾਨੂੰ ਇੱਥੇ ਚੈਟ ਵਿੱਚ ਕੁਝ ਤੁਰੰਤ ਸਵਾਲ ਪੁੱਛਾਂਗਾ।',
+      answerAbove: 'ਕਿਰਪਾ ਕਰਕੇ ਉੱਪਰ ਚੈਟ ਵਿੱਚ ਸਵਾਲਾਂ ਦੇ ਜਵਾਬ ਦਿਓ।',
+      startChatForm: 'ਚੈਟ ਫਾਰਮ ਸ਼ੁਰੂ ਕਰੋ',
+      getStarted: 'ਹੁਣੇ ਸ਼ੁਰੂ ਕਰੋ',
+      selectEmoji: 'ਇਮੋਜੀ ਚੁਣੋ',
+      search: 'ਖੋਜ...',
+      poweredBy: 'ਦੁਆਰਾ ਸੰਚਾਲਿਤ',
+      openChat: 'ਚੈਟ ਖੋਲ੍ਹੋ',
+      closeChat: 'ਚੈਟ ਬੰਦ ਕਰੋ',
+      live: 'ਲਾਈਵ',
+    },
+  },
+  kn: {
+    translation: {
+      online: 'ಆನ್‌ಲೈನ್ • ಸಾಮಾನ್ಯವಾಗಿ ತಕ್ಷಣ ಉತ್ತರಿಸುತ್ತದೆ',
+      thinking: 'ಯೋಚಿಸುತ್ತಿದೆ',
+      searching: 'ಹುಡುಕುತ್ತಿದೆ…',
+      quickSuggestions: 'ತ್ವರಿತ ಸಲಹೆಗಳು',
+      typeMessage: 'ನಿಮ್ಮ ಸಂದೇಶವನ್ನು ಇಲ್ಲಿ ಟೈಪ್ ಮಾಡಿ…',
+      typeAnswer: 'ನಿಮ್ಮ ಉತ್ತರವನ್ನು ಟೈಪ್ ಮಾಡಿ…',
+      readyToStart: 'ಪ್ರಾರಂಭಿಸಲು ಸಿದ್ಧರಿದ್ದೀರಾ?',
+      collectingDetails: 'ನಿಮ್ಮ ವಿವರಗಳನ್ನು ಸಂಗ್ರಹಿಸಲಾಗುತ್ತಿದೆ…',
+      shareDetails: 'ನಿಮ್ಮ ವಿವರಗಳನ್ನು ಹಂಚಿಕೊಳ್ಳಿ ಮತ್ತು ನಾವು ನಿಮಗೆ ಉತ್ತಮ ಪರಿಹಾರವನ್ನು ಪಡೆಯಲು ಸಹಾಯ ಮಾಡುತ್ತೇವೆ.',
+      askQuestions: 'ನಾನು ನಿಮಗೆ ಇಲ್ಲಿ ಚಾಟ್‌ನಲ್ಲಿ ಕೆಲವು ತ್ವರಿತ ಪ್ರಶ್ನೆಗಳನ್ನು ಕೇಳುತ್ತೇನೆ.',
+      answerAbove: 'ದಯವಿಟ್ಟು ಮೇಲಿನ ಚಾಟ್‌ನಲ್ಲಿರುವ ಪ್ರಶ್ನೆಗಳಿಗೆ ಉತ್ತರಿಸಿ.',
+      startChatForm: 'ಚಾಟ್ ಫಾರ್ಮ್ ಅನ್ನು ಪ್ರಾರಂಭಿಸಿ',
+      getStarted: 'ಈಗ ಪ್ರಾರಂಭಿಸಿ',
+      selectEmoji: 'ಎಮೋಜಿ ಆಯ್ಕೆಮಾಡಿ',
+      search: 'ಹುಡುಕು...',
+      poweredBy: 'ಇವರಿಂದ ಸಂಚಾಲಿತ',
+      openChat: 'ಚಾಟ್ ತೆರೆಯಿರಿ',
+      closeChat: 'ಚಾಟ್ ಮುಚ್ಚಿ',
+      live: 'ಲೈವ್',
+    },
+  },
+  te: {
+    translation: {
+      online: 'ఆన్‌లైన్ • సాధారణంగా తక్షణమే సమాధానం ఇస్తుంది',
+      thinking: 'ఆలోచిస్తోంది',
+      searching: 'శోధిస్తోంది…',
+      quickSuggestions: 'త్వరిత సూచనలు',
+      typeMessage: 'మీ సందేశాన్ని ఇక్కడ టైప్ చేయండి…',
+      typeAnswer: 'మీ సమాధానాన్ని టైప్ చేయండి…',
+      readyToStart: 'ప్రారంభించడానికి సిద్ధంగా ఉన్నారా?',
+      collectingDetails: 'మీ వివరాలను సేకరిస్తోంది…',
+      shareDetails: 'మీ వివరాలను భాగస్వామ్యం చేయండి మరియు మేము మీకు ఉత్తమ పరిష్కారాన్ని పొందడంలో సహాయం చేస్తాము.',
+      askQuestions: 'నేను మీకు ఇక్కడ చాట్‌లో కొన్ని త్వరిత ప్రశ్నలు అడుగుతాను.',
+      answerAbove: 'దయచేసి పైన ఉన్న చాట్‌లోని ప్రశ్నలకు సమాధానం ఇవ్వండి.',
+      startChatForm: 'చాట్ ఫారమ్ ప్రారంభించండి',
+      getStarted: 'ఇప్పుడే ప్రారంభించండి',
+      selectEmoji: 'ఎమోజీని ఎంచుకోండి',
+      search: 'శోధించు...',
+      poweredBy: 'ద్వారా ఆధారితం',
+      openChat: 'చాట్ తెరవండి',
+      closeChat: 'చాట్ మూసివేయండి',
+      live: 'ప్రత్యక్ష ప్రసారం',
+    },
+  },
+  bn: {
+    translation: {
+      online: 'অনলাইন • সাধারণত তাৎক্ষণিক উত্তর দেয়',
+      thinking: 'ভাবছি',
+      searching: 'খুঁজছি…',
+      quickSuggestions: 'দ্রুত পরামর্শ',
+      typeMessage: 'আপনার বার্তা এখানে টাইপ করুন…',
+      typeAnswer: 'আপনার উত্তর টাইপ করুন…',
+      readyToStart: 'শুরু করতে প্রস্তুত?',
+      collectingDetails: 'আপনার বিবরণ সংগ্রহ করা হচ্ছে…',
+      shareDetails: 'আপনার বিবরণ শেয়ার করুন এবং আমরা আপনাকে সেরা সমাধান পেতে সাহায্য করব।',
+      askQuestions: 'আমি আপনাকে এখানে চ্যাটে কয়েকটি দ্রুত প্রশ্ন জিজ্ঞাসা করব।',
+      answerAbove: 'দয়া করে উপরের চ্যাটের প্রশ্নগুলির উত্তর দিন।',
+      startChatForm: 'চ্যাট ফর্ম শুরু করুন',
+      getStarted: 'এখনই শুরু করুন',
+      selectEmoji: 'ইমোজি নির্বাচন করুন',
+      search: 'অনুসন্ধান...',
+      poweredBy: 'দ্বারা চালিত',
+      openChat: 'চ্যাট খুলুন',
+      closeChat: 'চ্যাট বন্ধ করুন',
+      live: 'লাইভ',
+    },
+  },
+  gu: {
+    translation: {
+      online: 'ઓનલાઇન • સામાન્ય રીતે તાત્કાલિક જવાબ આપે છે',
+      thinking: 'વિચારી રહ્યો છે',
+      searching: 'શોધી રહ્યો છે…',
+      quickSuggestions: 'ઝડપી સૂચનો',
+      typeMessage: 'તમારો સંદેશ અહીં લખો…',
+      typeAnswer: 'તમારો જવાબ લખો…',
+      readyToStart: 'શરૂ કરવા માટે તૈયાર છો?',
+      collectingDetails: 'તમારી વિગતો એકત્રિત કરી રહ્યા છીએ…',
+      shareDetails: 'તમારી વિગતો શેર કરો અને અમે તમને શ્રેષ્ઠ ઉકેલ મેળવવામાં મદદ કરીશું.',
+      askQuestions: 'હું તમને અહીં ચેટમાં થોડા ઝડપી પ્રશ્નો પૂછીશ.',
+      answerAbove: 'કૃપા કરીને ઉપરની ચેટમાં પ્રશ્નોના જવાબ આપો.',
+      startChatForm: 'ચેટ ફોર્મ શરૂ કરો',
+      getStarted: 'હમણાં પ્રારંભ કરો',
+      selectEmoji: 'ઇમોજી પસંદ કરો',
+      search: 'શોધો...',
+      poweredBy: 'દ્વારા સંચાલિત',
+      openChat: 'ચેટ ખોલો',
+      closeChat: 'ચેટ બંધ કરો',
+      live: 'લાઇવ',
+    },
+  },
+  zh: {
+    translation: {
+      online: '在线 • 通常立即回复',
+      thinking: '思考中',
+      searching: '搜索中…',
+      quickSuggestions: '快速建议',
+      typeMessage: '在此输入您的消息…',
+      typeAnswer: '输入您的答案…',
+      readyToStart: '准备好开始了吗？',
+      collectingDetails: '正在收集您的详细信息…',
+      shareDetails: '分享您的详细信息，我们将帮助您找到最佳解决方案。',
+      askQuestions: '我将在聊天中问您几个快速问题。',
+      answerAbove: '请回答上面聊天中的问题。',
+      startChatForm: '开始聊天表单',
+      getStarted: '立即开始',
+      selectEmoji: '选择表情符号',
+      search: '搜索...',
+      poweredBy: '技术支持',
+      openChat: '打开聊天',
+      closeChat: '关闭聊天',
+      live: '在线',
+    },
+  },
+};
+
 chatbotI18n.use(initReactI18next).init({
   lng: 'en',
   fallbackLng: 'en',
-  resources: {
-    en: {
-      translation: {
-        online: 'Online • Typically replies instantly',
-        thinking: 'Thinking',
-        searching: 'Searching…',
-        quickSuggestions: 'Quick suggestions',
-        typeMessage: 'Type your message here…',
-        typeAnswer: 'Type your answer…',
-        readyToStart: 'Ready to get started?',
-        collectingDetails: 'Collecting your details…',
-        shareDetails: "Share your details and we'll help you get the best solution.",
-        askQuestions: "I'll ask you a few quick questions right here in the chat.",
-        answerAbove: 'Please answer the questions in the chat above.',
-        startChatForm: 'Start Chat Form',
-        getStarted: 'Get Started Now',
-        selectEmoji: 'Select Emoji',
-        search: 'Search...',
-        poweredBy: 'Powered by',
-        openChat: 'Open chatbot',
-        closeChat: 'Close chat',
-        live: 'Live',
-      },
-    },
-    ja: {
-      translation: {
-        online: 'オンライン • すぐに返信します',
-        thinking: '考え中',
-        searching: '検索中…',
-        quickSuggestions: 'クイック提案',
-        typeMessage: 'メッセージを入力してください…',
-        typeAnswer: '回答を入力してください…',
-        readyToStart: '始める準備はできていますか？',
-        collectingDetails: '詳細を収集中…',
-        shareDetails: '詳細を共有してください。最適なソリューションを提供します。',
-        askQuestions: 'チャットでいくつか質問させていただきます。',
-        answerAbove: '上のチャットの質問に答えてください。',
-        startChatForm: 'チャットフォームを開始',
-        getStarted: '今すぐ始める',
-        selectEmoji: '絵文字を選択',
-        search: '検索...',
-        poweredBy: 'Powered by',
-        openChat: 'チャットを開く',
-        closeChat: 'チャットを閉じる',
-        live: 'ライブ',
-      },
-    },
-    hi: {
-      translation: {
-        online: 'ऑनलाइन • तुरंत जवाब देता है',
-        thinking: 'सोच रहा है',
-        searching: 'खोज रहा है…',
-        quickSuggestions: 'त्वरित सुझाव',
-        typeMessage: 'यहाँ अपना संदेश लिखें…',
-        typeAnswer: 'अपना उत्तर लिखें…',
-        readyToStart: 'शुरू करने के लिए तैयार हैं?',
-        collectingDetails: 'विवरण एकत्र हो रहा है…',
-        shareDetails: 'अपना विवरण साझा करें और हम आपको सर्वोत्तम समाधान दिलाएंगे।',
-        askQuestions: 'मैं यहीं चैट में कुछ त्वरित प्रश्न पूछूंगा।',
-        answerAbove: 'कृपया ऊपर चैट के प्रश्नों का उत्तर दें।',
-        startChatForm: 'चैट फॉर्म शुरू करें',
-        getStarted: 'अभी शुरू करें',
-        selectEmoji: 'इमोजी चुनें',
-        search: 'खोजें...',
-        poweredBy: 'Powered by',
-        openChat: 'चैट खोलें',
-        closeChat: 'चैट बंद करें',
-        live: 'लाइव',
-      },
-    },
-    fr: {
-      translation: {
-        online: 'En ligne • Répond instantanément',
-        thinking: 'En train de réfléchir',
-        searching: 'Recherche…',
-        quickSuggestions: 'Suggestions rapides',
-        typeMessage: 'Tapez votre message ici…',
-        typeAnswer: 'Tapez votre réponse…',
-        readyToStart: 'Prêt à commencer ?',
-        collectingDetails: 'Collecte de vos informations…',
-        shareDetails: 'Partagez vos coordonnées et nous vous aiderons à trouver la meilleure solution.',
-        askQuestions: 'Je vais vous poser quelques questions rapides ici dans le chat.',
-        answerAbove: 'Veuillez répondre aux questions dans le chat ci-dessus.',
-        startChatForm: 'Démarrer le formulaire de chat',
-        getStarted: 'Commencer maintenant',
-        selectEmoji: 'Sélectionner un emoji',
-        search: 'Rechercher...',
-        poweredBy: 'Propulsé par',
-        openChat: 'Ouvrir le chat',
-        closeChat: 'Fermer le chat',
-        live: 'En direct',
-      },
-    },
-    es: {
-      translation: {
-        online: 'En línea • Responde al instante',
-        thinking: 'Pensando',
-        searching: 'Buscando…',
-        quickSuggestions: 'Sugerencias rápidas',
-        typeMessage: 'Escribe tu mensaje aquí…',
-        typeAnswer: 'Escribe tu respuesta…',
-        readyToStart: '¿Listo para empezar?',
-        collectingDetails: 'Recopilando tus datos…',
-        shareDetails: 'Comparte tus datos y te ayudaremos a encontrar la mejor solución.',
-        askQuestions: 'Te haré algunas preguntas rápidas aquí en el chat.',
-        answerAbove: 'Por favor responde las preguntas en el chat de arriba.',
-        startChatForm: 'Iniciar formulario de chat',
-        getStarted: 'Empezar ahora',
-        selectEmoji: 'Seleccionar emoji',
-        search: 'Buscar...',
-        poweredBy: 'Desarrollado por',
-        openChat: 'Abrir chat',
-        closeChat: 'Cerrar chat',
-        live: 'En vivo',
-      },
-    },
-    ar: {
-      translation: {
-        online: 'متصل • يرد فورًا',
-        thinking: 'يفكر',
-        searching: 'يبحث…',
-        quickSuggestions: 'اقتراحات سريعة',
-        typeMessage: 'اكتب رسالتك هنا…',
-        typeAnswer: 'اكتب إجابتك…',
-        readyToStart: 'هل أنت مستعد للبدء؟',
-        collectingDetails: 'جاري جمع بياناتك…',
-        shareDetails: 'شارك بياناتك وسنساعدك في الحصول على أفضل حل.',
-        askQuestions: 'سأطرح عليك بعض الأسئلة السريعة هنا في الدردشة.',
-        answerAbove: 'يرجى الإجابة على الأسئلة في الدردشة أعلاه.',
-        startChatForm: 'بدء نموذج الدردشة',
-        getStarted: 'ابدأ الآن',
-        selectEmoji: 'اختر رمزًا تعبيريًا',
-        search: 'بحث...',
-        poweredBy: 'مدعوم من',
-        openChat: 'فتح الدردشة',
-        closeChat: 'إغلاق الدردشة',
-        live: 'مباشر',
-      },
-    },
-  },
+  resources: languageResources,
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -200,22 +342,68 @@ interface ChatbotWidgetProps {
   onLanguageChange?: (languageCode: string) => void;
 }
 
-const LANGUAGES = [
-  { name: 'English', code: 'en', img: '/flags/en.svg', dir: 'ltr' },
-  { name: '日本語',  code: 'ja', img: '/flags/ja.svg', dir: 'ltr' },
+// Indian regional languages
+const INDIAN_LANGUAGES = [
   { name: 'हिन्दी', code: 'hi', img: '/flags/hi.svg', dir: 'ltr' },
-  { name: 'Français', code: 'fr', img: '/flags/fr.svg', dir: 'ltr' },
-  { name: 'Español', code: 'es', img: '/flags/es.svg', dir: 'ltr' },
-  { name: 'العربية', code: 'ar', img: '/flags/ar.svg', dir: 'rtl' },
-] as const;
-
-const DEFAULT_SUGGESTIONS: MultilingualSuggestion[] = [
-  { en: "What services do you offer?",  fr: "Quels services proposez-vous ?",   ar: "ما الخدمات التي تقدمونها؟",    es: "¿Qué servicios ofrecen?",          ja: "どのようなサービスを提供していますか？", hi: "आप कौन सी सेवाएं प्रदान करते हैं?" },
-  { en: "How can I contact support?",   fr: "Comment contacter le support ?",    ar: "كيف يمكنني التواصل مع الدعم؟", es: "¿Cómo puedo contactar al soporte?", ja: "サポートに連絡するには？",              hi: "सहायता से कैसे संपर्क करें?" },
-  { en: "How do I get started?",        fr: "Comment commencer ?",               ar: "كيف أبدأ؟",                     es: "¿Cómo empiezo?",                   ja: "どうすれば始められますか？",            hi: "मैं कैसे शुरू करूं?" },
+  { name: 'ਪੰਜਾਬੀ', code: 'pa', img: '/flags/hi.svg', dir: 'ltr' },
+  { name: 'ಕನ್ನಡ', code: 'kn', img: '/flags/hi.svg', dir: 'ltr' },
+  { name: 'తెలుగు', code: 'te', img: '/flags/hi.svg', dir: 'ltr' },
+  { name: 'বাংলা', code: 'bn', img: '/flags/hi.svg', dir: 'ltr' },
+  { name: 'ગુજરાતી', code: 'gu', img: '/flags/hi.svg', dir: 'ltr' },
+  { name: 'English', code: 'en', img: '/flags/en.png', dir: 'ltr' },
 ];
 
-type LanguageCode = typeof LANGUAGES[number]['code'];
+// Global languages (excluding Indian languages when in India)
+const GLOBAL_LANGUAGES = [
+  { name: 'English', code: 'en', img: '/flags/en.png', dir: 'ltr' },
+  { name: '日本語',  code: 'ja', img: '/flags/ja.png', dir: 'ltr' },
+  { name: 'Français', code: 'fr', img: '/flags/fr.png', dir: 'ltr' },
+  { name: 'Español', code: 'es', img: '/flags/es.png', dir: 'ltr' },
+  { name: 'العربية', code: 'ar', img: '/flags/ar.png', dir: 'rtl' },
+  { name: '中文', code: 'zh', img: '/flags/zh.svg', dir: 'ltr' },
+];
+
+// Helper function to get user's location and determine available languages
+const getLocationBasedLanguages = async (): Promise<{
+  languages: typeof GLOBAL_LANGUAGES;
+  defaultLang: string;
+}> => {
+  try {
+    // Try to get country from IP (you can replace this with your own IP geolocation service)
+    const response = await fetch('https://ipapi.co/json/');
+    const data = await response.json();
+    const countryCode = data.country_code;
+    
+    // If user is in India, return Indian regional languages
+    if (countryCode === 'IN') {
+      return {
+        languages: INDIAN_LANGUAGES,
+        defaultLang: 'hi', // Default to Hindi for India
+      };
+    }
+    
+    // For other countries, return global languages
+    return {
+      languages: GLOBAL_LANGUAGES,
+      defaultLang: 'en',
+    };
+  } catch (error) {
+    console.error('Failed to detect location:', error);
+    // Fallback to English with global languages
+    return {
+      languages: GLOBAL_LANGUAGES,
+      defaultLang: 'en',
+    };
+  }
+};
+
+const DEFAULT_SUGGESTIONS: MultilingualSuggestion[] = [
+  { en: "What services do you offer?",  fr: "Quels services proposez-vous ?",   ar: "ما الخدمات التي تقدمونها؟",    es: "¿Qué servicios ofrecen?",          ja: "どのようなサービスを提供していますか？", hi: "आप कौन सी सेवाएं प्रदान करते हैं?", pa: "ਤੁਸੀਂ ਕਿਹੜੀਆਂ ਸੇਵਾਵਾਂ ਪ੍ਰਦਾਨ ਕਰਦੇ ਹੋ?", kn: "ನೀವು ಯಾವ ಸೇವೆಗಳನ್ನು ಒದಗಿಸುತ್ತೀರಿ?", te: "మీరు ఏ సేవలు అందిస్తారు?", bn: "আপনি কোন সেবা প্রদান করেন?", gu: "તમે કઈ સેવાઓ પ્રદાન કરો છો?", zh: "你们提供什么服务？" },
+  { en: "How can I contact support?",   fr: "Comment contacter le support ?",    ar: "كيف يمكنني التواصل مع الدعم؟", es: "¿Cómo puedo contactar al soporte?", ja: "サポートに連絡するには？", hi: "सहायता से कैसे संपर्क करें?", pa: "ਸਹਾਇਤਾ ਨਾਲ ਕਿਵੇਂ ਸੰਪਰਕ ਕਰੀਏ?", kn: "ಸಹಾಯವಾಣಿಯನ್ನು ಹೇಗೆ ಸಂಪರ್ಕಿಸುವುದು?", te: "సహాయాన్ని ఎలా సంప్రదించాలి?", bn: "সহায়তার সাথে কীভাবে যোগাযোগ করবেন?", gu: "સહાયતાનો સંપર્ક કેવી રીતે કરવો?", zh: "如何联系支持团队？" },
+  { en: "How do I get started?",        fr: "Comment commencer ?",               ar: "كيف أبدأ؟",                     es: "¿Cómo empiezo?",                   ja: "どうすれば始められますか？", hi: "मैं कैसे शुरू करूं?", pa: "ਮੈਂ ਕਿਵੇਂ ਸ਼ੁਰੂ ਕਰਾਂ?", kn: "ನಾನು ಹೇಗೆ ಪ್ರಾರಂಭಿಸುವುದು?", te: "నేను ఎలా ప్రారంభించాలి?", bn: "আমি কীভাবে শুরু করব?", gu: "હું કેવી રીતે શરૂ કરું?", zh: "如何开始？" },
+];
+
+type LanguageCode = string;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Utilities
@@ -281,8 +469,9 @@ function resolveSuggestion(
   const english = item['en']?.trim();
   if (english) return english;
 
-  for (const l of LANGUAGES) {
-    const fallback = item[l.code]?.trim();
+  // Try to find any available language
+  for (const key in item) {
+    const fallback = item[key]?.trim();
     if (fallback) return fallback;
   }
 
@@ -407,19 +596,21 @@ const Picker = dynamic(() => import('emoji-picker-react'), { ssr: false });
 function LanguageSelector({
   currentLang,
   onChange,
+  languages,
 }: {
   currentLang: LanguageCode;
   onChange: (code: LanguageCode) => void;
+  languages: typeof GLOBAL_LANGUAGES;
 }) {
   const [open, setOpen] = useState(false);
   const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const current = LANGUAGES.find(l => l.code === currentLang) ?? LANGUAGES[0];
+  const current = languages.find(l => l.code === currentLang) ?? languages[0];
 
   useEffect(() => {
     if (!open || !triggerRef.current) return;
     const rect = triggerRef.current.getBoundingClientRect();
-    const DROPDOWN_HEIGHT = LANGUAGES.length * 44;
+    const DROPDOWN_HEIGHT = languages.length * 44;
     const spaceAbove = rect.top;
     const spaceBelow = window.innerHeight - rect.bottom;
     const openUpward = spaceAbove > DROPDOWN_HEIGHT || spaceAbove > spaceBelow;
@@ -429,7 +620,7 @@ function LanguageSelector({
         ? { position: 'fixed', bottom: window.innerHeight - rect.top + 4, left: rect.left, zIndex: 99999 }
         : { position: 'fixed', top: rect.bottom + 4, left: rect.left, zIndex: 99999 }
     );
-  }, [open]);
+  }, [open, languages.length]);
 
   const dropdownEl = open ? (
     <>
@@ -438,7 +629,7 @@ function LanguageSelector({
         style={dropdownStyle}
         className="bg-popover border border-border rounded-xl shadow-2xl overflow-hidden w-44 animate-in fade-in zoom-in-95"
       >
-        {LANGUAGES.map(lang => (
+        {languages.map(lang => (
           <button
             key={lang.code}
             type="button"
@@ -499,6 +690,20 @@ export default function ChatbotWidget({
   const [isInitialized, setIsInitialized] = useState(false);
   const [liveTheme, setLiveTheme] = useState<any>(null);
   const [selectedLang, setSelectedLang] = useState<LanguageCode>('en');
+  const [availableLanguages, setAvailableLanguages] = useState(GLOBAL_LANGUAGES);
+  
+  // Detect location and set languages on mount
+  useEffect(() => {
+    const detectLocationAndSetLanguages = async () => {
+      const { languages, defaultLang } = await getLocationBasedLanguages();
+      setAvailableLanguages(languages);
+      setSelectedLang(defaultLang);
+      chatbotI18n.changeLanguage(defaultLang);
+      onLanguageChange?.(defaultLang);
+    };
+    
+    detectLocationAndSetLanguages();
+  }, [onLanguageChange]);
  
   const handleLanguageChange = (code: LanguageCode) => {
     setSelectedLang(code);
@@ -506,7 +711,6 @@ export default function ChatbotWidget({
     onLanguageChange?.(code);
   };
  
-  // ✅ conversationId is no longer passed here — it caused the circular dep.
   const {
     activeLeadForm,
     isLeadFormVisible,
@@ -537,7 +741,7 @@ export default function ChatbotWidget({
     error,
     hasLoadedInitialMessages,
     quickQuestions,
-    conversationId,        // ✅ source of truth lives here
+    conversationId,
     mode,
     setMode,
     handleSubmit,
@@ -580,7 +784,6 @@ export default function ChatbotWidget({
     window.parent.postMessage({ type: 'chatbot-loaded', chatbotId }, '*');
   }, [chatbotId]);
  
-  // ✅ Now we pass conversationId directly at call-time — no circular dep.
   useEffect(() => {
     if (messages.length > 0 && !hasSubmittedLead && conversationId) {
       checkLeadRequirements(conversationId);
@@ -619,8 +822,6 @@ export default function ChatbotWidget({
     ? { ...chatbot, theme: { ...chatbot.theme, ...liveTheme } }
     : chatbot;
  
-  // ✅ Wrap submitLeadForm so callers in ChatBot don't need to supply
-  //    conversationId themselves — we bind it here where we have it.
   const boundSubmitLeadForm = async (
     formData: Record<string, string>
   ): Promise<boolean> => {
@@ -667,6 +868,7 @@ export default function ChatbotWidget({
       markLeadAsSubmitted={markLeadAsSubmitted}
       selectedLang={selectedLang}
       onLanguageChange={handleLanguageChange}
+      availableLanguages={availableLanguages}
     />
   );
 }
@@ -711,6 +913,7 @@ interface ChatBotProps {
   markLeadAsSubmitted: () => void;
   selectedLang: LanguageCode;
   onLanguageChange: (code: LanguageCode) => void;
+  availableLanguages: typeof GLOBAL_LANGUAGES;
 }
 
 function ChatBot({
@@ -722,7 +925,7 @@ function ChatBot({
   activeLeadForm, isLeadFormVisible, isLoadingLeadConfig, hasSubmittedLead,
   isConversationalMode, isAwaitingLeadAnswer, leadCollectionStatus,
   showLeadForm, hideLeadForm, submitLeadForm, startLeadCollection, markLeadAsSubmitted,
-  selectedLang, onLanguageChange,
+  selectedLang, onLanguageChange, availableLanguages,
 }: ChatBotProps) {
   const { t } = useTranslation('translation', { i18n: chatbotI18n });
   const [isOpen, setIsOpen] = useState(true);
@@ -737,7 +940,7 @@ function ChatBot({
     transcript, startListening, stopListening,
     resetTranscript, browserSupportsSpeechRecognition,
     policyBlocked, policyMessage,
-  } = useSpeechToText({ continuous: true, lang: 'en-US' });
+  } = useSpeechToText({ continuous: true, lang: selectedLang === 'zh' ? 'zh-CN' : selectedLang === 'hi' ? 'hi-IN' : selectedLang === 'pa' ? 'pa-IN' : selectedLang === 'kn' ? 'kn-IN' : selectedLang === 'te' ? 'te-IN' : selectedLang === 'bn' ? 'bn-IN' : selectedLang === 'gu' ? 'gu-IN' : 'en-US' });
   const [isMicrophoneOn, setIsMicrophoneOn] = useState(false);
   const [parentPolicyInfo, setParentPolicyInfo] = useState<{
     blocked: boolean;
@@ -817,7 +1020,7 @@ function ChatBot({
     markLeadAsSubmitted();
   };
 
-  const currentLangMeta = LANGUAGES.find(l => l.code === selectedLang);
+  const currentLangMeta = availableLanguages.find(l => l.code === selectedLang);
   const dir = currentLangMeta?.dir ?? 'ltr';
 
   // All visual theme values come from chatbot.theme
@@ -917,6 +1120,7 @@ function ChatBot({
             selectedLang={selectedLang}
             onLanguageChange={onLanguageChange}
             t={t}
+            availableLanguages={availableLanguages}
           />
 
           <div className="flex items-center justify-end gap-1.5 p-1 mr-4">
@@ -1345,6 +1549,7 @@ interface ChatInputProps {
   selectedLang: LanguageCode;
   onLanguageChange: (code: LanguageCode) => void;
   t: (key: string) => string;
+  availableLanguages: typeof GLOBAL_LANGUAGES;
 }
 
 function ChatInput({
@@ -1352,7 +1557,7 @@ function ChatInput({
   onSubmit, onNewChat, status, inputRef, onToggleMicrophone,
   hasLeadForm, onLeadAction, isLoadingLeadConfig,
   isAwaitingLeadAnswer, isConversationalMode, chatbot,
-  selectedLang, onLanguageChange, t,
+  selectedLang, onLanguageChange, t, availableLanguages,
 }: ChatInputProps) {
   const th = chatbot?.theme || {};
   const accentColor = th.inputButtonColor  || '#DD692E';
@@ -1445,6 +1650,7 @@ function ChatInput({
                 <LanguageSelector
                   currentLang={selectedLang}
                   onChange={onLanguageChange}
+                  languages={availableLanguages}
                 />
               </PromptInputTools>
             </PromptInputToolbar>

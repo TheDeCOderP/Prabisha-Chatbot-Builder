@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react"
 import { Loader2, Save, ChevronLeft, Palette, MousePointer2, Upload, ImageIcon } from "lucide-react"
+import { toast } from "sonner"
 
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -25,9 +26,10 @@ interface WidgetThemeFormProps {
   isLoading: boolean
   initial?: any
   onLiveUpdate?: (theme: any) => void
+  chatbotData?: any
 }
 
-export function WidgetThemeForm({ onBack, onSave, isLoading, initial, onLiveUpdate }: WidgetThemeFormProps) {
+export function WidgetThemeForm({ onBack, onSave, isLoading, initial, onLiveUpdate, chatbotData }: WidgetThemeFormProps) {
   const [formData, setFormData] = useState({
     widgetIcon: "💬",
     widgetIconType: "EMOJI" as WidgetIconType,
@@ -44,12 +46,21 @@ export function WidgetThemeForm({ onBack, onSave, isLoading, initial, onLiveUpda
     popup_onload: false,
   })
 
-  // Use a ref to track if we're currently updating to prevent loops
+  // Separate state for icon (from Chatbot model)
+  const [iconData, setIconData] = useState({
+    type: "IMAGE" as "EMOJI" | "IMAGE" | "SVG",
+    value: "",
+    emojiValue: "💬",
+    svgValue: "",
+  })
+
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const isInitializedRef = useRef(false)
 
-  // Initialize form data from initial prop
+  // Initialize form data from initial prop (theme data)
   useEffect(() => {
+    console.log("Initializing widget form with data:", { initial, chatbotData })
     if (initial && !isInitializedRef.current) {
       setFormData({
         widgetIcon: initial.widgetIcon || "💬",
@@ -66,19 +77,44 @@ export function WidgetThemeForm({ onBack, onSave, isLoading, initial, onLiveUpda
         widgetMargin: initial.widgetMargin || 20,
         popup_onload: initial.popup_onload ?? false,
       })
+
+      // Initialize icon from chatbotData
+      if (chatbotData) {
+        if (chatbotData.icon) {
+          setIconData({
+            type: "IMAGE",
+            value: chatbotData.icon,
+            emojiValue: "💬",
+            svgValue: "",
+          })
+        } else if (chatbotData.widgetIconEmoji) {
+          setIconData({
+            type: "EMOJI",
+            value: chatbotData.widgetIconEmoji,
+            emojiValue: chatbotData.widgetIconEmoji,
+            svgValue: "",
+          })
+        } else if (chatbotData.widgetIconSvg) {
+          setIconData({
+            type: "SVG",
+            value: chatbotData.widgetIconSvg,
+            emojiValue: "💬",
+            svgValue: chatbotData.widgetIconSvg,
+          })
+        }
+      }
+      
       isInitializedRef.current = true
     }
-  }, [initial])
+  }, [initial, chatbotData])
 
   // Debounced live preview update
   useEffect(() => {
     if (onLiveUpdate && isInitializedRef.current) {
-      // Clear any existing timeout
       if (updateTimeoutRef.current) {
         clearTimeout(updateTimeoutRef.current)
       }
 
-      // Set a new timeout to update after 100ms of no changes
       updateTimeoutRef.current = setTimeout(() => {
         const updatedTheme = {
           ...initial,
@@ -88,29 +124,59 @@ export function WidgetThemeForm({ onBack, onSave, isLoading, initial, onLiveUpda
       }, 100)
     }
 
-    // Cleanup timeout on unmount
     return () => {
       if (updateTimeoutRef.current) {
         clearTimeout(updateTimeoutRef.current)
       }
     }
-    // Only depend on formData
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [formData])
+  }, [formData, initial, onLiveUpdate])
 
-  // Handle Image Upload to Base64
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
-      const reader = new FileReader()
-      reader.onloadend = () => {
-        setFormData({ ...formData, widgetIcon: reader.result as string })
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error('Image size should be less than 5MB')
+        return
       }
-      reader.readAsDataURL(file)
+      setSelectedFile(file)
+      // Show preview
+      const previewUrl = URL.createObjectURL(file)
+      setIconData({
+        type: "IMAGE",
+        value: previewUrl,
+        emojiValue: "💬",
+        svgValue: "",
+      })
     }
   }
 
   const handleSubmit = async () => {
+    // If there's a file to upload, use FormData with the main endpoint
+    if (selectedFile) {
+      const formDataToSend = new FormData()
+      formDataToSend.append('icon', selectedFile)
+      
+      // Also append widget settings if needed
+      if (formData.widgetText) formDataToSend.append('widget_text', formData.widgetText)
+      if (formData.widgetIconType) formDataToSend.append('widget_icon_type', formData.widgetIconType)
+      // Add other widget settings as needed
+      
+      try {
+        const response = await fetch(`/api/chatbots/${chatbotData?.id}`, {
+          method: "PUT",
+          body: formDataToSend,
+        })
+        
+        if (!response.ok) throw new Error('Failed to save icon')
+        toast.success('Icon uploaded and saved successfully')
+        setSelectedFile(null)
+      } catch (error) {
+        console.error('Error uploading icon:', error)
+        toast.error('Failed to upload icon')
+      }
+    }
+    
+    // Save the theme settings
     await onSave(formData)
   }
 
@@ -130,84 +196,99 @@ export function WidgetThemeForm({ onBack, onSave, isLoading, initial, onLiveUpda
 
       <div className="space-y-6 py-4 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 16rem)' }}>
         
-        {/* Info Section about Avatar/Icon */}
-        <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
-          <p className="text-[11px] text-blue-900 dark:text-blue-100">
-            <strong>Note:</strong> The chatbot avatar (header image) and bot icon (message bubbles) are managed in the <strong>Instructions</strong> tab.
-          </p>
+        {/* Icon Section */}
+        <div className="space-y-4">
+          <div className="flex items-center gap-2 text-sm font-semibold">
+            <MousePointer2 className="w-4 h-4" />
+            Widget Icon
+          </div>
+          
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <Label>Icon Type</Label>
+              <select 
+                value={iconData.type}
+                onChange={(e) => setIconData({ ...iconData, type: e.target.value as any })}
+                className="text-xs border rounded-md px-2 py-1 bg-background"
+              >
+                <option value="URL">Image URL</option>
+                <option value="EMOJI">Emoji</option>
+                <option value="SVG">SVG Path</option>
+              </select>
+            </div>
+
+            {iconData.type === "EMOJI" && (
+              <div className="space-y-2">
+                <Input 
+                  value={iconData.value || iconData.emojiValue}
+                  onChange={(e) => setIconData({ 
+                    ...iconData, 
+                    value: e.target.value,
+                    emojiValue: e.target.value 
+                  })}
+                  placeholder="Enter emoji (e.g., 💬)"
+                  className="font-mono"
+                />
+              </div>
+            )}
+
+            {iconData.type === "SVG" && (
+              <div className="space-y-2">
+                <Textarea 
+                  value={iconData.value || iconData.svgValue}
+                  onChange={(e) => setIconData({ 
+                    ...iconData, 
+                    value: e.target.value,
+                    svgValue: e.target.value 
+                  })}
+                  placeholder='Paste SVG path or code (e.g., <path d="..." />)'
+                  className="font-mono text-xs min-h-[80px]"
+                />
+              </div>
+            )}
+
+            {iconData.type === "IMAGE" && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-4 p-3 border rounded-md bg-muted/30">
+                  <div className="h-12 w-12 rounded-md border bg-background flex items-center justify-center overflow-hidden">
+                    {iconData.value ? (
+                      <img src={iconData.value} alt="Widget Icon" className="h-full w-full object-contain" />
+                    ) : (
+                      <ImageIcon className="h-6 w-6 text-muted-foreground" />
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <Input 
+                      type="file" 
+                      accept="image/*"
+                      className="text-xs"
+                      onChange={handleFileSelect}
+                    />
+                  </div>
+                </div>
+                <p className="text-[10px] text-muted-foreground">Recommended: 48×48px PNG or SVG. Max 5MB</p>
+              </div>
+            )}
+          </div>
         </div>
 
+        <hr />
+
+        {/* Widget Appearance - Keep existing code */}
         <div className="space-y-4">
           <div className="flex items-center gap-2 text-sm font-semibold">
             <Palette className="w-4 h-4" />
-            Appearance
+            Widget Appearance
           </div>
           
           <div className="space-y-4">
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label>Widget Icon Content</Label>
-                <Select 
-                  value={formData.widgetIconType} 
-                  onValueChange={(v: WidgetIconType) => {
-                    // Reset icon value when switching types to avoid format conflicts
-                    const defaultValue = v === "EMOJI" ? "💬" : ""
-                    setFormData({ ...formData, widgetIconType: v, widgetIcon: defaultValue })
-                  }}
-                >
-                  <SelectTrigger className="w-[110px] h-8 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="EMOJI">Emoji</SelectItem>
-                    <SelectItem value="SVG">SVG Path</SelectItem>
-                    <SelectItem value="IMAGE">Image</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Conditional Input based on Icon Type */}
-              {formData.widgetIconType === "EMOJI" && (
-                <Input 
-                  value={formData.widgetIcon} 
-                  onChange={(e) => setFormData({ ...formData, widgetIcon: e.target.value })}
-                  placeholder="Paste an emoji here..."
-                />
-              )}
-
-              {formData.widgetIconType === "SVG" && (
-                <Textarea 
-                  value={formData.widgetIcon} 
-                  onChange={(e) => setFormData({ ...formData, widgetIcon: e.target.value })}
-                  placeholder='Paste SVG path or code (e.g., <path d="..." />)'
-                  className="font-mono text-xs min-h-[80px]"
-                />
-              )}
-
-              {formData.widgetIconType === "IMAGE" && (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-4 p-3 border rounded-md bg-muted/30">
-                    <div className="h-12 w-12 rounded-md border bg-background flex items-center justify-center overflow-hidden">
-                      {formData.widgetIcon ? (
-                        <img src={formData.widgetIcon} alt="Widget Icon Preview" className="h-full w-full object-contain" />
-                      ) : (
-                        <ImageIcon className="h-6 w-6 text-muted-foreground" />
-                      )}
-                    </div>
-                    <div className="flex-1">
-                      <Input 
-                        type="file" 
-                        accept="image/*"
-                        className="text-xs"
-                        onChange={handleImageUpload}
-                      />
-                      {formData.widgetIcon && (
-                        <p className="text-[10px] text-muted-foreground mt-1">Image uploaded ✓</p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
+              <Label>Widget Text</Label>
+              <Input 
+                value={formData.widgetText} 
+                onChange={(e) => setFormData({ ...formData, widgetText: e.target.value })}
+                placeholder="Tooltip text"
+              />
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -246,30 +327,29 @@ export function WidgetThemeForm({ onBack, onSave, isLoading, initial, onLiveUpda
                 </div>
               </div>
             </div>
-          </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>Widget Shape</Label>
-              <Select 
-                value={formData.widgetShape} 
-                onValueChange={(v: ShapeType) => setFormData({ ...formData, widgetShape: v })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ROUND">Round</SelectItem>
-                  <SelectItem value="SQUARE">Square</SelectItem>
-                  <SelectItem value="ROUNDED_SQUARE">Rounded</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Widget Shape</Label>
+                <Select 
+                  value={formData.widgetShape} 
+                  onValueChange={(v: ShapeType) => setFormData({ ...formData, widgetShape: v })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ROUND">Round</SelectItem>
+                    <SelectItem value="SQUARE">Square</SelectItem>
+                    <SelectItem value="ROUNDED_SQUARE">Rounded</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-            {/* Add placeholder for other styling if needed */}
           </div>
         </div>
 
-        {/* Layout Section */}
+        {/* Size & Spacing - Keep existing code */}
         <div className="space-y-4 border-t pt-4">
           <div className="flex items-center gap-2 text-sm font-semibold">
             <MousePointer2 className="w-4 h-4" />
@@ -330,7 +410,7 @@ export function WidgetThemeForm({ onBack, onSave, isLoading, initial, onLiveUpda
           </div>
         </div>
 
-        {/* Action Buttons - Fixed at bottom */}
+        {/* Action Buttons */}
         <div className="sticky bottom-0 bg-background border-t pt-4 mt-6 flex gap-2">
           <Button variant="outline" onClick={onBack} className="flex-1">
             Cancel
@@ -341,7 +421,7 @@ export function WidgetThemeForm({ onBack, onSave, isLoading, initial, onLiveUpda
             ) : (
               <Save className="w-4 h-4 mr-2" />
             )}
-            Save Theme
+            Save Widget Settings
           </Button>
         </div>
       </div>

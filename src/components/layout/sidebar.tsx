@@ -21,6 +21,10 @@ import {
   NotebookPen,
   UserRoundPlus,
   Link,
+  LibraryBig,
+  Users,
+  MessageCircleQuestion,
+  Cog,
 } from "lucide-react"
 import {
   Sidebar,
@@ -110,15 +114,18 @@ export default function AppSidebar({ ...props }: React.ComponentProps<typeof Sid
             title: "Chatbots",
             url: "/chatbots",
           },
+        ],
+      },
+      {
+        title: "Information",
+        url: "#",
+        icon: LibraryBig,
+        isActive: true,
+        items: [
           {
             icon: MessageCircle,
             title: "Conversations",
             url: "/conversations",
-          },
-          {
-            icon: UserRoundPlus,
-            title: "Invites",
-            url: "/invites",
           },
           {
             icon: NotebookPen,
@@ -127,6 +134,19 @@ export default function AppSidebar({ ...props }: React.ComponentProps<typeof Sid
           },
         ],
       },
+      {
+        title: "Collaborate",
+        url: "#",
+        icon: Users,
+        isActive: true,
+        items: [
+          {
+            icon: UserRoundPlus,
+            title: "Invites",
+            url: "/invites",
+          },
+        ],
+      }
     ],
     chatbotNav: [
       {
@@ -160,6 +180,14 @@ export default function AppSidebar({ ...props }: React.ComponentProps<typeof Sid
             title: "Integrations",
             url: `/chatbots/${id}/integrations`,
           },
+        ],
+      },
+      {
+        title: "Advanced",
+        url: "#",
+        icon: Cog,
+        isActive: true,
+        items: [
           {
             icon: Bot,
             title: "AI Model",
@@ -170,8 +198,13 @@ export default function AppSidebar({ ...props }: React.ComponentProps<typeof Sid
             title: "Connections",
             url: `/chatbots/${id}/connections`,
           },
-        ],
-      },
+          {
+            icon: MessageCircleQuestion,
+            title: "FAQs",
+            url: `/chatbots/${id}/faqs`,
+          },
+        ]
+      }
     ],
   }
 

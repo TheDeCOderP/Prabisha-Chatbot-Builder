@@ -2,6 +2,7 @@
 import { searchSimilar } from '@/lib/langchain/vector-store';
 import { GoogleGenAI } from '@google/genai';
 import { prisma } from '@/lib/prisma';
+import { createHash } from 'crypto';
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
@@ -64,7 +65,26 @@ const LANGUAGE_NAMES: Record<string, string> = {
   fr: 'French (Français)',
   es: 'Spanish (Español)',
   ar: 'Arabic (العربية)',
+  zh: 'Chinese (中文)',
+  de: 'German (Deutsch)',
 };
+
+function normalizeQuestion(q: string): string {
+  return q
+    .toLowerCase()
+    .trim()
+    .replace(/[^\w\s]/g, '')                                        // strip punctuation
+    .replace(/\s+/g, ' ')
+    .split(' ')                                                     // 1. Break into array of words
+    .filter(word => !/\b(what|is|the|a|an|how|does|do|can|i|my|me)\b/.test(word)) // 2. Filter stopwords
+    .sort()                                                         // 3. Alphabetize the words
+    .join(' ')                                                      // 4. Re-join into a string
+    .trim();
+}
+
+function hashQuestion(normalized: string): string {
+  return createHash('sha256').update(normalized).digest('hex');
+}
 
 function languageDirective(language: string): string {
   const name = LANGUAGE_NAMES[language] ?? language;
@@ -78,6 +98,66 @@ conversation history, or user message are in a different language.
 All output HTML, labels, and prose must be in ${name}.
 
 `;
+}
+
+async function getCachedResponse(chatbotId: string, userMessage: string, language: string) {
+  const normalized = normalizeQuestion(userMessage);
+  const hash = hashQuestion(normalized);
+
+  const cached = await prisma.questionCache.findUnique({
+    where: { 
+      chatbotId_questionHash: { 
+        chatbotId, 
+        questionHash: hash 
+      }, 
+      language
+    }
+  });
+
+  if (cached) {
+    // Update hit count async - don't await
+    prisma.questionCache.update({
+      where: { id: cached.id },
+      data: { hitCount: { increment: 1 }, lastUsedAt: new Date() }
+    }).catch(() => {});
+    return cached.htmlResponse;
+  }
+  return null;
+}
+
+async function setCachedResponse(chatbotId: string, userMessage: string, htmlResponse: string) {
+  const normalized = normalizeQuestion(userMessage);
+  const hash = hashQuestion(normalized);
+
+  await prisma.questionCache.upsert({
+    where: { chatbotId_questionHash: { chatbotId, questionHash: hash } },
+    update: { htmlResponse, lastUsedAt: new Date() },
+    create: { chatbotId, normalizedQ: normalized, questionHash: hash, htmlResponse }
+  });
+}
+
+// ─── Real-time intent detection ───────────────────────────────────────────────
+interface RealtimeIntent {
+  isRealtime: boolean;
+  type: 'PRICE' | 'TIME' | 'AVAILABILITY' | 'NEWS' | 'WEATHER' | 'STOCK' | null;
+}
+
+const REALTIME_PATTERNS: Array<{ pattern: RegExp; type: RealtimeIntent['type'] }> = [
+  { pattern: /\b(price|cost|how much|rate|fee|charge|pricing)\b/i, type: 'PRICE' },
+  { pattern: /\b(time|clock|now|current time|what time|today|date|open|closed|hours)\b/i, type: 'TIME' },
+  { pattern: /\b(available|availability|in stock|stock|inventory|left)\b/i, type: 'AVAILABILITY' },
+  { pattern: /\b(news|latest|recent|update|today|breaking|just|happened)\b/i, type: 'NEWS' },
+  { pattern: /\b(weather|temperature|forecast|rain|sunny)\b/i, type: 'WEATHER' },
+  { pattern: /\b(stock|share price|market|nasdaq|nse|bse|crypto|bitcoin|eth)\b/i, type: 'STOCK' },
+];
+
+function detectRealtimeIntent(message: string): RealtimeIntent {
+  for (const { pattern, type } of REALTIME_PATTERNS) {
+    if (pattern.test(message)) {
+      return { isRealtime: true, type };
+    }
+  }
+  return { isRealtime: false, type: null };
 }
 
 // ─── Prompts ──────────────────────────────────────────────────────────────────
@@ -958,6 +1038,23 @@ export async function executeSearchChain(config: SearchChainConfig): Promise<Sea
     language = 'en',  // ← destructure with default
   } = config;
 
+  const realtimeIntent = detectRealtimeIntent(userMessage);
+
+   // 2. Only check cache for non-realtime questions
+  if (!realtimeIntent.isRealtime) {
+    const cached = await getCachedResponse(chatbotId, userMessage, language);
+    if (cached) {
+      console.log('⚡ Cache hit — skipping LLM');
+      return {
+        response: cached,
+        htmlResponse: cached,
+        conversationId: config.conversationId || '',
+        sourcesUsed: 0,
+        sourceUrls: [],
+      };
+    }
+  }
+  
   let chatbot = preloadedChatbot ?? null;
   if (!chatbot) {
     const tChatbot = timer('prisma: fetch chatbot + relations (no preload)');
@@ -1013,6 +1110,11 @@ export async function executeSearchChain(config: SearchChainConfig): Promise<Sea
       chatbotLogicRecord,
       language  // ← forwarded
     );
+
+    if (!realtimeIntent.isRealtime) {
+      await setCachedResponse(chatbotId, userMessage, htmlResponse);
+      console.log('💾 Response cached for future identical questions');
+    }
 
   prisma.message.create({
     data: { content: htmlResponse, senderType: 'BOT', conversationId: conversation.id }

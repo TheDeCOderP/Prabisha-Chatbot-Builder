@@ -6,6 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Area, AreaChart } from 'recharts';
 import { MessageSquare, Users, TrendingUp, Bot, Calendar, DollarSign, Activity, Clock, Target, Loader2 } from 'lucide-react';
+import { useWorkspace } from '@/providers/workspace-provider';
 
 interface DashboardStats {
   totalChatbots: number;
@@ -57,6 +58,7 @@ interface DashboardData {
 }
 
 export default function DashboardPage() {
+  const { activeWorkspace } = useWorkspace();
   const [timeRange, setTimeRange] = useState('7d');
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -64,13 +66,15 @@ export default function DashboardPage() {
 
   useEffect(() => {
     fetchDashboardData();
-  }, [timeRange]);
+  }, [timeRange, activeWorkspace]);
 
   const fetchDashboardData = async () => {
+    if(!activeWorkspace) return;
+
     try {
       setLoading(true);
       setError(null);
-      const response = await fetch(`/api/dashboard?timeRange=${timeRange}`);
+      const response = await fetch(`/api/dashboard?workspaceId=${activeWorkspace?.id}&timeRange=${timeRange}`);
       
       if (!response.ok) {
         throw new Error('Failed to fetch dashboard data');

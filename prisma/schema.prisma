@@ -99,10 +99,11 @@ model Chatbot {
   logic          ChatbotLogic?
   theme          ChatbotTheme?
   
-  leads          Lead[]
-  connections    Connections[]
-  conversations  Conversation[]
-  knowledgeBases KnowledgeBase[]
+  leads           Lead[]
+  connections     Connections[]
+  conversations   Conversation[]
+  knowledgeBases  KnowledgeBase[]
+  questionCaches  QuestionCache[]
   documentVectors DocumentVector[]
 
   workspaceId String
@@ -545,4 +546,23 @@ model ConnectionConfiguration {
   updatedAt DateTime @updatedAt
 
   connections   Connections @relation(fields: [connectionsId], references: [id], onDelete: Cascade)
+}
+
+model QuestionCache {
+  id              String   @id @default(cuid())
+  chatbotId       String
+  language        String   @default("en") // for future multilingual support
+  normalizedQ     String   @db.Text  // lowercased, trimmed, stopwords removed
+  questionHash    String              // SHA-256 of normalizedQ for fast lookup
+  htmlResponse    String   @db.Text
+  audioResponse   String?  @db.Text
+  hitCount        Int      @default(0)
+  lastUsedAt      DateTime @default(now())
+  createdAt       DateTime @default(now())
+
+  chatbot         Chatbot  @relation(fields: [chatbotId], references: [id], onDelete: Cascade)
+
+  @@unique([chatbotId, questionHash])  // ← per-chatbot uniqueness
+  @@index([chatbotId])
+  @@index([lastUsedAt])
 }
