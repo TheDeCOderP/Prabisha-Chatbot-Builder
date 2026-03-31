@@ -66,7 +66,7 @@ interface ChatWidgetProps {
 
 const handleLogin = async (callbackUrl = "/dashboard") => {
   try {
-    await signIn("central-auth", { callbackUrl });
+    await signIn("central-auth", { callbackUrl }, { prompt: "login" });
   } catch (error) {
     console.error("Central login error:", error);
   }
