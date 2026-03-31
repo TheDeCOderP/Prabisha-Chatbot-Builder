@@ -364,10 +364,12 @@ export function NavUser({ session }: { session: Session | null }) {
   }
 
   const handleLogout = async () => {
-    const appUrl = window.location.origin; 
-    const centralLogoutUrl = `https://auth.prabisha.com/auth/logout?callbackUrl=${appUrl}/login`;
+    const appUrl = window.location.origin;
     
-    await signOut({ callbackUrl: centralLogoutUrl });
+    await signOut({ 
+      redirect: true,
+      callbackUrl: `https://auth.prabisha.com/auth/logout?callbackUrl=${appUrl}/login`
+    });
   };
 
   return (
