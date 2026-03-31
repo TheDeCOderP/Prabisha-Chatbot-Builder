@@ -19,6 +19,7 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import ThemeToggle from "../features/theme-toggle";
+import { signIn } from "next-auth/react";
 
 /* ---------------- DATA ---------------- */
 const servicesData = [
@@ -167,6 +168,14 @@ export default function Header() {
 
   if (!isMounted) return null;
 
+  const handleLogin = async (callbackUrl = "/dashboard") => {
+    try {
+      await signIn("central-auth", { callbackUrl }, { prompt: "login" });
+    } catch (error) {
+      console.error("Central login error:", error);
+    }
+  };
+
   return (
     <nav className="fixed top-0 w-full bg-background/80 backdrop-blur-xl z-50 border-b border-border transition-all">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 sm:h-20 flex items-center justify-between">
@@ -216,10 +225,10 @@ export default function Header() {
 
         <div className="flex items-center gap-2 sm:gap-4">
           <ThemeToggle />
-          <Button variant="ghost" className="hidden md:block font-bold text-sm sm:text-base">
+          <Button onClick={() => handleLogin()} variant="ghost" className="hidden md:block font-bold text-sm sm:text-base">
             Sign In
           </Button>
-          <Button className="rounded-full bg-primary font-bold px-4 sm:px-6 shadow-lg shadow-primary/20 text-sm sm:text-base">
+          <Button onClick={() => handleLogin()} className="rounded-full bg-primary font-bold px-4 sm:px-6 shadow-lg shadow-primary/20 text-sm sm:text-base">
             Get Started
           </Button>
           <Button
@@ -245,10 +254,10 @@ export default function Header() {
             <div className="space-y-6">
               <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Navigation</p>
               <div className="flex flex-col gap-4 pl-2">
-                <Link href="/services" className="text-lg font-bold" onClick={() => setIsMobileOpen(false)}>Services</Link>
-                <Link href="/about-us" className="text-lg font-bold" onClick={() => setIsMobileOpen(false)}>About Us</Link>
-                <Link href="/careers" className="text-lg font-bold" onClick={() => setIsMobileOpen(false)}>Careers</Link>
-                <Link href="/contact" className="text-lg font-bold" onClick={() => setIsMobileOpen(false)}>Contact</Link>
+                <Link href="https://prabisha.com/services" className="text-lg font-bold" onClick={() => setIsMobileOpen(false)}>Services</Link>
+                <Link href="https://prabisha.com/about-us" className="text-lg font-bold" onClick={() => setIsMobileOpen(false)}>About Us</Link>
+                <Link href="https://prabisha.com/careers" className="text-lg font-bold" onClick={() => setIsMobileOpen(false)}>Careers</Link>
+                <Link href="https://prabisha.com/contact" className="text-lg font-bold" onClick={() => setIsMobileOpen(false)}>Contact</Link>
               </div>
             </div>
           </motion.div>
