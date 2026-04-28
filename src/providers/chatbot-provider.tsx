@@ -39,6 +39,8 @@ interface ChatbotConfig {
   model?: string;
   max_tokens?: number;
   temperature?: number;
+  domain?: string;
+  isPublished?: boolean;
 }
 
 interface ChatbotContextType {
@@ -151,6 +153,8 @@ export function ChatbotProvider({
         model:        data.model        || 'meta-llama/Llama-3.3-70B-Instruct-Turbo',
         max_tokens:   data.max_tokens   || 500,
         temperature:  data.temperature  || 0.7,
+        domain:       data.domain       || '',
+        isPublished:  data.isPublished  ?? false,
       };
 
       setConfig(prev => ({ ...prev, ...transformed }));

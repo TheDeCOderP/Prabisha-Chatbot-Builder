@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import { useTypewriter } from "react-simple-typewriter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,6 +40,11 @@ import Footer from "@/components/layout/footer";
 import Image from "next/image";
 import InfiniteCarousel from "@/components/layout/carousel";
 import { signIn } from "next-auth/react";
+import useEmblaCarousel from 'embla-carousel-react';
+import AutoScroll from 'embla-carousel-auto-scroll';
+import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { toast } from "sonner";
+import Link from "next/link";
 
 // ==================== Types ====================
 interface Stat {
@@ -670,9 +675,353 @@ const LandingPage = () => {
       <PainValueSection />
       <DemoSection />
       <FeaturesSection />
+      <section className="py-20 px-10 bg-slate-50/30">
+        <div className="max-w-[1400px] mx-auto">
+          <div className="text-center mb-12">
+            <h2 className="text-[38px] font-black tracking-tighter text-slate-900 mb-3">
+              Explore Our AI Chatbots
+            </h2>
+            <p className="text-[15px] text-slate-500 max-w-2xl mx-auto">
+              Choose from our collection of intelligent chatbots, each designed for specific use cases
+            </p>
+          </div>
+          
+          <ChatbotCarousel
+            speed={0.8}
+            pauseOnHover={true}
+            showArrows={true}
+            autoPlay={true}
+            direction="forward"
+          />
+        </div>
+      </section>
       <CTASection />
       <Footer />
     </div>
+  );
+};
+
+interface Chatbot {
+  id: string;
+  name: string;
+  description?: string;
+  icon?: string;
+  avatar?: string;
+  model: string;
+  createdAt: Date;
+  updatedAt: Date;
+  theme?: {
+    primaryColor?: string;
+    secondaryColor?: string;
+  };
+}
+
+interface ChatbotCarouselProps {
+  speed?: number;
+  pauseOnHover?: boolean;
+  showArrows?: boolean;
+  autoPlay?: boolean;
+  direction?: 'forward' | 'backward';
+  onSelectChatbot?: (chatbotId: string) => void;
+  onPreviewChatbot?: (chatbotId: string) => void;
+  onConfigureChatbot?: (chatbotId: string) => void;
+}
+
+export const ChatbotCarousel = ({
+  speed = 1,
+  pauseOnHover = true,
+  showArrows = true,
+  autoPlay = true,
+  direction = 'forward',
+  onSelectChatbot,
+  onPreviewChatbot,
+  onConfigureChatbot,
+}: ChatbotCarouselProps) => {
+  const [chatbots, setChatbots] = useState<Chatbot[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Fetch chatbots from API
+  useEffect(() => {
+    const fetchChatbots = async () => {
+      try {
+        const response = await fetch('/api/home');
+        if (!response.ok) throw new Error('Failed to fetch chatbots');
+        
+        const data = await response.json();
+        setChatbots(data.chatbots);
+      } catch (error) {
+        console.error('Error fetching chatbots:', error);
+        toast.error('Failed to fetch chatbots');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchChatbots();
+  }, [toast]);
+
+  // Prepare display items (repeat for smooth looping)
+  const displayItems = React.useMemo(() => {
+    if (!chatbots.length) return [];
+    // Repeat items to ensure smooth infinite scroll
+    let repeated = [...chatbots];
+    while (repeated.length < 20) {
+      repeated = [...repeated, ...chatbots];
+    }
+    return repeated;
+  }, [chatbots]);
+
+  // Configure carousel options
+  const options = React.useMemo(() => ({
+    loop: true,
+    align: 'start' as const,
+    containScroll: 'trimSnaps' as const,
+    slidesToScroll: 1,
+  }), []);
+
+  // Configure auto-scroll plugin
+  const autoScrollPlugin = React.useMemo(() => {
+    if (!autoPlay) return undefined;
+    
+    return AutoScroll({
+      speed: direction === 'forward' ? speed : -speed,
+      stopOnInteraction: false,
+      stopOnMouseEnter: pauseOnHover,
+      playOnInit: true,
+    });
+  }, [autoPlay, speed, pauseOnHover, direction]);
+
+  const [emblaRef, emblaApi] = useEmblaCarousel(
+    options,
+    autoScrollPlugin ? [autoScrollPlugin] : []
+  );
+
+  const scrollPrev = useCallback(() => {
+    if (emblaApi) emblaApi.scrollPrev();
+  }, [emblaApi]);
+
+  const scrollNext = useCallback(() => {
+    if (emblaApi) emblaApi.scrollNext();
+  }, [emblaApi]);
+
+  // Handle carousel pause/resume on hover
+  const handleMouseEnter = useCallback(() => {
+    if (autoScrollPlugin && pauseOnHover) {
+      autoScrollPlugin.stop();
+    }
+  }, [autoScrollPlugin, pauseOnHover]);
+
+  const handleMouseLeave = useCallback(() => {
+    if (autoScrollPlugin && autoPlay && pauseOnHover) {
+      autoScrollPlugin.play();
+    }
+  }, [autoScrollPlugin, autoPlay, pauseOnHover]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (chatbots.length === 0) {
+    return (
+      <div className="text-center py-20">
+        <p className="text-slate-500">No chatbots found. Create your first chatbot to get started!</p>
+      </div>
+    );
+  }
+
+  return (
+    <div 
+      className="relative w-full group"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+    >
+      {/* Navigation Arrows */}
+      {showArrows && chatbots.length > 0 && (
+        <>
+          <button
+            onClick={scrollPrev}
+            className="absolute left-4 top-1/2 -translate-y-1/2 z-20 bg-white/90 hover:bg-white rounded-full p-2 shadow-lg transition-all duration-200 opacity-0 group-hover:opacity-100 focus:opacity-100 disabled:opacity-30"
+            aria-label="Previous"
+            disabled={!emblaApi?.canScrollPrev()}
+          >
+            <ChevronLeft className="w-5 h-5 text-slate-600" />
+          </button>
+          <button
+            onClick={scrollNext}
+            className="absolute right-4 top-1/2 -translate-y-1/2 z-20 bg-white/90 hover:bg-white rounded-full p-2 shadow-lg transition-all duration-200 opacity-0 group-hover:opacity-100 focus:opacity-100 disabled:opacity-30"
+            aria-label="Next"
+            disabled={!emblaApi?.canScrollNext()}
+          >
+            <ChevronRight className="w-5 h-5 text-slate-600" />
+          </button>
+        </>
+      )}
+
+      {/* Gradient Overlays */}
+      <div className="absolute left-0 top-0 bottom-0 w-32 bg-gradient-to-r from-white via-white/80 to-transparent pointer-events-none z-10" />
+      <div className="absolute right-0 top-0 bottom-0 w-32 bg-gradient-to-l from-white via-white/80 to-transparent pointer-events-none z-10" />
+
+      {/* Carousel Container */}
+      <div className="overflow-hidden" ref={emblaRef}>
+        <div className="flex gap-6 py-4">
+          {displayItems.map((chatbot, index) => (
+            <div 
+              key={`${chatbot.id}-${index}`}
+              className="flex-[0_0_auto]"
+            >
+              <ChatbotCard
+                chatbot={chatbot}
+                onSelect={onSelectChatbot}
+                onPreview={onPreviewChatbot}
+                onConfigure={onConfigureChatbot}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+interface ChatbotCardProps {
+  chatbot: {
+    id: string;
+    name: string;
+    description?: string;
+    icon?: string;
+    avatar?: string;
+    model: string;
+    domain?: string;
+    theme?: {
+      primaryColor?: string;
+      secondaryColor?: string;
+    };
+  };
+  onSelect?: (chatbotId: string) => void;
+  onPreview?: (chatbotId: string) => void;
+  onConfigure?: (chatbotId: string) => void;
+}
+
+export const ChatbotCard = ({ 
+  chatbot, 
+  onSelect, 
+  onPreview, 
+  onConfigure 
+}: ChatbotCardProps) => {
+  const primaryColor = chatbot.theme?.primaryColor || "#6366f1";
+  const secondaryColor = chatbot.theme?.secondaryColor || "#8b5cf6";
+
+  return (
+    <Link href={chatbot?.domain || '#'} target="_blank" rel="noopener noreferrer">
+      <Card 
+        className="group relative w-[320px] flex-shrink-0 cursor-pointer transition-all duration-300 hover:shadow-xl hover:-translate-y-1 border-slate-200 overflow-hidden"
+        onClick={() => onSelect?.(chatbot.id)}
+      >
+        {/* Gradient Border Effect */}
+        <div 
+          className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+          style={{
+            background: `linear-gradient(135deg, ${primaryColor}20, ${secondaryColor}20)`,
+          }}
+        />
+        
+        <CardContent className="p-5 relative">
+          {/* Header with Icon/Avatar */}
+          <div className="flex items-start justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div 
+                className="w-12 h-12 rounded-xl flex items-center justify-center shadow-sm"
+                style={{ 
+                  backgroundColor: `${primaryColor}15`,
+                  border: `1px solid ${primaryColor}30`
+                }}
+              >
+                {chatbot.icon ? (
+                  <Image 
+                    src={chatbot.icon} 
+                    alt={chatbot.name}
+                    width={32}
+                    height={32}
+                    className="w-8 h-8 rounded-lg"
+                  />
+                ) : (
+                  <MessageSquare 
+                    className="w-6 h-6" 
+                    style={{ color: primaryColor }}
+                  />
+                )}
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-800 text-base">
+                  {chatbot.name}
+                </h3>
+                <Badge 
+                  variant="outline" 
+                  className="text-[10px] mt-1"
+                  style={{ 
+                    borderColor: `${primaryColor}30`,
+                    color: primaryColor
+                  }}
+                >
+                  {chatbot.model.split('/').pop()?.replace('-Turbo', '') || 'AI Model'}
+                </Badge>
+              </div>
+            </div>
+          </div>
+
+          {/* Description */}
+          {chatbot.description && (
+            <p className="text-sm text-slate-500 mb-4 line-clamp-2">
+              {chatbot.description}
+            </p>
+          )}
+
+          {/* Stats Placeholder */}
+          <div className="flex items-center justify-between mb-4 pt-2 border-t border-slate-100">
+            <div className="flex items-center gap-1 text-xs text-slate-400">
+              <Users className="w-3 h-3" />
+              <span>Active</span>
+            </div>
+            <div className="flex items-center gap-1 text-xs text-slate-400">
+              <TrendingUp className="w-3 h-3" />
+              <span>High Performance</span>
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex gap-2 mt-2">
+            <Button
+              size="sm"
+              variant="outline"
+              className="flex-1 text-xs h-8"
+              onClick={(e) => {
+                e.stopPropagation();
+                onPreview?.(chatbot.id);
+              }}
+            >
+              <Play className="w-3 h-3 mr-1" />
+              Preview
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="flex-1 text-xs h-8"
+              onClick={(e) => {
+                e.stopPropagation();
+                onConfigure?.(chatbot.id);
+              }}
+            >
+              <Settings className="w-3 h-3 mr-1" />
+              Configure
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </Link>
   );
 };
 

@@ -91,6 +91,9 @@ model Chatbot {
   max_tokens    Int    @default(500)
   temperature   Float  @default(0.7)
 
+  domain        String?
+  isPublished   Boolean @default(true)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
