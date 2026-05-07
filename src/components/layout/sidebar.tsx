@@ -114,6 +114,11 @@ export default function AppSidebar({ ...props }: React.ComponentProps<typeof Sid
             title: "Chatbots",
             url: "/chatbots",
           },
+          {
+            icon: Users,
+            title: "Members",
+            url: "/members",
+          }
         ],
       },
       {

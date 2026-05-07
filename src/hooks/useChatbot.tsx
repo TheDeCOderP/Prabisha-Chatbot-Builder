@@ -4,6 +4,83 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useConversationalLead, ConversationalLeadConfig } from './useConversationalLead';
 import { Message } from '@/types/chat';
 
+// ─── Retry configuration ─────────────────────────────────────────────────────
+
+interface RetryConfig {
+  maxRetries: number;
+  baseDelayMs: number;
+  maxDelayMs: number;
+  backoffFactor: number;
+  retryableStatuses: number[];
+}
+
+const DEFAULT_RETRY_CONFIG: RetryConfig = {
+  maxRetries: 3,
+  baseDelayMs: 1000,    // 1 second
+  maxDelayMs: 16000,    // 16 seconds
+  backoffFactor: 2,     // exponential: 1s, 2s, 4s, 8s, 16s
+  retryableStatuses: [429, 503],
+};
+
+// Helper: sleep with exponential backoff
+async function sleepWithBackoff(attempt: number, config: RetryConfig): Promise<void> {
+  const delay = Math.min(
+    config.baseDelayMs * Math.pow(config.backoffFactor, attempt),
+    config.maxDelayMs
+  );
+  // Add jitter (±20%) to avoid thundering herd
+  const jitter = delay * (0.8 + Math.random() * 0.4);
+  await new Promise(resolve => setTimeout(resolve, jitter));
+}
+
+// Helper: check if error is retryable
+function isRetryableError(status: number, config: RetryConfig): boolean {
+  return config.retryableStatuses.includes(status);
+}
+
+// Helper: fetch with retry logic
+async function fetchWithRetry<T>(
+  url: string,
+  options: RequestInit,
+  retryConfig: RetryConfig = DEFAULT_RETRY_CONFIG
+): Promise<Response> {
+  let lastError: Error | null = null;
+  
+  for (let attempt = 0; attempt <= retryConfig.maxRetries; attempt++) {
+    try {
+      const response = await fetch(url, options);
+      
+      // If response is OK or not retryable, return it
+      if (response.ok || !isRetryableError(response.status, retryConfig)) {
+        return response;
+      }
+      
+      // Retryable error (429 or 503)
+      if (attempt < retryConfig.maxRetries) {
+        console.warn(`🔄 Retryable error ${response.status}, attempt ${attempt + 1}/${retryConfig.maxRetries + 1}. Retrying...`);
+        await sleepWithBackoff(attempt, retryConfig);
+        continue;
+      }
+      
+      // Max retries reached, return the error response
+      return response;
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      
+      // Network errors are also retryable
+      if (attempt < retryConfig.maxRetries) {
+        console.warn(`🔄 Network error, attempt ${attempt + 1}/${retryConfig.maxRetries + 1}. Retrying...`, lastError.message);
+        await sleepWithBackoff(attempt, retryConfig);
+        continue;
+      }
+      
+      throw lastError;
+    }
+  }
+  
+  throw lastError || new Error('Max retries exceeded');
+}
+
 export type MultilingualSuggestion = Partial<Record<string, string>>
 
 interface ChatbotData {
@@ -16,7 +93,6 @@ interface ChatbotData {
   suggestions?: MultilingualSuggestion[] | string[];
   popup_onload?: boolean;
   theme?: {
-    // Widget / toggle button
     widgetSize?: number;
     widgetSizeMobile?: number;
     widgetColor?: string;
@@ -30,7 +106,6 @@ interface ChatbotData {
     widgetIconType?: string;
     widgetText?: string;
     popup_onload?: boolean;
-    // Chat window colors
     headerBgColor?: string;
     headerTextColor?: string;
     botMessageBgColor?: string;
@@ -59,6 +134,7 @@ interface UseChatbotProps {
   conversationalLeadConfig?: ConversationalLeadConfig | null;
   onLeadCollected?: (data: Record<string, string>) => void;
   language?: string;
+  retryConfig?: Partial<RetryConfig>;
 }
 
 interface UseChatbotReturn {
@@ -162,7 +238,10 @@ export function useChatbot({
   conversationalLeadConfig,
   onLeadCollected,
   language = 'en',
+  retryConfig: customRetryConfig,
 }: UseChatbotProps): UseChatbotReturn {
+  const retryConfig: RetryConfig = { ...DEFAULT_RETRY_CONFIG, ...customRetryConfig };
+  
   const [chatbot, setChatbot] = useState<ChatbotData | null>(initialChatbotData || null);
   const [isLoadingChatbot, setIsLoadingChatbot] = useState(!initialChatbotData);
   const [chatbotError, setChatbotError] = useState<string | null>(null);
@@ -185,6 +264,7 @@ export function useChatbot({
   useEffect(() => { chatbotRef.current = chatbot; }, [chatbot]);
 
   const forceScrollRef = useRef(false);
+  const hasInitializedRef = useRef(false); // Prevent double initialization
 
   const messagesEndRef     = useRef<HTMLDivElement>(null);
   const inputRef           = useRef<HTMLTextAreaElement>(null);
@@ -218,17 +298,21 @@ export function useChatbot({
     const greetingText = resolveGreetingText(normalised, languageRef.current);
     setMessages([{ senderType: 'BOT', content: greetingText, createdAt: new Date() }]);
     setHasLoadedInitialMessages(true);
-  }, []);
+  }, []); // No dependencies needed as it uses refs
 
   // ── loadConversationMessages ──────────────────────────────────────────────
 
   const loadConversationMessages = useCallback(async (convId: string) => {
     const t = timer('loadConversationMessages');
     try {
-      const response = await fetch(`/api/conversations/${convId}`, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-      });
+      const response = await fetchWithRetry(
+        `/api/conversations/${convId}`,
+        {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' },
+        },
+        retryConfig
+      );
 
       if (response.status === 404) {
         localStorage.removeItem(`chatbot_${chatbotId}_conversation`);
@@ -245,11 +329,12 @@ export function useChatbot({
             content:    msg.content,
             createdAt:  new Date(msg.createdAt),
           })));
+          setHasLoadedInitialMessages(true);
         } else {
           showWelcomeMessage();
         }
       } else {
-        throw new Error('Failed to load conversation');
+        throw new Error(`Failed to load conversation: ${response.status}`);
       }
     } catch (err) {
       console.error('Error loading conversation messages:', err);
@@ -258,9 +343,8 @@ export function useChatbot({
       showWelcomeMessage();
     } finally {
       t.end();
-      setHasLoadedInitialMessages(true);
     }
-  }, [chatbotId, showWelcomeMessage]);
+  }, [chatbotId, showWelcomeMessage, retryConfig]);
 
   // ── fetchChatbotData ──────────────────────────────────────────────────────
 
@@ -270,15 +354,25 @@ export function useChatbot({
     setIsLoadingChatbot(true);
     setChatbotError(null);
     try {
-      const response = await fetch(
+      const response = await fetchWithRetry(
         `${process.env.NEXT_PUBLIC_APP_URL || ''}/api/chatbots/${chatbotId}`,
-        { cache: 'no-store' }
+        { cache: 'no-store' },
+        retryConfig
       );
-      if (!response.ok) throw new Error(`Failed to fetch chatbot: ${response.status}`);
+      
+      if (!response.ok) {
+        if (response.status === 429) {
+          throw new Error('Chatbot service is currently busy. Please try again in a moment.');
+        }
+        if (response.status === 503) {
+          throw new Error('Chatbot service is temporarily unavailable. Please try again.');
+        }
+        throw new Error(`Failed to fetch chatbot: ${response.status}`);
+      }
+      
       const data = await response.json();
       setChatbot(data);
 
-      // Normalise suggestions — only multilingual objects now, no plain strings
       const rawSuggestions = data.suggestions;
       let parsed: MultilingualSuggestion[] = [];
 
@@ -301,7 +395,7 @@ export function useChatbot({
       t.end();
       setIsLoadingChatbot(false);
     }
-  }, [chatbotId]);
+  }, [chatbotId, retryConfig]);
 
   // ── Init: load chatbot ────────────────────────────────────────────────────
 
@@ -323,7 +417,12 @@ export function useChatbot({
   // ── Init: load conversation or show welcome ───────────────────────────────
 
   useEffect(() => {
+    // Prevent double initialization
+    if (hasInitializedRef.current) return;
     if (!chatbot) return;
+    
+    hasInitializedRef.current = true;
+    
     const savedConversationId = localStorage.getItem(`chatbot_${chatbotId}_conversation`);
     if (savedConversationId) {
       setConversationId(savedConversationId);
@@ -353,7 +452,6 @@ export function useChatbot({
     if (!hasLoadedInitialMessages) return;
 
     if (forceScrollRef.current) {
-      // New user message sent — scroll so the bot reply area is visible at top
       forceScrollRef.current = false;
       requestAnimationFrame(() => {
         scrollToElement(chatContainerRef.current, lastBotMessageRef.current, 12);
@@ -361,11 +459,9 @@ export function useChatbot({
       return;
     }
 
-    // During streaming — keep the top of the bot message pinned, don't chase bottom
     requestAnimationFrame(() => {
       scrollToElement(chatContainerRef.current, lastBotMessageRef.current, 12);
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages, loading, hasLoadedInitialMessages]);
 
   useEffect(() => {
@@ -374,9 +470,9 @@ export function useChatbot({
     }
   }, [hasLoadedInitialMessages]);
 
-  // ─── Streaming submit ─────────────────────────────────────────────────────
+  // ─── Streaming submit with retry ─────────────────────────────────────────────
 
-  const handleStreamingSubmit = async (searchQuery: string) => {
+  const handleStreamingSubmit = useCallback(async (searchQuery: string) => {
     const tTotal = timer('handleStreamingSubmit [total]');
 
     setMessages(prev => [...prev, {
@@ -386,19 +482,23 @@ export function useChatbot({
     }]);
 
     try {
-      const response = await fetch('/api/chat/stream', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: searchQuery,
-          conversationId,
-          chatbotId,
-          language: languageRef.current,
-          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          pageUrl: window.location.href,
-          isReturning: !!conversationId,
-        }),
-      });
+      const response = await fetchWithRetry(
+        '/api/chat/stream',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: searchQuery,
+            conversationId,
+            chatbotId,
+            language: languageRef.current,
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            pageUrl: window.location.href,
+            isReturning: !!conversationId,
+          }),
+        },
+        retryConfig
+      );
 
       if (!response.ok) {
         const errData = await response.json().catch(() => ({}));
@@ -437,13 +537,23 @@ export function useChatbot({
       setLoading(false);
     } catch (err) {
       console.error('Streaming error:', err);
+      
+      let errorMessage = 'Sorry, I encountered an error. Please try again.';
+      if (err instanceof Error) {
+        if (err.message.includes('429') || err.message.includes('quota') || err.message.includes('resource')) {
+          errorMessage = 'The chatbot is experiencing high demand. Please wait a moment and try again.';
+        } else if (err.message.includes('503') || err.message.includes('unavailable')) {
+          errorMessage = 'The chatbot service is temporarily unavailable. Please try again in a few seconds.';
+        }
+      }
+      
       setStatus('error');
       setLoading(false);
       setMessages(prev => {
         const updated = [...prev];
         updated[updated.length - 1] = {
           senderType: 'BOT',
-          content:    'Sorry, I encountered an error. Please try again.',
+          content:    errorMessage,
           createdAt:  new Date(),
         };
         return updated;
@@ -453,27 +563,31 @@ export function useChatbot({
     } finally {
       tTotal.end();
     }
-  };
+  }, [chatbotId, conversationId, retryConfig]);
 
-  // ─── Standard submit ──────────────────────────────────────────────────────
+  // ─── Standard submit with retry ──────────────────────────────────────────────
 
-  const handleStandardSubmit = async (searchQuery: string) => {
+  const handleStandardSubmit = useCallback(async (searchQuery: string) => {
     const tTotal = timer('handleStandardSubmit [total]');
 
     try {
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: searchQuery,
-          conversationId,
-          chatbotId,
-          language: languageRef.current,
-          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          pageUrl: window.location.href,
-          isReturning: !!conversationId,
-        }),
-      });
+      const response = await fetchWithRetry(
+        '/api/chat',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: searchQuery,
+            conversationId,
+            chatbotId,
+            language: languageRef.current,
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            pageUrl: window.location.href,
+            isReturning: !!conversationId,
+          }),
+        },
+        retryConfig
+      );
 
       if (!response.ok) {
         const errData = await response.json().catch(() => ({}));
@@ -501,11 +615,21 @@ export function useChatbot({
       }, 500);
     } catch (err) {
       console.error('Chat error:', err);
+      
+      let errorMessage = 'Sorry, I encountered an error. Please try again.';
+      if (err instanceof Error) {
+        if (err.message.includes('429') || err.message.includes('quota') || err.message.includes('resource')) {
+          errorMessage = 'The chatbot is experiencing high demand. Please wait a moment and try again.';
+        } else if (err.message.includes('503') || err.message.includes('unavailable')) {
+          errorMessage = 'The chatbot service is temporarily unavailable. Please try again in a few seconds.';
+        }
+      }
+      
       setStatus('error');
       setLoading(false);
       setMessages(prev => [...prev, {
         senderType: 'BOT',
-        content:    'Sorry, I encountered an error. Please try again.',
+        content:    errorMessage,
         createdAt:  new Date(),
       }]);
       setError(err instanceof Error ? err.message : 'Failed to send message. Please try again.');
@@ -513,7 +637,7 @@ export function useChatbot({
     } finally {
       tTotal.end();
     }
-  };
+  }, [chatbotId, conversationId, retryConfig]);
 
   // ─── sendMessage ──────────────────────────────────────────────────────────
 
@@ -538,8 +662,9 @@ export function useChatbot({
 
     tSubmit.end();
     console.groupEnd();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode]);
+  }, [mode, handleStreamingSubmit, handleStandardSubmit]);
+
+  // ─── Handle pending message after lead collection ─────────────────────────
 
   useEffect(() => {
     if (conversationalLead.status === 'done' && pendingMessage) {
@@ -553,7 +678,7 @@ export function useChatbot({
 
   // ─── handleSubmit ─────────────────────────────────────────────────────────
 
-  const handleSubmit = async (e?: React.FormEvent, overrideText?: string) => {
+  const handleSubmit = useCallback(async (e?: React.FormEvent, overrideText?: string) => {
     if (e) e.preventDefault();
     const searchQuery = (overrideText || text).trim();
     if (!searchQuery) { setError('Please enter a message'); return; }
@@ -576,15 +701,15 @@ export function useChatbot({
     }
 
     await sendMessage(searchQuery);
-  };
+  }, [text, conversationalLead, conversationalLeadConfig, sendMessage]);
 
-  const handleQuickQuestion = async (question: string) => {
+  const handleQuickQuestion = useCallback(async (question: string) => {
     if (loading) return;
     setText(question);
     await handleSubmit(undefined, question);
-  };
+  }, [loading, handleSubmit]);
 
-  const handleNewChat = () => {
+  const handleNewChat = useCallback(() => {
     localStorage.removeItem(`chatbot_${chatbotId}_conversation`);
     setConversationId(null);
     setText('');
@@ -593,16 +718,16 @@ export function useChatbot({
     setMessages([]);
     showWelcomeMessage();
     setTimeout(() => inputRef.current?.focus(), 100);
-  };
+  }, [chatbotId, showWelcomeMessage]);
 
-  const formatTime = (date?: Date) => {
+  const formatTime = useCallback((date?: Date) => {
     if (!date) return '';
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  };
+  }, []);
 
-  const refetchChatbot = async () => { 
+  const refetchChatbot = useCallback(async () => { 
     await fetchChatbotData(); 
-  };
+  }, [fetchChatbotData]);
 
   return {
     chatbot,

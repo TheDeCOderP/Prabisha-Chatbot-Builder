@@ -6,8 +6,9 @@ import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
-import { Loader2, Bot, Cpu, Languages, TextInitial, Check } from "lucide-react"
+import { Loader2, Bot, Cpu, Languages, TextInitial, Check, Globe, Eye, EyeOff } from "lucide-react"
 import { useChatbot, SUPPORTED_LANGUAGES } from "@/providers/chatbot-provider"
+import { Switch } from "@/components/ui/switch"
 
 const DIRECTIVE_PLACEHOLDER = `Example:
 You are Aria, a friendly support assistant for Acme Store.
@@ -85,24 +86,30 @@ export default function InstructionsPage() {
   const [name, setName]               = useState("");
   const [directive, setDirective]     = useState("");
   const [description, setDescription] = useState("");
+  const [domain, setDomain]           = useState("");
+  const [isPublished, setIsPublished] = useState(true);
 
   useEffect(() => {
     if (config.id) {
       setName(config.name || "");
       setDirective(config.directive || "");
       setDescription(config.description || "");
+      setDomain(config.domain || "");
+      setIsPublished(config.isPublished ?? true);
     }
-  }, [config.id, config.name, config.directive, config.description]);
+  }, [config.id, config.name, config.directive, config.description, config.domain, config.isPublished]);
 
   const handleSave = async () => {
     setIsLoading(true);
     try {
-      updateConfig({ name, directive, description });
+      updateConfig({ name, directive, description, domain, isPublished });
 
       const formData = new FormData();
       formData.append("name", name);
       formData.append("directive", directive);
       formData.append("description", description);
+      formData.append("domain", domain);
+      formData.append("isPublished", String(isPublished));
       formData.append("greeting", JSON.stringify([config.greeting]));
 
       const res = await fetch(`/api/chatbots/${config.id}`, { method: "PUT", body: formData });
@@ -164,6 +171,51 @@ export default function InstructionsPage() {
         <p className="text-xs text-muted-foreground pl-0.5">
           A brief description of what your chatbot does.
         </p>
+      </div>
+
+      {/* ── Domain ────────────────────────────────────────────────────────── */}
+      <div className="space-y-2">
+        <Label htmlFor="domain">
+          <Globe className="h-5 w-5 text-blue-500" />
+          Domain
+        </Label>
+        <Input
+          id="domain"
+          value={domain}
+          onChange={(e) => setDomain(e.target.value)}
+          placeholder="e.g., example.com, support.yourcompany.com"
+        />
+        <p className="text-xs text-muted-foreground pl-0.5">
+          Optional: Restrict this chatbot to a specific domain. Leave empty to allow any domain.
+        </p>
+      </div>
+
+      {/* ── Published Status ──────────────────────────────────────────────── */}
+      <div className="flex items-center justify-between p-4 border rounded-lg bg-muted/30">
+        <div className="space-y-0.5">
+          <Label className="flex items-center gap-2">
+            {isPublished ? (
+              <Eye className="h-5 w-5 text-green-500" />
+            ) : (
+              <EyeOff className="h-5 w-5 text-red-500" />
+            )}
+            Publication Status
+          </Label>
+          <p className="text-xs text-muted-foreground">
+            {isPublished 
+              ? "This chatbot is live and accessible to users" 
+              : "This chatbot is hidden and not accessible"}
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-muted-foreground">
+            {isPublished ? "Published" : "Unpublished"}
+          </span>
+          <Switch
+            checked={isPublished}
+            onCheckedChange={setIsPublished}
+          />
+        </div>
       </div>
 
       <hr />

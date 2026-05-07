@@ -1,398 +1,363 @@
-import { prisma } from '@/lib/prisma';
-import { getToken } from 'next-auth/jwt';
+// app/api/invites/route.ts
 import { NextRequest, NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { BaseApiRoute, ApiError, ForbiddenError } from '@/lib/api/base-api';
 import { InvitationStatus, WorkspaceRole } from '../../../../generated/prisma/enums';
 import { sendMail } from '@/services/mailing.service';
 import { createWorkspaceInvitationEmail } from '@/services/email-template';
 
-export async function GET(req: NextRequest) {
-    const token = await getToken({ req });
-    if (!token || !token.sub) return new NextResponse('Unauthorized', { status: 401 });
-
-    try {
-        // Get all workspace invitations sent by the current user
-        const sentInvites = await prisma.workspaceInvitation.findMany({
-            where: {
-                invitedById: token.sub,
-                status: 'PENDING', // Only show pending invites by default
-            },
-            include: {
-                workspace: {
-                    select: {
-                        id: true,
-                        name: true,
-                    }
-                },
-                invitedTo: {
-                    select: {
-                        id: true,
-                        name: true,
-                        email: true,
-                        image: true,
-                    }
-                }
-            },
-            orderBy: {
-                createdAt: 'desc'
+class InvitesRoute extends BaseApiRoute {
+  // GET /api/invites - Get all invitations (sent and received)
+  protected async GET(): Promise<NextResponse> {
+    // Get all workspace invitations sent by the current user
+    const sentInvites = await this.dbOperation(() =>
+      prisma.workspaceInvitation.findMany({
+        where: {
+          invitedById: this.currentUser.id,
+          status: 'PENDING',
+        },
+        include: {
+          workspace: {
+            select: {
+              id: true,
+              name: true,
             }
-        });
-
-        // Get all workspace invitations received by the current user
-        const receivedInvites = await prisma.workspaceInvitation.findMany({
-            where: {
-                invitedToId: token.sub,
-                status: 'PENDING',
-            },
-            include: {
-                workspace: {
-                    select: {
-                        id: true,
-                        name: true,
-                    }
-                },
-                invitedBy: {
-                    select: {
-                        id: true,
-                        name: true,
-                        email: true,
-                        image: true,
-                    }
-                }
-            },
-            orderBy: {
-                createdAt: 'desc'
+          },
+          invitedTo: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              image: true,
             }
-        });
+          }
+        },
+        orderBy: {
+          createdAt: 'desc'
+        }
+      })
+    );
 
-        return NextResponse.json({ 
-            sent: sentInvites,
-            received: receivedInvites 
-        }, { status: 200 });
-    } catch (error) {
-        console.error('Error fetching invites:', error);
-        return new NextResponse('Internal Server Error', { status: 500 });
+    // Get all workspace invitations received by the current user
+    const receivedInvites = await this.dbOperation(() =>
+      prisma.workspaceInvitation.findMany({
+        where: {
+          invitedToId: this.currentUser.id,
+          status: 'PENDING',
+        },
+        include: {
+          workspace: {
+            select: {
+              id: true,
+              name: true,
+            }
+          },
+          invitedBy: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              image: true,
+            }
+          }
+        },
+        orderBy: {
+          createdAt: 'desc'
+        }
+      })
+    );
+
+    return this.json({ 
+      sent: sentInvites,
+      received: receivedInvites 
+    });
+  }
+
+  // PUT /api/invites - Respond to an invitation (accept/reject)
+  protected async PUT(): Promise<NextResponse> {
+    const { invitationToken, status, role = 'MEMBER' } = await this.request.json();
+
+    if (!invitationToken || !status) {
+      throw new ApiError(400, 'Invalid request. invitationToken and status are required.');
     }
-}
 
-export async function PUT(req: NextRequest) {
-    const token = await getToken({ req });
-    if (!token || !token.sub) {
-        return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
+    // Validate status
+    if (!Object.values(InvitationStatus).includes(status)) {
+      throw new ApiError(400, 'Invalid status value');
     }
 
-    try {
-        const { invitationToken, status, role = 'MEMBER' } = await req.json();
+    // Validate role if provided
+    if (role && !Object.values(WorkspaceRole).includes(role)) {
+      throw new ApiError(400, 'Invalid role value');
+    }
 
-        if(!invitationToken || !status) {
-            return NextResponse.json({ 
-                message: 'Invalid request. invitationToken and status are required.' 
-            }, { status: 400 });
+    // Check if invitation exists and belongs to current user
+    const invitation = await this.dbOperation(() =>
+      prisma.workspaceInvitation.findFirst({
+        where: { 
+          token: invitationToken,
+          invitedToId: this.currentUser.id,
+          status: 'PENDING',
+          expiresAt: {
+            gt: new Date()
+          }
+        },
+        include: {
+          workspace: true
         }
+      })
+    );
 
-        // Validate status
-        if (!Object.values(InvitationStatus).includes(status)) {
-            return NextResponse.json({ 
-                message: 'Invalid status value' 
-            }, { status: 400 });
-        }
+    if (!invitation) {
+      throw new ApiError(404, 'Invitation not found, expired, or already processed');
+    }
 
-        // Validate role if provided
-        if (role && !Object.values(WorkspaceRole).includes(role)) {
-            return NextResponse.json({ 
-                message: 'Invalid role value' 
-            }, { status: 400 });
-        }
+    // Update invitation status
+    const updatedInvitation = await this.dbOperation(() =>
+      prisma.workspaceInvitation.update({
+        where: { token: invitationToken },
+        data: { status }
+      })
+    );
 
-        // Check if invitation exists and belongs to current user
-        const invitation = await prisma.workspaceInvitation.findFirst({
-            where: { 
-                token: invitationToken,
-                invitedToId: token.sub, // Ensure user can only respond to their own invites
-                status: 'PENDING', // Only allow updates for pending invitations
-                expiresAt: {
-                    gt: new Date() // Check if not expired
-                }
-            },
-            include: {
-                workspace: true
+    // If accepting, add user to workspace
+    if (status === InvitationStatus.ACCEPTED) {
+      try {
+        // Check if user is already a member
+        const existingMember = await this.dbOperation(() =>
+          prisma.workspaceMember.findFirst({
+            where: {
+              userId: this.currentUser.id,
+              workspaceId: invitation.workspaceId
             }
-        });
+          })
+        );
 
-        if (!invitation) {
-            return NextResponse.json({ 
-                message: 'Invitation not found, expired, or already processed' 
-            }, { status: 404 });
+        if (existingMember) {
+          await this.dbOperation(() =>
+            prisma.workspaceInvitation.update({
+              where: { token: invitationToken },
+              data: { memberId: existingMember.id }
+            })
+          );
+          
+          return this.json({ 
+            message: 'You are already a member of this workspace',
+            invitation: updatedInvitation,
+            isAlreadyMember: true
+          });
         }
 
-        // Update invitation status
-        const updatedInvitation = await prisma.workspaceInvitation.update({
+        // Create new workspace member
+        const workspaceMember = await this.dbOperation(() =>
+          prisma.workspaceMember.create({
+            data: {
+              userId: this.currentUser.id,
+              workspaceId: invitation.workspaceId,
+              role: role as WorkspaceRole,
+            }
+          })
+        );
+
+        await this.dbOperation(() =>
+          prisma.workspaceInvitation.update({
             where: { token: invitationToken },
-            data: { status }
+            data: { memberId: workspaceMember.id }
+          })
+        );
+
+        return this.json({ 
+          message: 'Successfully joined workspace',
+          invitation: updatedInvitation,
+          workspaceMember: {
+            id: workspaceMember.id,
+            role: workspaceMember.role,
+            workspaceId: workspaceMember.workspaceId,
+            workspaceName: invitation.workspace.name
+          }
         });
 
-        // If accepting, add user to workspace
-        if(status === InvitationStatus.ACCEPTED) {
-            try {
-                // Check if user is already a member
-                const existingMember = await prisma.workspaceMember.findFirst({
-                    where: {
-                        userId: token.sub,
-                        workspaceId: invitation.workspaceId
-                    }
-                });
-
-                if (existingMember) {
-                    // Update the invitation to link with existing member
-                    await prisma.workspaceInvitation.update({
-                        where: { token: invitationToken },
-                        data: {
-                            memberId: existingMember.id
-                        }
-                    });
-                    
-                    return NextResponse.json({ 
-                        message: 'You are already a member of this workspace',
-                        invitation: updatedInvitation,
-                        isAlreadyMember: true
-                    }, { status: 200 });
-                }
-
-                // Create new workspace member
-                const workspaceMember = await prisma.workspaceMember.create({
-                    data: {
-                        userId: token.sub,
-                        workspaceId: invitation.workspaceId,
-                        role: role as WorkspaceRole,
-                    }
-                });
-
-                // Link the invitation to the created member
-                await prisma.workspaceInvitation.update({
-                    where: { token: invitationToken },
-                    data: {
-                        memberId: workspaceMember.id
-                    }
-                });
-
-                // Return success with member info
-                return NextResponse.json({ 
-                    message: 'Successfully joined workspace',
-                    invitation: updatedInvitation,
-                    workspaceMember: {
-                        id: workspaceMember.id,
-                        role: workspaceMember.role,
-                        workspaceId: workspaceMember.workspaceId,
-                        workspaceName: invitation.workspace.name
-                    }
-                }, { status: 200 });
-
-            } catch (error) {
-                // Handle unique constraint violation
-                if (error instanceof Error && error.message.includes('Unique constraint')) {
-                    return NextResponse.json({ 
-                        message: 'You are already a member of this workspace',
-                        invitation: updatedInvitation,
-                        isAlreadyMember: true
-                    }, { status: 409 });
-                }
-                throw error;
-            }
+      } catch (error: any) {
+        if (error.message?.includes('Unique constraint')) {
+          return this.json({ 
+            message: 'You are already a member of this workspace',
+            invitation: updatedInvitation,
+            isAlreadyMember: true
+          }, 409);
         }
-
-        // If rejecting, just update status
-        return NextResponse.json({ 
-            message: `Invitation ${status.toLowerCase()}`,
-            invitation: updatedInvitation
-        }, { status: 200 });
-
-    } catch (error) {
-        console.error('Error updating invitation:', error);
-        
-        // Handle specific errors
-        if (error instanceof Error && error.message.includes('Record to update not found')) {
-            return NextResponse.json({ 
-                message: 'Invitation not found' 
-            }, { status: 404 });
-        }
-
-        return NextResponse.json({ 
-            message: 'Internal Server Error' 
-        }, { status: 500 });
-    }
-}
-
-// Update the POST endpoint in your API route
-// Update the POST endpoint in app/api/invites/route.ts
-export async function POST(req: NextRequest) {
-    const token = await getToken({ req });
-    if (!token || !token.sub) {
-        return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
+        throw error;
+      }
     }
 
-    try {
-        const { workspaceId, email, role = 'MEMBER' } = await req.json();
-        
-        if (!workspaceId || !email) {
-            return NextResponse.json({ 
-                message: 'workspaceId and email are required' 
-            }, { status: 400 });
+    // If rejecting, just update status
+    return this.json({ 
+      message: `Invitation ${status.toLowerCase()}`,
+      invitation: updatedInvitation
+    });
+  }
+
+  // POST /api/invites - Create a new invitation
+  protected async POST(): Promise<NextResponse> {
+    const { workspaceId, email, role = 'MEMBER' } = await this.request.json();
+    
+    if (!workspaceId || !email) {
+      throw new ApiError(400, 'workspaceId and email are required');
+    }
+
+    // Check if user has permission to invite to this workspace
+    const isAuthorized = await this.dbOperation(() =>
+      prisma.workspaceMember.findFirst({
+        where: {
+          userId: this.currentUser.id,
+          workspaceId: workspaceId,
+          role: {
+            in: ['OWNER', 'ADMIN']
+          }
         }
+      })
+    );
 
-        // Check if user has permission to invite to this workspace
-        const isAuthorized = await prisma.workspaceMember.findFirst({
-            where: {
-                userId: token.sub,
-                workspaceId: workspaceId,
-                role: {
-                    in: ['OWNER', 'ADMIN']
-                }
-            }
-        });
+    if (!isAuthorized) {
+      throw new ForbiddenError('You do not have permission to invite users to this workspace');
+    }
 
-        if (!isAuthorized) {
-            return NextResponse.json({ 
-                message: 'You do not have permission to invite users to this workspace' 
-            }, { status: 403 });
+    // Find if user exists
+    const userToInvite = await this.dbOperation(() =>
+      prisma.user.findUnique({
+        where: { email }
+      })
+    );
+
+    // Check if user is already a member
+    if (userToInvite) {
+      const existingMember = await this.dbOperation(() =>
+        prisma.workspaceMember.findFirst({
+          where: {
+            userId: userToInvite.id,
+            workspaceId: workspaceId
+          }
+        })
+      );
+
+      if (existingMember) {
+        throw new ApiError(409, 'User is already a member of this workspace');
+      }
+    }
+
+    // Check for existing pending invitation
+    const existingInvitation = await this.dbOperation(() =>
+      prisma.workspaceInvitation.findFirst({
+        where: {
+          workspaceId: workspaceId,
+          OR: [
+            { email: email },
+            { invitedToId: userToInvite?.id || null }
+          ],
+          status: 'PENDING',
+          expiresAt: {
+            gt: new Date()
+          }
         }
+      })
+    );
 
-        // Find if user exists
-        const userToInvite = await prisma.user.findUnique({
-            where: { email }
-        });
+    if (existingInvitation) {
+      return this.json({ 
+        message: 'A pending invitation already exists for this user/email',
+        invitation: existingInvitation
+      }, 409);
+    }
 
-        // Check if user is already a member (only for existing users)
-        if (userToInvite) {
-            const existingMember = await prisma.workspaceMember.findFirst({
-                where: {
-                    userId: userToInvite.id,
-                    workspaceId: workspaceId
-                }
-            });
+    // Get workspace details and inviter info
+    const workspace = await this.dbOperation(() =>
+      prisma.workspace.findUnique({
+        where: { id: workspaceId },
+        select: { name: true }
+      })
+    );
 
-            if (existingMember) {
-                return NextResponse.json({ 
-                    message: 'User is already a member of this workspace' 
-                }, { status: 409 });
-            }
-        }
+    // Create invitation (expires in 7 days)
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7);
 
-        // Check for existing pending invitation for this email/workspace
-        const existingInvitation = await prisma.workspaceInvitation.findFirst({
-            where: {
-                workspaceId: workspaceId,
-                OR: [
-                    { email: email },
-                    { invitedToId: userToInvite?.id || null }
-                ],
-                status: 'PENDING',
-                expiresAt: {
-                    gt: new Date()
-                }
-            }
-        });
+    const invitationToken = Math.random().toString(36).substring(2) + Date.now().toString(36);
 
-        if (existingInvitation) {
-            return NextResponse.json({ 
-                message: 'A pending invitation already exists for this user/email',
-                invitation: existingInvitation
-            }, { status: 409 });
-        }
+    const invitationData: any = {
+      workspaceId: workspaceId,
+      invitedById: this.currentUser.id,
+      status: 'PENDING',
+      token: invitationToken,
+      expiresAt: expiresAt,
+      role: role as WorkspaceRole
+    };
 
-        // Get workspace details and inviter info
-        const workspace = await prisma.workspace.findUnique({
-            where: { id: workspaceId },
+    if (userToInvite) {
+      invitationData.invitedToId = userToInvite.id;
+    } else {
+      invitationData.email = email;
+    }
+
+    const invitation = await this.dbOperation(() =>
+      prisma.workspaceInvitation.create({
+        data: invitationData,
+        include: {
+          workspace: {
             select: { name: true }
-        });
-
-        const inviter = await prisma.user.findUnique({
-            where: { id: token.sub },
-            select: { name: true, email: true }
-        });
-
-        // Create invitation (expires in 7 days)
-        const expiresAt = new Date();
-        expiresAt.setDate(expiresAt.getDate() + 7);
-
-        const invitationToken = Math.random().toString(36).substring(2) + Date.now().toString(36);
-
-        const invitationData: any = {
-            workspaceId: workspaceId,
-            invitedById: token.sub,
-            status: 'PENDING',
-            token: invitationToken,
-            expiresAt: expiresAt,
-            role: role as WorkspaceRole
-        };
-
-        // If user exists, link to user, otherwise store email
-        if (userToInvite) {
-            invitationData.invitedToId = userToInvite.id;
-        } else {
-            invitationData.email = email;
+          }
         }
+      })
+    );
 
-        const invitation = await prisma.workspaceInvitation.create({
-            data: invitationData,
-            include: {
-                workspace: {
-                    select: {
-                        name: true
-                    }
-                }
-            }
-        });
+    // Send invitation email (fire and forget - don't block on errors)
+    try {
+      const invitationLink = `${process.env.NEXT_PUBLIC_APP_URL}/invites/${invitation.id}?token=${invitationToken}`;
+      
+      const emailHtml = createWorkspaceInvitationEmail(
+        workspace?.name || 'Workspace',
+        this.currentUser.name || this.currentUser.email || 'A team member',
+        invitationLink,
+        expiresAt,
+        role,
+      );
 
-        // Send invitation email
-        try {
-            const invitationLink = `${process.env.NEXT_PUBLIC_APP_URL}/invites/${invitation.id}?token=${invitationToken}`;
-            
-            const emailHtml = createWorkspaceInvitationEmail(
-                workspace?.name || 'Workspace',
-                inviter?.name || inviter?.email || 'A team member',
-                invitationLink,
-                expiresAt,
-                role,
-            );
+      await sendMail({
+        recipient: email,
+        subject: userToInvite 
+          ? `📬 You're invited to join "${workspace?.name}" workspace`
+          : `📬 Register to join "${workspace?.name}" workspace`,
+        message: emailHtml,
+      });
 
-            await sendMail({
-                recipient: email,
-                subject: userToInvite 
-                    ? `📬 You're invited to join "${workspace?.name}" workspace`
-                    : `📬 Register to join "${workspace?.name}" workspace`,
-                message: emailHtml,
-            });
+      // Send confirmation to inviter
+      const statusText = userToInvite ? 'invited' : 'sent a registration link to';
+      const inviterEmailHtml = `
+        <p>Hi ${this.currentUser.name || 'there'},</p>
+        <p>You've successfully ${statusText} <strong>${email}</strong> to join the workspace <strong>"${workspace?.name}"</strong>.</p>
+        <p>The invitation expires on ${expiresAt.toLocaleDateString()}.</p>
+        <p>You can track invitation status from your dashboard.</p>
+      `;
 
-            // Send notification to inviter
-            if (inviter?.email) {
-                const statusText = userToInvite ? 'invited' : 'sent a registration link to';
-                const inviterEmailHtml = `
-                    <p>Hi ${inviter?.name || 'there'},</p>
-                    <p>You've successfully ${statusText} <strong>${email}</strong> to join the workspace <strong>"${workspace?.name}"</strong>.</p>
-                    <p>The invitation expires on ${expiresAt.toLocaleDateString()}.</p>
-                    <p>You can track invitation status from your dashboard.</p>
-                `;
+      await sendMail({
+        recipient: this.currentUser.email,
+        subject: `✅ Invitation sent to ${email}`,
+        message: inviterEmailHtml,
+      });
 
-                await sendMail({
-                    recipient: inviter.email,
-                    subject: `✅ Invitation sent to ${email}`,
-                    message: inviterEmailHtml,
-                });
-            }
-
-        } catch (emailError) {
-            console.error('Failed to send invitation email:', emailError);
-        }
-
-        return NextResponse.json({ 
-            message: userToInvite ? 'Invitation sent successfully' : 'Registration invitation sent successfully',
-            invitation: invitation,
-            userExists: !!userToInvite
-        }, { status: 201 });
-
-    } catch (error) {
-        console.error('Error creating invitation:', error);
-        return NextResponse.json({ 
-            message: 'Internal Server Error' 
-        }, { status: 500 });
+    } catch (emailError) {
+      // Don't throw - email failure shouldn't break the invitation
+      console.error('Failed to send invitation email:', emailError);
     }
+
+    return this.json({ 
+      message: userToInvite ? 'Invitation sent successfully' : 'Registration invitation sent successfully',
+      invitation: invitation,
+      userExists: !!userToInvite
+    }, 201);
+  }
 }
+
+// Export handlers
+const route = new InvitesRoute();
+export const GET = (req: NextRequest) => route.handle(req, { params: Promise.resolve({}) });
+export const PUT = (req: NextRequest) => route.handle(req, { params: Promise.resolve({}) });
+export const POST = (req: NextRequest) => route.handle(req, { params: Promise.resolve({}) });

@@ -1,4 +1,3 @@
-//src/app/api/chatbots/[id]/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma';
 import { upload } from '@/lib/cloudinary'
@@ -115,7 +114,7 @@ export async function PUT(request: NextRequest, context: RouterParams) {
     const formData = await request.formData();
 
     // ── Extract fields ────────────────────────────────────────────────────────
-    // Only fields that still exist on the Chatbot model
+    // All fields including the new domain and isPublished
     const name         = formData.get('name')        as string | null;
     const avatarFile   = formData.get('avatar')      as File   | null;
     const iconFile     = formData.get('icon')        as File   | null;
@@ -127,6 +126,8 @@ export async function PUT(request: NextRequest, context: RouterParams) {
     const model        = formData.get('model')       as string | null;
     const max_tokens   = formData.get('max_tokens')  as string | null;
     const temperature  = formData.get('temperature') as string | null;
+    const domain       = formData.get('domain')      as string | null;
+    const isPublished  = formData.get('isPublished') as string | null;
 
     if (!id) {
       return NextResponse.json({ error: 'Chatbot ID is required' }, { status: 400 })
@@ -222,7 +223,6 @@ export async function PUT(request: NextRequest, context: RouterParams) {
     }
 
     // ── Build update payload ──────────────────────────────────────────────────
-    // Only fields that exist on the simplified Chatbot model
     const updateData: any = {};
 
     if (name              !== null)      updateData.name        = name;
@@ -236,6 +236,10 @@ export async function PUT(request: NextRequest, context: RouterParams) {
     if (model             !== null)      updateData.model       = model;
     if (max_tokens        !== null)      updateData.max_tokens  = parseInt(max_tokens);
     if (temperature       !== null)      updateData.temperature = parseFloat(temperature);
+    
+    // New fields
+    if (domain !== null)                 updateData.domain       = domain === '' ? null : domain;
+    if (isPublished !== null)            updateData.isPublished  = isPublished === 'true';
 
     const updatedChatbot = await prisma.chatbot.update({ where: { id }, data: updateData });
 

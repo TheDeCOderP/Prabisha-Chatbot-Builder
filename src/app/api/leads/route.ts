@@ -1,96 +1,96 @@
+// app/api/leads/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { BaseApiRoute, ApiError } from '@/lib/api/base-api';
 
-interface FormFieldJson {
-  id: string;
-  label: string;
-  required: boolean;
-  type: string;
-}
+class LeadsRoute extends BaseApiRoute {
+  // Allow POST to skip auth (public endpoint)
+  protected skipAuth(): boolean {
+    return this.request.method === 'POST';
+  }
 
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
+  // POST /api/leads - Public lead submission
+  protected async POST(): Promise<NextResponse> {
+    const body = await this.request.json();
     const { data, formId, chatbotId, conversationId } = body;
 
-    // 1. Basic Validation
+    // Validation
     if (!formId || !data) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+      throw new ApiError(400, 'Missing required fields');
     }
 
-    const chatbotForm = await prisma.chatbotForm.findUnique({
-      where: { id: formId },
-    });
+    const chatbotForm = await this.dbOperation(() =>
+      prisma.chatbotForm.findUnique({
+        where: { id: formId },
+      })
+    );
 
     if (!chatbotForm) {
-      return NextResponse.json({ error: 'Form not found' }, { status: 404 });
+      throw new ApiError(404, 'Form not found');
     }
 
-    // 2. Advanced Validation & Mapping
-    // Since your frontend sends Labels (e.g., "Full Name") instead of IDs,
-    // we map them here to ensure 'required' checks pass.
+    // Advanced validation logic...
     const errors: Record<string, string> = {};
-    const fields = (chatbotForm.fields as unknown as FormFieldJson[]) || [];
+    const fields = (chatbotForm.fields as any[]) || [];
     const normalizedData: Record<string, any> = {};
 
     for (const field of fields) {
-      // Check if data exists under the ID or the Label
-      const value = data[field.id] !== undefined ? data[field.id] : data[field.label];
+      const value = data[field.id] ?? data[field.label];
       
       if (field.required && (!value || value.toString().trim() === '')) {
         errors[field.id] = `${field.label} is required`;
       }
       
-      // Store the value under the ID for consistent database storage
       if (value !== undefined) {
         normalizedData[field.id] = value;
       }
     }
 
     if (Object.keys(errors).length > 0) {
-      return NextResponse.json({ error: 'Validation failed', errors }, { status: 400 });
+      return this.json({ error: 'Validation failed', errors }, 400);
     }
 
-    // 3. Prevent Duplicate Submissions for the same conversation
+    // Check duplicate submissions
     if (conversationId) {
-      const existingLead = await prisma.lead.findFirst({
-        where: { chatbotId, conversationId },
-      });
+      const existingLead = await this.dbOperation(() =>
+        prisma.lead.findFirst({
+          where: { chatbotId, conversationId },
+        })
+      );
 
       if (existingLead) {
-        return NextResponse.json(
-          { error: 'A lead has already been submitted for this conversation.' },
-          { status: 400 }
-        );
+        throw new ApiError(400, 'A lead has already been submitted for this conversation.');
       }
     }
 
-    // 4. Create Lead
-    const lead = await prisma.lead.create({
-      data: {
-        formId,
-        chatbotId,
-        data: normalizedData, // Storing mapped data
-        conversationId,
-      },
-    });
+    // Create lead
+    const lead = await this.dbOperation(() =>
+      prisma.lead.create({
+        data: {
+          formId,
+          chatbotId,
+          data: normalizedData,
+          conversationId,
+        },
+      })
+    );
 
-    // 5. Link to Conversation
+    // Link to conversation
     if (conversationId) {
-      await prisma.conversation.update({
-        where: { id: conversationId },
-        data: { leadId: lead.id },
-      });
+      await this.dbOperation(() =>
+        prisma.conversation.update({
+          where: { id: conversationId },
+          data: { leadId: lead.id },
+        })
+      );
     }
 
-    // 6. Notifications (Logic remains the same)
+    // Notifications
     if (chatbotForm.notifyEmail) {
       console.log('Notification triggered for:', chatbotForm.notifyEmail);
     }
 
-    return NextResponse.json({
+    return this.json({
       success: true,
       leadId: lead.id,
       successMessage: chatbotForm.successMessage || "Thank you! We'll be in touch soon.",
@@ -98,27 +98,11 @@ export async function POST(request: NextRequest) {
       autoClose: chatbotForm.autoClose,
       showThankYou: chatbotForm.showThankYou,
     });
-
-  } catch (error) {
-    console.error('Lead Submission Error:', error);
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
-}
 
-// --- GET and DELETE methods remain identical to your original provided code ---
-export async function GET(request: NextRequest) {
-  try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-    const user = await prisma.user.findUnique({
-      where: { email: session.user.email },
-      select: { id: true }
-    });
-
-    if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 });
-
-    const { searchParams } = new URL(request.url);
+  // GET /api/leads - Fetch leads (requires auth)
+  protected async GET(): Promise<NextResponse> {
+    const { searchParams } = new URL(this.request.url);
     const chatbotId = searchParams.get('chatbotId');
     const workspaceId = searchParams.get('workspaceId');
     const page = parseInt(searchParams.get('page') || '1');
@@ -127,7 +111,7 @@ export async function GET(request: NextRequest) {
 
     let whereClause: any = {
       chatbot: {
-        workspace: { members: { some: { userId: user.id } } }
+        workspace: { members: { some: { userId: this.currentUser.id } } }
       }
     };
 
@@ -135,47 +119,69 @@ export async function GET(request: NextRequest) {
     if (chatbotId) whereClause.chatbotId = chatbotId;
 
     const [leads, total] = await Promise.all([
-      prisma.lead.findMany({
-        where: whereClause,
-        include: {
-          chatbot: { select: { id: true, name: true, workspace: { select: { id: true, name: true } } } },
-          form: true,
-          conversation: {
-            select: {
-              messages: { take: 1, orderBy: { createdAt: 'asc' }, select: { content: true } }
+      this.dbOperation(() =>
+        prisma.lead.findMany({
+          where: whereClause,
+          include: {
+            chatbot: { 
+              select: { 
+                id: true, 
+                name: true, 
+                workspace: { select: { id: true, name: true } } 
+              } 
+            },
+            form: true,
+            conversation: {
+              select: {
+                messages: { 
+                  take: 1, 
+                  orderBy: { createdAt: 'asc' }, 
+                  select: { content: true } 
+                }
+              }
             }
-          }
-        },
-        orderBy: { createdAt: 'desc' },
-        skip,
-        take: limit,
-      }),
-      prisma.lead.count({ where: whereClause }),
+          },
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: limit,
+        })
+      ),
+      this.dbOperation(() => prisma.lead.count({ where: whereClause })),
     ]);
 
-    return NextResponse.json({
+    return this.json({
       leads: leads.map(l => ({
         ...l,
         conversationPreview: l.conversation?.messages?.[0]?.content?.substring(0, 100) || '',
       })),
-      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+      pagination: { 
+        page, 
+        limit, 
+        total, 
+        totalPages: Math.ceil(total / limit) 
+      },
     });
-  } catch (error) {
-    return NextResponse.json({ error: 'Failed to fetch' }, { status: 500 });
   }
-}
 
-export async function DELETE(request: NextRequest) {
-  try {
-    const session = await getServerSession(authOptions);
-    const { searchParams } = new URL(request.url);
+  // DELETE /api/leads - Delete lead (requires auth)
+  protected async DELETE(): Promise<NextResponse> {
+    const { searchParams } = new URL(this.request.url);
     const leadId = searchParams.get('leadId');
 
-    if (!session || !leadId) return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
+    if (!leadId) {
+      throw new ApiError(400, 'leadId is required');
+    }
 
-    await prisma.lead.delete({ where: { id: leadId } });
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    return NextResponse.json({ error: 'Delete failed' }, { status: 500 });
+    await this.dbOperation(() =>
+      prisma.lead.delete({ where: { id: leadId } })
+    );
+
+    return this.json({ success: true });
   }
 }
+
+// Export handlers
+const route = new LeadsRoute();
+export const POST = (req: NextRequest) => route.handle(req, { params: Promise.resolve({}) });
+export const GET = (req: NextRequest) => route.handle(req, { params: Promise.resolve({}) });
+export const DELETE = (req: NextRequest) => route.handle(req, { params: Promise.resolve({}) });

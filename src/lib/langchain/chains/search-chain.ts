@@ -40,6 +40,47 @@ export interface SearchChainResult {
   sourceUrls?: Array<{ title: string; url: string }>;
 }
 
+// Retry utility for LLM calls with exponential backoff and jitter
+
+const RETRYABLE_CODES = new Set([429, 503, 502, 504]);
+const RETRYABLE_MESSAGES = ['high demand', 'unavailable', 'overloaded', 'ECONNRESET', 'rate limit'];
+
+function isRetryable(error: any): boolean {
+  const status = error?.status ?? error?.code;
+  if (RETRYABLE_CODES.has(status)) return true;
+  const msg = String(error?.message ?? '').toLowerCase();
+  return RETRYABLE_MESSAGES.some(s => msg.includes(s));
+}
+
+export async function withRetry<T>(
+  fn: () => Promise<T>,
+  {
+    maxRetries = 3,
+    baseDelayMs = 500,
+    label = 'Gemini call',
+  }: { maxRetries?: number; baseDelayMs?: number; label?: string } = {}
+): Promise<T> {
+  let lastError: any;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      lastError = err;
+
+      if (!isRetryable(err) || attempt === maxRetries) {
+        throw err;
+      }
+
+      const jitter = Math.random() * 300;
+      const delay = Math.pow(2, attempt) * baseDelayMs + jitter;
+      console.warn(`⚠️ [${label}] attempt ${attempt + 1} failed (${err?.status ?? err?.code}), retrying in ${Math.round(delay)}ms...`);
+      await new Promise(res => setTimeout(res, delay));
+    }
+  }
+
+  throw lastError;
+}
 
 // ─── Timer utility ────────────────────────────────────────────────────────────
 function timer(label: string) {
@@ -915,14 +956,14 @@ ${lastAssistant.content}
         .replace('{question}', enrichedUserMessage);
 
   const tLLM = timer(`Step 3: LLM generateText (${chatbot.model || 'gemini-2.5-flash'})`);
-  const response = await ai.models.generateContent({
+  const response = await withRetry(() => ai.models.generateContent({
     model: chatbot.model || 'gemini-2.5-flash',
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
     config: {
       maxOutputTokens: chatbot.max_tokens || 800,
       temperature: chatbot.temperature ?? 0.9,
     },
-  });
+  }));
   const text = response.text ?? '';
   tLLM.end();
 
