@@ -1,38 +1,42 @@
+// app/api/chatbots/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { BaseApiRoute } from "@/lib/api/base-api";
 
-// GET - Fetch all chatbots for the current workspace
-export async function GET(request: NextRequest) {
-  try {
-    const chatbots = await prisma.chatbot.findMany({
-      where: {
-        isPublished: true,
-      },
-      select: {
-        id: true,
-        name: true,
-        description: true,
-        icon: true,
-        avatar: true,
-        model: true,
-        createdAt: true,
-        updatedAt: true,
-        theme: true,
-        domain: true,
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-    });
+class ChatbotsRoute extends BaseApiRoute {
+  // This endpoint is public - no authentication needed
+  protected skipAuth(): boolean {
+    return true;
+  }
 
-    return NextResponse.json({ chatbots });
-  } catch (error) {
-    console.error("Error fetching chatbots:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch chatbots" },
-      { status: 500 }
+  // GET /api/chatbots - Get all published chatbots
+  protected async GET(): Promise<NextResponse> {
+    const chatbots = await this.dbOperation(() =>
+      prisma.chatbot.findMany({
+        where: {
+          isPublished: true,
+        },
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          icon: true,
+          avatar: true,
+          model: true,
+          createdAt: true,
+          updatedAt: true,
+          theme: true,
+          domain: true,
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+      })
     );
+
+    return this.json({ chatbots });
   }
 }
+
+const route = new ChatbotsRoute();
+export const GET = (req: NextRequest) => route.handle(req, { params: Promise.resolve({}) });
