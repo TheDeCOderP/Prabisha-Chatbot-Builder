@@ -32,25 +32,12 @@ import {
   SidebarFooter,
   SidebarHeader,
   SidebarRail,
-} from "@/components/ui/sidebar"
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible"
-import {
-  useSidebar,
-  SidebarGroup,
-  SidebarGroupLabel,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarMenuSub,
-  SidebarMenuSubButton,
-  SidebarMenuSubItem,
-  SidebarMenuAction,
+  useSidebar,
 } from "@/components/ui/sidebar"
-import { ChevronRight, type LucideIcon, Plus, ChevronsUpDown } from "lucide-react"
+import { ChevronRight, Plus, ChevronsUpDown } from "lucide-react"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -75,16 +62,18 @@ import { WorkspaceForm } from "../forms/workspace-form"
 import { useWorkspace } from "@/providers/workspace-provider"
 import { Chatbot } from "../../../generated/prisma/client"
 import { usePathname, useRouter } from "next/navigation"
-import ChatbotForm from "../forms/chatbot-form"
+import { NavMain } from "@/components/nav-main"
+import { NavUser } from "@/components/nav-user"
+import { SidebarOptInForm } from "../sidebar-opt-in-form"
 
 // Types for navigation items
 type NavItem = {
   title: string
   url: string
-  icon?: LucideIcon
+  icon?: React.ComponentType<{ className?: string }>
   isActive?: boolean
   items?: {
-    icon?: LucideIcon
+    icon?: React.ComponentType<{ className?: string }>
     title: string
     url: string
   }[]
@@ -92,8 +81,8 @@ type NavItem = {
 
 export default function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const id = props.id
-  const pathname = usePathname()
   const router = useRouter()
+  const pathname = usePathname()
   const isChatbotRoute = pathname?.startsWith("/chatbots/")
 
   const defaultNavData = {
@@ -274,8 +263,14 @@ export default function AppSidebar({ ...props }: React.ComponentProps<typeof Sid
     }
   }, [pathname, chatbots, isChatbotRoute, id])
 
+  const user = {
+    name: session?.user?.name || "Guest",
+    email: session?.user?.email || "guest@example.com",
+    avatar: session?.user?.image || "",
+  }
+
   return (
-    <Sidebar variant="inset" collapsible="icon" {...props}>
+    <Sidebar variant="inset" collapsible="offcanvas" {...props}>
       <SidebarHeader>
         {isChatbotRoute && activeWorkspace ? (
           <ChatbotSwitcher
@@ -293,144 +288,19 @@ export default function AppSidebar({ ...props }: React.ComponentProps<typeof Sid
           <WorkspaceSwitcher activeWorkspace={activeWorkspace} workspaces={workspaces} loading={loading} />
         )}
       </SidebarHeader>
-      {isChatbotRoute ? (
-        <SidebarContent>
+      <SidebarContent>
+        {isChatbotRoute ? (
           <NavMain items={defaultNavData.chatbotNav} />
-        </SidebarContent>
-      ) : (
-        <SidebarContent>
+        ) : (
           <NavMain items={defaultNavData.mainNav} />
-        </SidebarContent>
-      )}
+        )}
+      </SidebarContent>
       <SidebarFooter>
-        <NavUser session={session} />
+        <SidebarOptInForm />
+        <NavUser user={user} />
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>
-  )
-}
-
-function NavMain({ items }: { items: NavItem[] }) {
-  if (!items.length) return null
-
-  return (
-    <SidebarGroup>
-      <SidebarGroupLabel>Platform</SidebarGroupLabel>
-      <SidebarMenu>
-        {items.map((item) => (
-          <Collapsible
-            key={item.title}
-            asChild
-            defaultOpen={item.isActive}
-            className="group/collapsible"
-          >
-            <SidebarMenuItem>
-              <CollapsibleTrigger asChild>
-                <SidebarMenuButton tooltip={item.title}>
-                  {item.icon && <item.icon />}
-                  <span>{item.title}</span>
-                  {item.items && item.items.length > 0 && (
-                    <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
-                  )}
-                </SidebarMenuButton>
-              </CollapsibleTrigger>
-              {item.items && item.items.length > 0 && (
-                <CollapsibleContent>
-                  <SidebarMenuSub>
-                    {item.items.map((subItem) => (
-                      <SidebarMenuSubItem key={subItem.title}>
-                        <SidebarMenuSubButton asChild>
-                          <a href={subItem.url}>
-                            {subItem.icon && <subItem.icon />}
-                            <span>{subItem.title}</span>
-                          </a>
-                        </SidebarMenuSubButton>
-                      </SidebarMenuSubItem>
-                    ))}
-                  </SidebarMenuSub>
-                </CollapsibleContent>
-              )}
-            </SidebarMenuItem>
-          </Collapsible>
-        ))}
-      </SidebarMenu>
-    </SidebarGroup>
-  )
-}
-
-export function NavUser({ session }: { session: Session | null }) {
-  const { isMobile } = useSidebar()
-  const { setTheme, theme } = useTheme()
-
-  const user = {
-    name: session?.user?.name || "Guest",
-    email: session?.user?.email || "guest@example.com",
-    avatar: session?.user?.image || "",
-  }
-
-  const handleLogout = async () => {
-    const appUrl = window.location.origin;
-    
-    await signOut({ 
-      redirect: true,
-      callbackUrl: `https://auth.prabisha.com/auth/logout?callbackUrl=${appUrl}/login`
-    });
-  };
-
-  return (
-    <SidebarMenu>
-      <SidebarMenuItem>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <SidebarMenuButton
-              size="lg"
-              className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
-            >
-              <Avatar className="h-8 w-8 rounded-lg">
-                <AvatarImage src={user.avatar} alt={user.name} />
-                <AvatarFallback className="rounded-lg">{user.name.charAt(0).toUpperCase()}</AvatarFallback>
-              </Avatar>
-              <div className="grid flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-medium">{user.name}</span>
-                <span className="truncate text-xs">{user.email}</span>
-              </div>
-              <ChevronsUpDown className="ml-auto size-4" />
-            </SidebarMenuButton>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            className="w-(--radix-dropdown-menu-trigger-width) min-w-56 rounded-lg"
-            side={isMobile ? "bottom" : "right"}
-            align="end"
-            sideOffset={4}
-          >
-            <DropdownMenuLabel className="p-0 font-normal">
-              <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
-                <Avatar className="h-8 w-8 rounded-lg">
-                  <AvatarImage src={user.avatar} alt={user.name} />
-                  <AvatarFallback className="rounded-lg">{user.name.charAt(0).toUpperCase()}</AvatarFallback>
-                </Avatar>
-                <div className="grid flex-1 text-left text-sm leading-tight">
-                  <span className="truncate font-medium">{user.name}</span>
-                  <span className="truncate text-xs">{user.email}</span>
-                </div>
-              </div>
-            </DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuGroup>
-              <DropdownMenuItem onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
-                {theme === "dark" ? <Sun className="mr-2 h-4 w-4" /> : <Moon className="mr-2 h-4 w-4" />}
-                {theme === "dark" ? "Light Mode" : "Dark Mode"}
-              </DropdownMenuItem>
-            </DropdownMenuGroup>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={handleLogout}>
-              <LogOut />
-              Log out
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </SidebarMenuItem>
-    </SidebarMenu>
   )
 }
 
@@ -454,24 +324,6 @@ function WorkspaceSwitcher({
 
   const handleWorkspaceAdded = () => {
     toast.success("Workspace added successfully!")
-  }
-
-  // Handle workspace renaming
-  const handleRenameWorkspace = async (workspaceId: string, newDisplayName: string) => {
-    try {
-      const response = await fetch(`/api/workspaces/${workspaceId}/rename`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ displayName: newDisplayName })
-      })
-      
-      if (response.ok) {
-        toast.success('Workspace renamed successfully')
-        // Refresh workspaces or update locally
-      }
-    } catch (error) {
-      toast.error('Failed to rename workspace')
-    }
   }
 
   if (loading) {
