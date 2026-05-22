@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/breadcrumb";
 import { WorkspaceProvider } from "@/providers/workspace-provider";
 import { Loader2 } from "lucide-react";
+import Loader from "@/components/ui/loader";
 
 // Breadcrumb label mappings
 const BREADCRUMB_MAPPINGS: Record<string, string> = {
@@ -98,9 +99,7 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
 
   if (status === "loading") {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-      </div>
+      <Loader />
     );
   }
 
@@ -109,39 +108,44 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
   return (
     <WorkspaceProvider>
       <SidebarProvider>
-        <AppSidebar id={params.id as string} />
+        <AppSidebar id={params.id as string} collapsible="offcanvas" />
         <SidebarInset>
-          <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
-            <SidebarTrigger className="-ml-1" />
-            <Separator orientation="vertical" className="mx-2 h-4" />
-            <Breadcrumb>
-              <BreadcrumbList>
-                {breadcrumbs.map((crumb, index) => (
-                  <div key={crumb.href} className="flex items-center">
-                    <BreadcrumbItem>
-                      {crumb.isCurrent ? (
-                        <BreadcrumbPage className="font-medium text-sm">
-                          {crumb.label}
-                        </BreadcrumbPage>
-                      ) : (
-                        <BreadcrumbLink
-                          href={crumb.href}
-                          className="text-sm hover:text-foreground transition-colors"
-                        >
-                          {crumb.label}
-                        </BreadcrumbLink>
+          <header className="flex h-16 shrink-0 items-center gap-2">
+            <div className="flex items-center gap-2 px-4">
+              <SidebarTrigger className="-ml-1" />
+              <Separator
+                orientation="vertical"
+                className="mr-2 data-[orientation=vertical]:h-4"
+              />
+              <Breadcrumb>
+                <BreadcrumbList>
+                  {breadcrumbs.map((crumb, index) => (
+                    <div key={crumb.href} className="flex items-center">
+                      <BreadcrumbItem className={index === 0 ? "hidden md:block" : ""}>
+                        {crumb.isCurrent ? (
+                          <BreadcrumbPage className="font-medium text-sm">
+                            {crumb.label}
+                          </BreadcrumbPage>
+                        ) : (
+                          <BreadcrumbLink
+                            href={crumb.href}
+                            className="text-sm hover:text-foreground transition-colors"
+                          >
+                            {crumb.label}
+                          </BreadcrumbLink>
+                        )}
+                      </BreadcrumbItem>
+                      {index < breadcrumbs.length - 1 && (
+                        <BreadcrumbSeparator className={index === 0 ? "hidden md:block mx-1" : "mx-1"} />
                       )}
-                    </BreadcrumbItem>
-                    {index < breadcrumbs.length - 1 && (
-                      <BreadcrumbSeparator className="mx-1" />
-                    )}
-                  </div>
-                ))}
-              </BreadcrumbList>
-            </Breadcrumb>
+                    </div>
+                  ))}
+                </BreadcrumbList>
+              </Breadcrumb>
+            </div>
           </header>
 
-          <div className="flex flex-1 flex-col overflow-auto">
+          <div className="flex flex-1 flex-col overflow-auto p-4 rounded-2xl max-h-[calc(100vh-104px)] no-scrollbar">
             {children}
           </div>
         </SidebarInset>

@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Area, AreaChart } from 'recharts';
 import { MessageSquare, Users, TrendingUp, Bot, Calendar, DollarSign, Activity, Clock, Target, Loader2 } from 'lucide-react';
 import { useWorkspace } from '@/providers/workspace-provider';
+import Loader from '@/components/ui/loader';
 
 interface DashboardStats {
   totalChatbots: number;
@@ -91,12 +92,7 @@ export default function DashboardPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="h-12 w-12 animate-spin text-blue-500 mx-auto" />
-          <p className="mt-4 text-slate-600">Loading dashboard...</p>
-        </div>
-      </div>
+      <Loader />
     );
   }
 
@@ -134,7 +130,7 @@ export default function DashboardPage() {
   ];
 
   return (
-    <div className="min-h-screen p-6 bg-gradient-to-br from-slate-50 to-slate-100">
+    <div className="min-h-screen p-6">
       <div className="max-w-7xl mx-auto space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">

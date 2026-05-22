@@ -7,7 +7,7 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-poppins);
   --font-mono: var(--font-poppins);
-  
+
   /* Brand Specifics */
   --color-brand-orange: oklch(0.68 0.21 44.5);
   --color-brand-blue: oklch(0.38 0.12 254.8);
@@ -53,43 +53,43 @@
   /* Light Theme - Clean White with SourceBytes Accents */
   --background: oklch(1 0 0);
   --foreground: oklch(0.208 0.042 265.75); /* #111827 Dark Navy Text */
-  
+
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.208 0.042 265.75);
-  
+
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.208 0.042 265.75);
-  
+
   /* Primary is now the SourceBytes Orange */
   --primary: oklch(0.68 0.21 44.5); /* #EF6A37 */
   --primary-foreground: oklch(1 0 0);
-  
+
   /* Secondary is the Deep Corporate Blue */
   --secondary: oklch(0.38 0.12 254.8); /* #214678 */
   --secondary-foreground: oklch(1 0 0);
-  
+
   --muted: oklch(0.967 0.003 264.54);
   --muted-foreground: oklch(0.552 0.016 285.94);
-  
+
   --accent: oklch(0.92 0.01 240);
   --accent-foreground: oklch(0.38 0.12 254.8);
-  
+
   --destructive: oklch(0.577 0.245 27.325);
   --destructive-foreground: oklch(1 0 0);
-  
+
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
   --ring: oklch(0.68 0.21 44.5); /* Orange ring focus */
-  
+
   /* Chart colors based on bento grid items */
   --chart-1: oklch(0.79 0.10 65);   /* #E6B990 Knowledgebase */
   --chart-2: oklch(0.74 0.12 15);   /* #EDA0A8 AI Chatbot */
   --chart-3: oklch(0.59 0.08 290);  /* #8E7EAA purple */
   --chart-4: oklch(0.88 0.01 0);    /* #D9D9D9 gray */
   --chart-5: oklch(0.64 0.18 240);  /* #378DEF light blue */
-  
+
   --radius: 0.75rem;
-  
+
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.208 0.042 265.75);
   --sidebar-primary: oklch(0.68 0.21 44.5);
@@ -104,32 +104,32 @@
   /* Dark Theme - Based on the "Supported Languages" Section #20202F */
   --background: oklch(0.25 0.02 270); /* #20202F */
   --foreground: oklch(0.985 0 0);
-  
+
   --card: oklch(0.20 0.03 260); /* Deep Navy #0C1C2E */
   --card-foreground: oklch(0.985 0 0);
-  
+
   --popover: oklch(0.25 0.02 270);
   --popover-foreground: oklch(0.985 0 0);
-  
+
   --primary: oklch(0.68 0.21 44.5); /* Keep orange as primary accent */
   --primary-foreground: oklch(1 0 0);
-  
+
   --secondary: oklch(0.38 0.12 254.8);
   --secondary-foreground: oklch(1 0 0);
-  
+
   --muted: oklch(0.35 0.01 270);
   --muted-foreground: oklch(0.75 0.01 270);
-  
+
   --accent: oklch(0.38 0.12 254.8);
   --accent-foreground: oklch(1 0 0);
-  
+
   --destructive: oklch(0.396 0.141 25.723);
   --destructive-foreground: oklch(1 0 0);
-  
+
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.68 0.21 44.5);
-  
+
   --sidebar: oklch(0.20 0.03 260);
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-primary: oklch(0.68 0.21 44.5);
@@ -305,7 +305,6 @@
   border-top: 1px solid #e5e7eb;
   margin: 16px 0;
 }
-
 
 /* Custom animations for landing page */
 @keyframes fadeIn {

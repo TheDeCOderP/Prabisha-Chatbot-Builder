@@ -1178,7 +1178,7 @@ function ChatHeader({
           src={iconSrc}
           height={48} width={48}
           alt={chatbot.name || 'Assistant'}
-          className="h-12 w-12 rounded-xl object-cover border border-black/10"
+          className="h-12 w-12 rounded-xl object-contain border border-black/10"
           unoptimized
         />
         <div className="min-w-0">
@@ -1495,7 +1495,7 @@ function ChatMessages({
 
         {/* Quick suggestions — shown only before any user message */}
         {!hasUserMessages && (
-          <div className="mt-6 flex flex-col gap-3">
+          <div className="mt-4 flex flex-wrap gap-2">
             {(quickQuestions.length > 0 ? quickQuestions : DEFAULT_SUGGESTIONS)
               .map((item, i) => {
                 const label = resolveSuggestion(item, selectedLang);
@@ -1505,7 +1505,7 @@ function ChatMessages({
                     key={i}
                     onClick={() => onQuickQuestion(label)}
                     disabled={loading}
-                    className="w-full py-3 px-6 rounded-full border text-sm font-medium transition-opacity hover:opacity-75 disabled:opacity-50 cursor-pointer"
+                    className="py-2 px-4 rounded-full border text-[13px] font-medium transition-all hover:opacity-80 hover:shadow-sm disabled:opacity-50 cursor-pointer whitespace-nowrap"
                     style={{
                       backgroundColor: th.quickSuggestionBgColor || '#ffffff',
                       color: th.quickSuggestionTextColor || '#0f172a',
@@ -1571,7 +1571,7 @@ function ChatInput({
 
   return (
     <div
-      className="border-t px-4 py-4 shrink-0 relative transition-all duration-200"
+      className="border-t px-2 pt-2 shrink-0 relative transition-all duration-200"
       style={{ backgroundColor: inputBg, borderColor }}
     >
       {showPicker && (
