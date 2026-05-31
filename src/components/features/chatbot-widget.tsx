@@ -1257,7 +1257,7 @@ function ChatHeader({
               `}</style>
             </span>
           </div>
-          <p className="text-xs font-semibold truncate mt-0.5" style={{ color: accentColor }}>
+          <p className="text-xs font-semibold truncate mt-0.5" style={{ color: headerText, opacity: 0.8 }}>
             {chatbot.description || 'Typically replies instantly'}
           </p>
         </div>
