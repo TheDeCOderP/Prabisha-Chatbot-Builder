@@ -145,12 +145,6 @@ export async function POST(request: NextRequest, context: RouterParams) {
     // Clear question cache so stale responses don't get served
     await prisma.questionCache.deleteMany({ where: { chatbotId } });
 
-    // Update KB updatedAt
-    await prisma.knowledgeBase.update({
-      where: { id: knowledgeBaseId },
-      data: { updatedAt: new Date() },
-    });
-
     return NextResponse.json({
       success: true,
       knowledgeBaseId,
