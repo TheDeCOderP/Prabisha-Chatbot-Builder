@@ -1,6 +1,7 @@
-import  { prisma } from "@/lib/prisma";
+import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
 import { executeSearchChain, simpleSearch } from "@/lib/langchain/chains/search-chain";
+import { chatLimiter, getRequestIdentifier } from "@/lib/rate-limit";
 
 interface RouterParams {
   params: Promise<{ id: string }>;
@@ -11,13 +12,29 @@ export async function POST(
   context: RouterParams
 ) {
   try {
+    // Rate limit by IP — 30 messages per minute
+    const identifier = getRequestIdentifier(request);
+    const rateResult = chatLimiter.check(identifier);
+    if (!rateResult.allowed) {
+      return NextResponse.json(
+        { error: 'Too many requests. Please wait before sending more messages.' },
+        {
+          status: 429,
+          headers: {
+            'Retry-After': String(Math.ceil((rateResult.resetAt - Date.now()) / 1000)),
+            'X-RateLimit-Remaining': '0',
+          },
+        }
+      );
+    }
+
     const { id } = await context.params;
     if (!id) {
       return new NextResponse("Invalid ID", { status: 400 });
     }
 
-    const { 
-      input, 
+    const {
+      input,
       message,
       prompt, 
       model, 

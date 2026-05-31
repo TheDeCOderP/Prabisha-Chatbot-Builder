@@ -1,5 +1,6 @@
 // app/api/chatbots/[chatbotId]/config/route.ts
 import { NextRequest, NextResponse } from 'next/server';
+import { getToken } from 'next-auth/jwt';
 import { prisma } from '@/lib/prisma';
 
 interface RouterParams {
@@ -11,28 +12,24 @@ export async function GET(
   context: RouterParams
 ) {
   try {
-    // Get chatbot by ID
+    const token = await getToken({ req: request });
+    if (!token?.sub) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { id } = await context.params;
 
-    const chatbot = await prisma.chatbot.findUnique({
+    const chatbot = await prisma.chatbot.findFirst({
       where: {
-        id: id,
+        id,
+        workspace: {
+          members: { some: { userId: token.sub } },
+        },
       },
       include: {
         workspace: {
-          include: {
-            members: {
-              include: {
-                user: {
-                  select: {
-                    id: true,
-                    email: true,
-                    name: true,
-                  }
-                }
-              }
-            }
-          }
+          // Only expose workspace id + name, never member list
+          select: { id: true, name: true },
         },
         form: true,
         knowledgeBases: {

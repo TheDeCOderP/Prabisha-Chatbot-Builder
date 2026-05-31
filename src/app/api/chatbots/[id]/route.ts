@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { revalidateTag } from 'next/cache';
+import { getToken } from 'next-auth/jwt';
 import { prisma } from '@/lib/prisma';
 import { upload } from '@/lib/cloudinary'
 import { GoogleGenAI } from '@google/genai';
@@ -65,8 +66,12 @@ interface RouterParams {
   params: Promise<{ id: string }>
 }
 
+// CORS is intentionally restricted to same-origin for the widget embed.
+// The embed widget page itself is same-origin; third-party sites that need
+// chatbot config should use the public /api/chatbots/[id]/config endpoint
+// which exposes only the fields required by the widget (no member data).
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Origin': process.env.NEXT_PUBLIC_APP_URL || '',
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 };
@@ -83,13 +88,46 @@ export async function GET(
   try {
     const { id } = await context.params;
 
-    const chatbot = await prisma.chatbot.findUnique({ 
+    const chatbot = await prisma.chatbot.findUnique({
       where: { id },
-      include: { 
+      // Deliberately exclude workspace/member data from the public endpoint.
+      // Only theme, logic, and form are needed by the embed widget.
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        icon: true,
+        avatar: true,
+        popup_onload: true,
+        greeting: true,
+        suggestions: true,
+        directive: true,
+        model: true,
+        max_tokens: true,
+        temperature: true,
+        domain: true,
+        isPublished: true,
+        createdAt: true,
+        updatedAt: true,
         theme: true,
         logic: true,
-        form: true,
-      }, 
+        form: {
+          select: {
+            id: true,
+            title: true,
+            description: true,
+            fields: true,
+            leadTiming: true,
+            leadFormStyle: true,
+            cadence: true,
+            successMessage: true,
+            redirectUrl: true,
+            autoClose: true,
+            showThankYou: true,
+            // notifyEmail and webhookUrl are admin-only; never expose to embed
+          },
+        },
+      },
     })
 
     if (!chatbot) {
@@ -115,12 +153,33 @@ export async function OPTIONS(request: NextRequest) {
 
 export async function PUT(request: NextRequest, context: RouterParams) {
   try {
+    const token = await getToken({ req: request });
+    if (!token?.sub) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { id } = await context.params;
+
+    if (!id) {
+      return NextResponse.json({ error: 'Chatbot ID is required' }, { status: 400 })
+    }
+
+    // Verify the caller is a member of the workspace that owns this chatbot
+    const existingChatbot = await prisma.chatbot.findFirst({
+      where: {
+        id,
+        workspace: {
+          members: { some: { userId: token.sub } },
+        },
+      },
+    });
+    if (!existingChatbot) {
+      return NextResponse.json({ error: 'Chatbot not found or access denied' }, { status: 404 })
+    }
 
     const formData = await request.formData();
 
     // ── Extract fields ────────────────────────────────────────────────────────
-    // All fields including the new domain and isPublished
     const name         = formData.get('name')        as string | null;
     const avatarFile   = formData.get('avatar')      as File   | null;
     const iconFile     = formData.get('icon')        as File   | null;
@@ -134,15 +193,6 @@ export async function PUT(request: NextRequest, context: RouterParams) {
     const temperature  = formData.get('temperature') as string | null;
     const domain       = formData.get('domain')      as string | null;
     const isPublished  = formData.get('isPublished') as string | null;
-
-    if (!id) {
-      return NextResponse.json({ error: 'Chatbot ID is required' }, { status: 400 })
-    }
-
-    const existingChatbot = await prisma.chatbot.findUnique({ where: { id } });
-    if (!existingChatbot) {
-      return NextResponse.json({ error: 'Chatbot not found' }, { status: 404 })
-    }
 
     // ── Image uploads ─────────────────────────────────────────────────────────
     let avatarUrl: string | undefined;
@@ -166,6 +216,8 @@ export async function PUT(request: NextRequest, context: RouterParams) {
     }
 
     // ── Parse & auto-translate greeting ──────────────────────────────────────
+    // Gemini is only called when the English source text has actually changed,
+    // so routine saves (color tweaks, model changes, etc.) are free.
     let parsedGreeting: Record<string, string>[] | undefined;
     if (greeting !== null) {
       try {
@@ -185,8 +237,21 @@ export async function PUT(request: NextRequest, context: RouterParams) {
           greetingObj = {};
         }
 
-        const filled = await fillMissingTranslations(greetingObj);
-        parsedGreeting = [filled];
+        // Compare incoming English text with what is already stored
+        const existingGreeting = Array.isArray(existingChatbot.greeting)
+          ? (existingChatbot.greeting[0] as Record<string, string> | undefined)
+          : undefined;
+        const existingEnGreeting = existingGreeting?.en ?? '';
+        const incomingEnGreeting = greetingObj.en ?? '';
+
+        if (incomingEnGreeting !== existingEnGreeting) {
+          // English text changed → fill missing translations via Gemini
+          const filled = await fillMissingTranslations(greetingObj);
+          parsedGreeting = [filled];
+        } else {
+          // No change in source text → keep existing translations, just store as-is
+          parsedGreeting = [greetingObj];
+        }
       } catch (error) {
         return NextResponse.json({ error: 'Invalid JSON format for greeting' }, { status: 400 });
       }
@@ -208,7 +273,22 @@ export async function PUT(request: NextRequest, context: RouterParams) {
           return {};
         });
 
-        parsedSuggestions = await Promise.all(normalized.map((s) => fillMissingTranslations(s)));
+        // Retrieve existing English suggestion texts for comparison
+        const existingSuggestions = Array.isArray(existingChatbot.suggestions)
+          ? (existingChatbot.suggestions as Record<string, string>[])
+          : [];
+
+        parsedSuggestions = await Promise.all(
+          normalized.map((s, i) => {
+            const existingEn = existingSuggestions[i]?.en ?? '';
+            const incomingEn = s.en ?? '';
+            // Only hit Gemini if the English text for this suggestion changed
+            if (incomingEn !== existingEn) {
+              return fillMissingTranslations(s);
+            }
+            return Promise.resolve(s);
+          })
+        );
       } catch (error) {
         return NextResponse.json({ error: 'Invalid JSON format for suggestions' }, { status: 400 });
       }
@@ -243,9 +323,23 @@ export async function PUT(request: NextRequest, context: RouterParams) {
     if (max_tokens        !== null)      updateData.max_tokens  = parseInt(max_tokens);
     if (temperature       !== null)      updateData.temperature = parseFloat(temperature);
     
-    // New fields
-    if (domain !== null)                 updateData.domain       = domain === '' ? null : domain;
-    if (isPublished !== null)            updateData.isPublished  = isPublished === 'true';
+    // New fields — validate domain format before persisting
+    if (domain !== null) {
+      if (domain !== '') {
+        try {
+          const parsed = new URL(domain.startsWith('http') ? domain : `https://${domain}`);
+          if (!['http:', 'https:'].includes(parsed.protocol)) {
+            return NextResponse.json({ error: 'domain must be a valid http/https URL' }, { status: 400 });
+          }
+          updateData.domain = domain;
+        } catch {
+          return NextResponse.json({ error: 'domain must be a valid URL' }, { status: 400 });
+        }
+      } else {
+        updateData.domain = null;
+      }
+    }
+    if (isPublished !== null) updateData.isPublished = isPublished === 'true';
 
     const updatedChatbot = await prisma.chatbot.update({ where: { id }, data: updateData });
 
@@ -263,10 +357,33 @@ export async function PUT(request: NextRequest, context: RouterParams) {
 
 export async function DELETE(request: NextRequest, context: RouterParams) {
   try {
+    const token = await getToken({ req: request });
+    if (!token?.sub) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { id } = await context.params;
 
     if (!id) {
       return NextResponse.json({ error: 'Chatbot ID is required' }, { status: 400 })
+    }
+
+    // Only OWNER or ADMIN of the workspace may delete a chatbot
+    const chatbot = await prisma.chatbot.findFirst({
+      where: {
+        id,
+        workspace: {
+          members: {
+            some: {
+              userId: token.sub,
+              role: { in: ['OWNER', 'ADMIN'] },
+            },
+          },
+        },
+      },
+    });
+    if (!chatbot) {
+      return NextResponse.json({ error: 'Chatbot not found or access denied' }, { status: 404 });
     }
 
     await prisma.$transaction([

@@ -16,19 +16,21 @@ export async function GET(request: NextRequest) {
 
     const user = await prisma.user.findUnique({
       where: { email: session.user.email },
-      include: {
-        workspaces: {
-          include: {
-            workspace: {
-              include: { members: true }
-            }
-          }
-        }
-      }
     });
 
     if (!user) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
+
+    // Verify the authenticated user is actually a member of the requested workspace
+    const membership = await prisma.workspaceMember.findFirst({
+      where: { userId: user.id, workspaceId },
+    });
+    if (!membership) {
+      return NextResponse.json(
+        { error: 'Workspace not found or access denied' },
+        { status: 403 }
+      );
     }
 
     const chatbots = await prisma.chatbot.findMany({

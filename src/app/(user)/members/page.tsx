@@ -283,13 +283,20 @@ export default function MembersPage() {
   const canManageMembers = currentUserRole === "OWNER" || currentUserRole === "ADMIN"
   const canChangeRole = currentUserRole === "OWNER"
 
-  const filteredMembers = members.filter((member) =>
-    member.user.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (member.user.name && member.user.name.toLowerCase().includes(searchQuery.toLowerCase()))
-  )
+  const filteredMembers = members.filter((member) => {
+    const matchesSearch =
+      member.user.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (member.user.name && member.user.name.toLowerCase().includes(searchQuery.toLowerCase()))
+    const matchesRole =
+      filter === "all" ||
+      (filter === "owner" && member.role === "OWNER") ||
+      (filter === "admin" && member.role === "ADMIN") ||
+      (filter === "member" && member.role === "MEMBER")
+    return matchesSearch && matchesRole
+  })
 
   const totalItems = filteredMembers.length
-  const startItem = 1
+  const startItem = totalItems > 0 ? 1 : 0
   const endItem = Math.min(parseInt(itemsPerPage), totalItems)
 
   if (isLoading) {
@@ -626,13 +633,6 @@ export default function MembersPage() {
               </TableRow>
             ) : (
               filteredMembers
-                .filter((member) => {
-                  if (filter === "all") return true
-                  if (filter === "owner") return member.role === "OWNER"
-                  if (filter === "admin") return member.role === "ADMIN"
-                  if (filter === "member") return member.role === "MEMBER"
-                  return true
-                })
                 .slice(0, parseInt(itemsPerPage))
                 .map((member, index) => (
                   <TableRow key={member.id}>

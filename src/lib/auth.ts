@@ -1,8 +1,12 @@
 import { AuthOptions } from 'next-auth';
 import { prisma } from '@/lib/prisma';
 
+if (!process.env.NEXTAUTH_SECRET) {
+  throw new Error('NEXTAUTH_SECRET environment variable is not set. Refusing to start.');
+}
+
 export const authOptions: AuthOptions = {
-  debug: true,
+  debug: process.env.NODE_ENV === 'development',
   providers: [
     {
       id: "central-auth",

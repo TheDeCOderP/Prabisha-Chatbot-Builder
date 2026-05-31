@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getToken } from 'next-auth/jwt';
 import { prisma } from '@/lib/prisma';
 
 // Helper function to get date range
@@ -50,11 +51,15 @@ function generateColor(index: number) {
 
 export async function GET(request: NextRequest) {
   try {
+    const token = await getToken({ req: request });
+    if (!token?.sub) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const searchParams = request.nextUrl.searchParams;
     const timeRange = searchParams.get('timeRange') || '7d';
     const workspaceId = searchParams.get('workspaceId');
 
-    // Validate workspaceId
     if (!workspaceId) {
       return NextResponse.json(
         { error: 'workspaceId is required' },
@@ -64,14 +69,13 @@ export async function GET(request: NextRequest) {
 
     const { start, end } = getDateRange(timeRange);
 
-    // First verify that the workspace exists
-    const workspace = await prisma.workspace.findUnique({
-      where: { id: workspaceId },
+    // Verify the caller is a member of the requested workspace
+    const membership = await prisma.workspaceMember.findFirst({
+      where: { userId: token.sub, workspaceId },
     });
-
-    if (!workspace) {
+    if (!membership) {
       return NextResponse.json(
-        { error: 'Workspace not found' },
+        { error: 'Workspace not found or access denied' },
         { status: 404 }
       );
     }
@@ -129,8 +133,8 @@ export async function GET(request: NextRequest) {
           createdAt: { gte: start, lte: end },
         },
       }),
-      // Count total workspaces (still global, but you might want to change this)
-      prisma.workspace.count(),
+      // Count workspaces the current user is a member of
+      prisma.workspaceMember.count({ where: { userId: token.sub } }),
     ]);
 
     // Calculate conversion rate
@@ -242,7 +246,7 @@ export async function GET(request: NextRequest) {
         name: chatbot.name.length > 15 ? chatbot.name.substring(0, 15) + '...' : chatbot.name,
         conversations: chatbot.conversations.length,
         leads: chatbot.leads.length,
-        satisfaction: Math.random() * 2 + 3, // Random satisfaction between 3-5
+        satisfaction: null, // Requires explicit user ratings — not yet implemented
       }))
       .sort((a, b) => b.conversations - a.conversations)
       .slice(0, 5);
@@ -357,7 +361,7 @@ export async function GET(request: NextRequest) {
         totalLeads,
         conversionRate: parseFloat(conversionRate),
         avgResponseTime,
-        totalWorkspaces, // This is still global, consider if you want to change this
+        totalWorkspaces,
         totalMessages,
       },
       conversationData: conversationData.length > 0 ? conversationData : [

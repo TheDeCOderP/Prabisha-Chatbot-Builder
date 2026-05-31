@@ -7,12 +7,13 @@ class WorkspacesRoute extends BaseApiRoute {
   protected async GET(): Promise<NextResponse> {
     const getWorkspaces = await this.dbOperation(
       () => prisma.workspaceMember.findMany({
-        where: {
-          userId: this.currentUser.id
-        }
-      }).then(memberships => memberships.map(membership => ({
-        id: membership.workspaceId,
-        role: membership.role,
+        where: { userId: this.currentUser.id },
+        include: { workspace: { select: { id: true, name: true, createdAt: true } } },
+      }).then(memberships => memberships.map(m => ({
+        id: m.workspaceId,
+        name: m.workspace.name,
+        role: m.role,
+        createdAt: m.workspace.createdAt,
       }))),
       "Failed to fetch workspaces"
     );

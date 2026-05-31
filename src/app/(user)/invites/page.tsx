@@ -149,7 +149,6 @@ export default function InvitesPage() {
       
       const workspaces = await response.json();
       setWorkspaces(workspaces || []);
-      console.log('Fetched workspaces:', workspaces);
     } catch (error) {
       toast.error('Failed to load workspaces');
     }
@@ -222,8 +221,8 @@ export default function InvitesPage() {
     }
   };
 
-  const copyInvitationLink = (token: string) => {
-    const invitationLink = `${window.location.origin}/invite/accept?token=${token}`;
+  const copyInvitationLink = (invitationId: string, token: string) => {
+    const invitationLink = `${window.location.origin}/invites/${invitationId}?token=${token}`;
     navigator.clipboard.writeText(invitationLink);
     setCopiedToken(token);
 
@@ -550,7 +549,7 @@ export default function InvitesPage() {
                               <DropdownMenuContent align="end">
                                 <DropdownMenuLabel>Actions</DropdownMenuLabel>
                                 <DropdownMenuItem
-                                  onClick={() => copyInvitationLink(invitation.token)}
+                                  onClick={() => copyInvitationLink(invitation.id, invitation.token)}
                                   className="flex items-center gap-2"
                                 >
                                   <Copy className="h-4 w-4" />

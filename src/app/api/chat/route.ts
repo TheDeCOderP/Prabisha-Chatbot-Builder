@@ -1,7 +1,9 @@
 // app/api/chat/route.ts
 import { NextRequest, NextResponse } from 'next/server';
+import { getToken } from 'next-auth/jwt';
 import { prisma } from '@/lib/prisma';
 import { executeSearchChain, simpleSearch } from '@/lib/langchain/chains/search-chain';
+import { chatLimiter, getRequestIdentifier } from '@/lib/rate-limit';
 
 function timer(label: string) {
   const start = Date.now();
@@ -17,6 +19,23 @@ function timer(label: string) {
 export async function POST(request: NextRequest) {
   const tTotal = timer('POST [total]');
   try {
+    // Rate limit by IP — 30 messages per minute
+    const identifier = getRequestIdentifier(request);
+    const rateResult = chatLimiter.check(identifier);
+    if (!rateResult.allowed) {
+      tTotal.end();
+      return NextResponse.json(
+        { error: 'Too many requests. Please wait before sending more messages.' },
+        {
+          status: 429,
+          headers: {
+            'Retry-After': String(Math.ceil((rateResult.resetAt - Date.now()) / 1000)),
+            'X-RateLimit-Remaining': '0',
+          },
+        }
+      );
+    }
+
     const tParse = timer('parse request body');
     const body = await request.json();
     tParse.end();
@@ -53,6 +72,10 @@ export async function POST(request: NextRequest) {
 
     if (!chatbot) {
       return NextResponse.json({ error: 'Chatbot not found' }, { status: 404 });
+    }
+
+    if (!chatbot.isPublished) {
+      return NextResponse.json({ error: 'Chatbot is not available' }, { status: 403 });
     }
 
     if (conversationId) {
@@ -136,10 +159,22 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   const tTotal = timer('GET [total]');
   try {
+    // Conversation history endpoint requires authentication to prevent
+    // unauthenticated reads of conversation content.
+    const token = await getToken({ req: request });
+    if (!token?.sub) {
+      tTotal.end();
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const searchParams = request.nextUrl.searchParams;
     const query = searchParams.get('query');
     const chatbotId = searchParams.get('chatbotId');
     const conversationId = searchParams.get('conversationId');
+    // Pagination: ?cursor=<lastMessageId>&limit=<n> (default 50, max 100)
+    const cursor = searchParams.get('cursor') ?? undefined;
+    const limitRaw = parseInt(searchParams.get('limit') ?? '50', 10);
+    const limit = Math.min(isNaN(limitRaw) ? 50 : limitRaw, 100);
 
     if (!query || !chatbotId) {
       return NextResponse.json({ error: 'query and chatbotId required' }, { status: 400 });
@@ -149,7 +184,13 @@ export async function GET(request: NextRequest) {
       const tConv = timer('prisma: fetch conversation with messages');
       const conversation = await prisma.conversation.findUnique({
         where: { id: conversationId },
-        include: { messages: { orderBy: { createdAt: 'asc' }, take: 50 }}
+        include: {
+          messages: {
+            orderBy: { createdAt: 'asc' },
+            take: limit + 1, // fetch one extra to determine if there are more pages
+            ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+          },
+        },
       });
       tConv.end();
 
@@ -163,12 +204,21 @@ export async function GET(request: NextRequest) {
         );
       }
 
+      const hasMore = conversation.messages.length > limit;
+      const messages = hasMore ? conversation.messages.slice(0, limit) : conversation.messages;
+      const nextCursor = hasMore ? messages[messages.length - 1].id : null;
+
       tTotal.end();
       return NextResponse.json({
-        data: conversation.messages,
+        data: messages,
         conversationId: conversation.id,
         title: conversation.title,
-        createdAt: conversation.createdAt
+        createdAt: conversation.createdAt,
+        pagination: {
+          hasMore,
+          nextCursor,
+          limit,
+        },
       });
     } else {
       const tSearch = timer('simpleSearch');
@@ -193,11 +243,37 @@ export async function GET(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   const tTotal = timer('PUT [total]');
   try {
+    const token = await getToken({ req: request });
+    if (!token?.sub) {
+      tTotal.end();
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await request.json();
     const { conversationId, isActive, metadata } = body;
 
     if (!conversationId) {
       return NextResponse.json({ error: 'conversationId required' }, { status: 400 });
+    }
+
+    // Verify the caller is a workspace member of the chatbot that owns this conversation
+    const tOwnership = timer('prisma: verify conversation ownership');
+    const owned = await prisma.conversation.findFirst({
+      where: {
+        id: conversationId,
+        chatbot: {
+          workspace: {
+            members: { some: { userId: token.sub } },
+          },
+        },
+      },
+      select: { id: true },
+    });
+    tOwnership.end();
+
+    if (!owned) {
+      tTotal.end();
+      return NextResponse.json({ error: 'Conversation not found or access denied' }, { status: 404 });
     }
 
     const tUpdate = timer('prisma: update conversation');

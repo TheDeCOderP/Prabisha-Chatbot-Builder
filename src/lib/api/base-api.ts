@@ -40,14 +40,25 @@ export abstract class BaseApiRoute {
   protected session!: any;
   protected currentUser!: any;
 
+  /**
+   * Override in a subclass and return `true` to bypass authentication for a
+   * specific HTTP method (e.g. public GET endpoints).  The check runs *after*
+   * `this.request` is populated so you can inspect the method.
+   */
+  protected skipAuth(): boolean {
+    return false;
+  }
+
   // Main handler with automatic error catching
   async handle(request: NextRequest, { params }: any): Promise<NextResponse> {
     try {
       this.request = request;
       this.params = await params;
-      
-      // Auto-authenticate for all routes
-      await this.authenticate();
+
+      // Honour skipAuth() overrides before attempting authentication
+      if (!this.skipAuth()) {
+        await this.authenticate();
+      }
       
       // Route to specific HTTP method handler
       switch (request.method) {

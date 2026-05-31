@@ -202,7 +202,7 @@ export default function AppSidebar({ ...props }: React.ComponentProps<typeof Sid
   }
 
   const { data: session } = useSession()
-  const { activeWorkspace } = useWorkspace()
+  const { activeWorkspace, setActiveWorkspace } = useWorkspace()
 
   const [loading, setLoading] = useState(true)
   const [chatbots, setChatbots] = useState<Chatbot[]>([])
@@ -214,8 +214,13 @@ export default function AppSidebar({ ...props }: React.ComponentProps<typeof Sid
     const fetchWorkspaces = async () => {
       try {
         const res = await fetch("/api/workspaces")
-        const data = await res.json()
+        const data: Workspace[] = await res.json()
         setWorkspaces(data || [])
+        // Sync active workspace with fresh data (fixes stale name/role from localStorage)
+        if (activeWorkspace && data?.length) {
+          const fresh = data.find(w => w.id === activeWorkspace.id)
+          if (fresh) setActiveWorkspace(fresh)
+        }
       } catch (error) {
         console.error("Error fetching workspaces:", error)
         setWorkspaces([])
@@ -522,9 +527,13 @@ function ChatbotSwitcher({
               size="lg"
               className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground border"
             >
-              <div className="bg-sidebar-primary text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg">
-                <Bot className="size-4" />
-              </div>
+              {activeChatbot?.avatar ? (
+                <img src={activeChatbot.avatar} alt={activeChatbot.name} className="aspect-square size-8 rounded-lg object-cover" />
+              ) : (
+                <div className="bg-sidebar-primary text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg">
+                  <Bot className="size-4" />
+                </div>
+              )}
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-medium">{activeChatbot?.name || "Select Chatbot"}</span>
                 <span className="truncate text-xs text-muted-foreground">
@@ -548,9 +557,13 @@ function ChatbotSwitcher({
                 className="gap-2 p-2"
               >
                 <div className="flex items-center gap-2">
-                  <div className="flex size-6 items-center justify-center rounded-md bg-primary/10">
-                    <Bot className="size-3" />
-                  </div>
+                  {chatbot.avatar ? (
+                    <img src={chatbot.avatar} alt={chatbot.name} className="size-6 rounded-md object-cover shrink-0" />
+                  ) : (
+                    <div className="flex size-6 items-center justify-center rounded-md bg-primary/10 shrink-0">
+                      <Bot className="size-3" />
+                    </div>
+                  )}
                   <span className="truncate">{chatbot.name}</span>
                 </div>
                 <DropdownMenuShortcut>⌘{index + 1}</DropdownMenuShortcut>

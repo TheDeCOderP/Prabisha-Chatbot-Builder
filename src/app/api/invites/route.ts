@@ -1,5 +1,6 @@
 // app/api/invites/route.ts
 import { NextRequest, NextResponse } from 'next/server';
+import { randomBytes } from 'crypto';
 import { prisma } from '@/lib/prisma';
 import { BaseApiRoute, ApiError, ForbiddenError } from '@/lib/api/base-api';
 import { InvitationStatus, WorkspaceRole } from '../../../../generated/prisma/enums';
@@ -44,36 +45,26 @@ class InvitesRoute extends BaseApiRoute {
 
   // PUT /api/invites - Respond to an invitation (accept/reject)
   protected async PUT(): Promise<NextResponse> {
-    const { invitationToken, status, role = 'MEMBER' } = await this.request.json();
+    const { invitationToken, status } = await this.request.json();
 
     if (!invitationToken || !status) {
       throw new ApiError(400, 'Invalid request. invitationToken and status are required.');
     }
 
-    // Validate status
     if (!Object.values(InvitationStatus).includes(status)) {
       throw new ApiError(400, 'Invalid status value');
-    }
-
-    // Validate role if provided
-    if (role && !Object.values(WorkspaceRole).includes(role)) {
-      throw new ApiError(400, 'Invalid role value');
     }
 
     // Check if invitation exists and belongs to current user
     const invitation = await this.dbOperation(() =>
       prisma.workspaceInvitation.findFirst({
-        where: { 
+        where: {
           token: invitationToken,
           invitedToId: this.currentUser.id,
           status: 'PENDING',
-          expiresAt: {
-            gt: new Date()
-          }
+          expiresAt: { gt: new Date() },
         },
-        include: {
-          workspace: true
-        }
+        include: { workspace: true }
       })
     );
 
@@ -89,10 +80,9 @@ class InvitesRoute extends BaseApiRoute {
       })
     );
 
-    // If accepting, add user to workspace
+    // If accepting, add user to workspace using the role stored on the invitation
     if (status === InvitationStatus.ACCEPTED) {
       try {
-        // Check if user is already a member
         const existingMember = await this.dbOperation(() =>
           prisma.workspaceMember.findFirst({
             where: {
@@ -109,21 +99,21 @@ class InvitesRoute extends BaseApiRoute {
               data: { memberId: existingMember.id }
             })
           );
-          
-          return this.json({ 
+
+          return this.json({
             message: 'You are already a member of this workspace',
             invitation: updatedInvitation,
             isAlreadyMember: true
           });
         }
 
-        // Create new workspace member
+        // Role comes from the invitation record, not the request body
         const workspaceMember = await this.dbOperation(() =>
           prisma.workspaceMember.create({
             data: {
               userId: this.currentUser.id,
               workspaceId: invitation.workspaceId,
-              role: role as WorkspaceRole,
+              role: invitation.role,
             }
           })
         );
@@ -249,7 +239,8 @@ class InvitesRoute extends BaseApiRoute {
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
 
-    const invitationToken = Math.random().toString(36).substring(2) + Date.now().toString(36);
+    // Cryptographically secure 32-byte token — replaces the insecure Math.random() approach
+    const invitationToken = randomBytes(32).toString('hex');
 
     const invitationData: any = {
       workspaceId: workspaceId,

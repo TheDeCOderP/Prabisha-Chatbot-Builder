@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authOptions } from "@/lib/auth";
 import { getServerSession } from "next-auth";
+import { prisma } from "@/lib/prisma";
 import { InstagramService } from "@/services/instagram.service";
 import { LinkedInService } from "@/services/linkedin.service";
 
@@ -30,6 +31,21 @@ export async function GET(req: NextRequest) {
     const chatbotId = q.get("chatbotId");
     if (!chatbotId) {
       return NextResponse.json({ error: "Missing chatbotId" }, { status: 400 });
+    }
+
+    // 3. Verify the authenticated user is a member of the chatbot's workspace
+    const userId = (session as any).user?.id;
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const chatbot = await prisma.chatbot.findFirst({
+      where: {
+        id: chatbotId,
+        workspace: { members: { some: { userId } } },
+      },
+    });
+    if (!chatbot) {
+      return NextResponse.json({ error: "Chatbot not found or access denied" }, { status: 404 });
     }
 
     const platform = (q.get("platform") ?? "instagram") as Platform;

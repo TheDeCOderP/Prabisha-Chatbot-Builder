@@ -336,9 +336,26 @@ export async function POST(
 
     if (type === 'file') {
       const files = formData.getAll('files') as File[];
-      
+
       if (files.length === 0) {
         return NextResponse.json({ error: 'No files provided' }, { status: 400 });
+      }
+
+      // Server-side file validation (client dropzone limits are not enforceable)
+      const MAX_FILE_SIZE = 12 * 1024 * 1024; // 12 MB
+      const ALLOWED_TYPES = new Set([
+        'text/plain', 'text/csv',
+        'application/pdf',
+        'application/msword',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      ]);
+      for (const file of files) {
+        if (file.size > MAX_FILE_SIZE) {
+          return NextResponse.json({ error: `File "${file.name}" exceeds the 12 MB limit` }, { status: 400 });
+        }
+        if (!ALLOWED_TYPES.has(file.type)) {
+          return NextResponse.json({ error: `File type "${file.type}" is not allowed for "${file.name}"` }, { status: 400 });
+        }
       }
 
       const knowledgeBase = await prisma.knowledgeBase.create({
@@ -402,9 +419,27 @@ export async function POST(
       });
     } else if (type === 'table') {
       const files = formData.getAll('files') as File[];
-      
+
       if (files.length === 0) {
         return NextResponse.json({ error: 'No files provided' }, { status: 400 });
+      }
+
+      // Server-side validation for table uploads
+      const MAX_TABLE_SIZE = 5 * 1024 * 1024; // 5 MB
+      const ALLOWED_TABLE_TYPES = new Set([
+        'text/csv', 'application/vnd.ms-excel',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'text/plain', 'application/sql', 'application/pdf',
+      ]);
+      for (const file of files) {
+        if (file.size > MAX_TABLE_SIZE) {
+          return NextResponse.json({ error: `File "${file.name}" exceeds the 5 MB limit` }, { status: 400 });
+        }
+        const ext = file.name.split('.').pop()?.toLowerCase();
+        const allowedExts = new Set(['csv', 'xls', 'xlsx', 'sql', 'pdf']);
+        if (!allowedExts.has(ext ?? '')) {
+          return NextResponse.json({ error: `File extension ".${ext}" is not allowed for "${file.name}"` }, { status: 400 });
+        }
       }
 
       const knowledgeBase = await prisma.knowledgeBase.create({
@@ -546,84 +581,6 @@ export async function POST(
  
       return NextResponse.json({ knowledgeBaseId: knowledgeBase.id, results });
     }
- 
-    // ── Table uploads ────────────────────────────────────────────────────────
- 
-    if (type === 'table') {
-      const files = formData.getAll('files') as File[];
- 
-      if (files.length === 0) {
-        return NextResponse.json({ error: 'No files provided' }, { status: 400 });
-      }
- 
-      const knowledgeBase = await prisma.knowledgeBase.create({
-        data: {
-          chatbotId,
-          name: name || `Tables - ${new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date())}`,
-          type: 'FAQ',
-          indexName: `kb_${chatbotId}_${Date.now()}`,
-        },
-      });
- 
-      const results = [];
- 
-      for (const file of files) {
-        try {
-          const { rows, metadata } = await processTable(file);
-          const chunks = chunkArray(rows, 100);
- 
-          for (let i = 0; i < chunks.length; i++) {
-            const chunk   = chunks[i];
-            const content = formatTableContent(chunk, metadata);
- 
-            const document = await prisma.document.create({
-              data: {
-                knowledgeBaseId: knowledgeBase.id,
-                source: `${file.name} (batch ${i + 1})`,
-                content,
-                metadata: {
-                  ...metadata,
-                  fileName:     file.name,
-                  fileSize:     file.size,
-                  fileType:     file.type,
-                  batchNumber:  i + 1,
-                  totalBatches: chunks.length,
-                  rowCount:     chunk.length,
-                },
-              },
-            });
- 
-            await embedAndStore({
-              documentId: document.id,
-              content,
-              metadata: {
-                chatbotId,
-                knowledgeBaseId: knowledgeBase.id,
-                source: file.name,
-                type: 'table',
-              },
-              chatbotId,
-              knowledgeBaseId: knowledgeBase.id,
-            });
-          }
- 
-          results.push({
-            success:  true,
-            fileName: file.name,
-            rowCount: rows.length,
-            batches:  chunks.length,
-          });
-        } catch (error) {
-          results.push({
-            success:  false,
-            fileName: file.name,
-            error:    error instanceof Error ? error.message : 'Unknown error',
-          });
-        }
-      }
- 
-      return NextResponse.json({ knowledgeBaseId: knowledgeBase.id, results });
-    }
 
     return NextResponse.json({ error: 'Invalid type' }, { status: 400 });
   } catch (error) {
@@ -651,6 +608,12 @@ export async function PATCH(request: NextRequest, context: RouterParams) {
       where: { id: chatbotId, workspace: { members: { some: { userId: session.user.id } } } },
     });
     if (!chatbot) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+
+    // Ensure the knowledge base belongs to this chatbot (prevents cross-chatbot renaming)
+    const owned = await prisma.knowledgeBase.findFirst({
+      where: { id: knowledgeBaseId, chatbotId },
+    });
+    if (!owned) return NextResponse.json({ error: 'Knowledge base not found' }, { status: 404 });
 
     const kb = await prisma.knowledgeBase.update({
       where: { id: knowledgeBaseId },
