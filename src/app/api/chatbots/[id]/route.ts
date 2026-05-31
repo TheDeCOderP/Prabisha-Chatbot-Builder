@@ -249,7 +249,7 @@ export async function PUT(request: NextRequest, context: RouterParams) {
 
     const updatedChatbot = await prisma.chatbot.update({ where: { id }, data: updateData });
 
-    revalidateTag(`chatbot-config-${id}`);
+    revalidateTag(`chatbot-config-${id}`, 'default');
 
     return NextResponse.json({
       message: 'Chatbot updated successfully',

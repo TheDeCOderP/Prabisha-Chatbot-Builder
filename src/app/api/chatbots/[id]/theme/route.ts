@@ -139,7 +139,7 @@ console.log('Received theme update request:', { chatbotId, body });
       create: { chatbotId, ...themeData },
     });
 
-    revalidateTag(`chatbot-config-${chatbotId}`);
+    revalidateTag(`chatbot-config-${chatbotId}`, 'default');
 
     return NextResponse.json({ theme });
   } catch (error) {
