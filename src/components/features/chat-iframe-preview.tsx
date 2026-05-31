@@ -269,11 +269,10 @@ function DesktopPreview({ src, reloadKey, iframeRef, isOpen, setIsOpen, theme, i
           overflow: "hidden",
           boxShadow: "0 8px 32px rgba(0,0,0,0.2)",
           border: "1px solid rgba(0,0,0,0.08)",
-          // Visually hide when closed — iframe stays alive in DOM
           opacity: isOpen ? 1 : 0,
           pointerEvents: isOpen ? "auto" : "none",
-          transform: isOpen ? "translateY(0) scale(1)" : "translateY(12px) scale(0.97)",
-          transition: "opacity 0.25s ease, transform 0.25s ease",
+          transform: isOpen ? "translateY(0)" : "translateY(100%)",
+          transition: "opacity 0.3s ease-out, transform 0.3s ease-out",
         }}
       >
         <iframe
@@ -373,7 +372,8 @@ function MobilePreview({ src, reloadKey, iframeRef, isOpen, setIsOpen, theme, ic
             zIndex: 10,
             opacity: isOpen ? 1 : 0,
             pointerEvents: isOpen ? "auto" : "none",
-            transition: "opacity 0.25s ease",
+            transform: isOpen ? "translateY(0)" : "translateY(100%)",
+            transition: "opacity 0.3s ease-out, transform 0.3s ease-out",
           }}>
             <iframe
               key={`mobile-${reloadKey}`}
