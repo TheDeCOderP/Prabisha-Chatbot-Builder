@@ -120,9 +120,19 @@ export function WidgetThemeForm({ onBack, onSave, isLoading, initial, onLiveUpda
 
   useEffect(() => {
     if (initial && !isInitializedRef.current) {
+      // If chatbot has an uploaded icon but theme still says EMOJI (old bug), correct it to IMAGE
+      const hasUploadedIcon = !!(chatbotData?.icon)
+      const themeIconType = initial.widgetIconType as WidgetIconType
+      const correctedIconType: WidgetIconType =
+        (!themeIconType || themeIconType === 'EMOJI') && hasUploadedIcon ? 'IMAGE' : (themeIconType || 'EMOJI')
+      const correctedIconValue =
+        correctedIconType === 'IMAGE'
+          ? (initial.widgetIcon || chatbotData?.icon || '')
+          : (initial.widgetIcon || '💬')
+
       setFormData({
-        widgetIcon: initial.widgetIcon || "💬",
-        widgetIconType: (initial.widgetIconType as WidgetIconType) || "EMOJI",
+        widgetIcon: correctedIconValue,
+        widgetIconType: correctedIconType,
         widgetText: initial.widgetText || "Chat with us",
         widgetSize: initial.widgetSize || 70,
         widgetSizeMobile: initial.widgetSizeMobile || 60,
@@ -146,10 +156,13 @@ export function WidgetThemeForm({ onBack, onSave, isLoading, initial, onLiveUpda
         showNewChat: initial.showNewChat ?? true,
         showLanguageSwitcher: initial.showLanguageSwitcher ?? true,
       })
-      if (chatbotData?.icon) {
-        setIconData({ type: "IMAGE", value: chatbotData.icon, emojiValue: "💬", svgValue: "" })
-      } else if (chatbotData?.widgetIconEmoji) {
-        setIconData({ type: "EMOJI", value: chatbotData.widgetIconEmoji, emojiValue: chatbotData.widgetIconEmoji, svgValue: "" })
+      if (correctedIconType === 'IMAGE') {
+        setIconData({ type: "IMAGE", value: correctedIconValue, emojiValue: "💬", svgValue: "" })
+      } else if (correctedIconType === 'SVG') {
+        setIconData({ type: "SVG", value: correctedIconValue, emojiValue: "💬", svgValue: correctedIconValue })
+      } else {
+        const emoji = correctedIconValue || chatbotData?.widgetIconEmoji || '💬'
+        setIconData({ type: "EMOJI", value: emoji, emojiValue: emoji, svgValue: "" })
       }
       isInitializedRef.current = true
     }
@@ -169,9 +182,11 @@ export function WidgetThemeForm({ onBack, onSave, isLoading, initial, onLiveUpda
     if (file.size > 5 * 1024 * 1024) { toast.error('Image size should be less than 5MB'); return }
     setSelectedFile(file)
     setIconData({ type: "IMAGE", value: URL.createObjectURL(file), emojiValue: "💬", svgValue: "" })
+    update({ widgetIconType: 'IMAGE' as WidgetIconType })
   }
 
   const handleSubmit = async () => {
+    let savedIconUrl: string | null = null
     if (selectedFile) {
       const fd = new FormData()
       fd.append('icon', selectedFile)
@@ -179,11 +194,17 @@ export function WidgetThemeForm({ onBack, onSave, isLoading, initial, onLiveUpda
       try {
         const res = await fetch(`/api/chatbots/${chatbotData?.id}`, { method: "PUT", body: fd })
         if (!res.ok) throw new Error('Failed to save icon')
+        const data = await res.json()
+        savedIconUrl = data.chatbot?.icon || null
         toast.success('Icon uploaded')
         setSelectedFile(null)
       } catch { toast.error('Failed to upload icon') }
     }
-    await onSave(formData)
+    // Merge the Cloudinary URL into formData before saving theme
+    await onSave({
+      ...formData,
+      ...(savedIconUrl ? { widgetIcon: savedIconUrl, widgetIconType: 'IMAGE' as WidgetIconType } : {}),
+    })
   }
 
   const positionPresets: { label: string; value: Position; icon: string }[] = [
@@ -214,7 +235,10 @@ export function WidgetThemeForm({ onBack, onSave, isLoading, initial, onLiveUpda
         <SectionCard title="Widget Icon" icon={<MousePointer2 className="w-3.5 h-3.5" />}>
           <div className="space-y-1.5">
             <Label className="text-xs font-medium">Icon Type</Label>
-            <Select value={iconData.type} onValueChange={(v) => setIconData({ ...iconData, type: v as any })}>
+            <Select value={iconData.type} onValueChange={(v) => {
+              setIconData({ ...iconData, type: v as any })
+              update({ widgetIconType: v as WidgetIconType })
+            }}>
               <SelectTrigger className="text-sm"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="IMAGE">Image Upload</SelectItem>

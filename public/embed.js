@@ -203,12 +203,14 @@
       const widgetIconType = th.widgetIconType || 'EMOJI';
       const fallbackUrl    = db.icon || db.avatar || null;
 
-      const rawIconUrl    = widgetIconType === 'EMOJI' ? null : (widgetIcon || fallbackUrl);
+      // Backward-compat: if theme says EMOJI but has no emoji value and db has an image, use the image
+      const effectiveIconType = (widgetIconType === 'EMOJI' && !widgetIcon && fallbackUrl) ? 'IMAGE' : widgetIconType;
+      const rawIconUrl    = effectiveIconType === 'EMOJI' ? null : (widgetIcon || fallbackUrl);
       // Resolve relative URLs so images work when widget is embedded on external sites
       config.iconUrl      = rawIconUrl && !/^(https?:\/\/|\/\/|data:)/.test(rawIconUrl)
         ? config.baseUrl + (rawIconUrl.startsWith('/') ? rawIconUrl : '/' + rawIconUrl)
         : rawIconUrl;
-      config.iconEmoji    = widgetIconType === 'EMOJI' ? (widgetIcon || null) : null;
+      config.iconEmoji    = effectiveIconType === 'EMOJI' ? (widgetIcon || null) : null;
       config.iconType     = widgetIconType;
 
       updateBtnIcon(config.iconUrl, config.iconEmoji);
