@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { revalidateTag } from 'next/cache';
 import { prisma } from '@/lib/prisma';
 import { upload } from '@/lib/cloudinary'
 import { GoogleGenAI } from '@google/genai';
@@ -70,6 +71,11 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 };
 
+const cacheHeaders = {
+  ...corsHeaders,
+  'Cache-Control': 'public, s-maxage=600, stale-while-revalidate=300',
+};
+
 export async function GET(
   request: NextRequest,
   context: RouterParams
@@ -93,7 +99,7 @@ export async function GET(
       )
     }
 
-    return NextResponse.json(chatbot, { status: 200, headers: corsHeaders })
+    return NextResponse.json(chatbot, { status: 200, headers: cacheHeaders })
   } catch (error) {
     console.error('Error fetching chatbot:', error)
     return NextResponse.json(
@@ -242,6 +248,8 @@ export async function PUT(request: NextRequest, context: RouterParams) {
     if (isPublished !== null)            updateData.isPublished  = isPublished === 'true';
 
     const updatedChatbot = await prisma.chatbot.update({ where: { id }, data: updateData });
+
+    revalidateTag(`chatbot-config-${id}`);
 
     return NextResponse.json({
       message: 'Chatbot updated successfully',

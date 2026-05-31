@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { revalidateTag } from 'next/cache';
 import { getToken } from 'next-auth/jwt';
 import { prisma } from '@/lib/prisma';
 
@@ -137,6 +138,8 @@ console.log('Received theme update request:', { chatbotId, body });
       update: themeData,
       create: { chatbotId, ...themeData },
     });
+
+    revalidateTag(`chatbot-config-${chatbotId}`);
 
     return NextResponse.json({ theme });
   } catch (error) {
