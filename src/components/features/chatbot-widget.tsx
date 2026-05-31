@@ -1661,6 +1661,32 @@ function ChatInput({
         </div>
       )}
 
+      {/* Listening indicator — appears when mic is active */}
+      {isMicrophoneOn && (
+        <div className="flex items-center gap-3 px-3 py-2 mb-2 mx-1 bg-red-50 border border-red-100 rounded-xl">
+          {/* Animated sound-wave bars */}
+          <div className="flex items-end gap-[3px] h-5 flex-shrink-0">
+            {([12, 18, 22, 18, 12] as number[]).map((h, i) => (
+              <span
+                key={i}
+                className="w-[3px] rounded-full animate-bounce"
+                style={{
+                  height: h,
+                  backgroundColor: '#ef4444',
+                  animationDelay: `${i * 80}ms`,
+                  animationDuration: '0.65s',
+                }}
+              />
+            ))}
+          </div>
+          <span className="text-xs font-medium text-red-600 flex-1 leading-tight">
+            Listening… speak now
+          </span>
+          {/* Pulsing recording dot */}
+          <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse flex-shrink-0" />
+        </div>
+      )}
+
       <PromptInput
         onSubmit={async (e: React.FormEvent) => {
           e.preventDefault();
@@ -1696,7 +1722,7 @@ function ChatInput({
                   <PromptInputButton
                     type="button" size="sm" variant="ghost"
                     onClick={onToggleMicrophone}
-                    className={`cursor-pointer ${isMicrophoneOn ? 'bg-destructive/10 text-destructive' : ''}`}
+                    className={`cursor-pointer transition-all ${isMicrophoneOn ? 'bg-red-100 text-red-600 ring-2 ring-red-400 ring-offset-1 animate-pulse rounded-md' : ''}`}
                   >
                     {isMicrophoneOn ? <MicOffIcon className="h-4 w-4" /> : <MicIcon className="h-4 w-4" />}
                   </PromptInputButton>

@@ -94,12 +94,13 @@ console.log('Received theme update request:', { chatbotId, body });
       widgetPadding: body.widgetPadding,
       widgetMargin: body.widgetMargin,
       popup_onload: body.popup_onload,
-      // Custom position
+      // Custom position — use conditional spread so undefined body fields
+      // never accidentally overwrite existing DB values with null
       widgetCustomPosition: body.widgetCustomPosition,
-      widgetTop: body.widgetTop ?? null,
-      widgetBottom: body.widgetBottom ?? null,
-      widgetLeft: body.widgetLeft ?? null,
-      widgetRight: body.widgetRight ?? null,
+      ...(body.widgetTop    !== undefined && { widgetTop:    body.widgetTop    ?? null }),
+      ...(body.widgetBottom !== undefined && { widgetBottom: body.widgetBottom ?? null }),
+      ...(body.widgetLeft   !== undefined && { widgetLeft:   body.widgetLeft   ?? null }),
+      ...(body.widgetRight  !== undefined && { widgetRight:  body.widgetRight  ?? null }),
       // Window size
       windowWidth: body.windowWidth,
       windowHeight: body.windowHeight,
@@ -130,6 +131,27 @@ console.log('Received theme update request:', { chatbotId, body });
       closeButtonBgColor: body.closeButtonBgColor,
       quickSuggestionBgColor: body.quickSuggestionBgColor,
       quickSuggestionTextColor: body.quickSuggestionTextColor,
+      // Embed mode
+      ...(body.embedMode !== undefined && { embedMode: body.embedMode }),
+      // Teaser bubble
+      ...(body.teaserEnabled   !== undefined && { teaserEnabled:   body.teaserEnabled }),
+      ...(body.teaserMessage   !== undefined && { teaserMessage:   body.teaserMessage }),
+      ...(body.teaserDelay     !== undefined && { teaserDelay:     body.teaserDelay }),
+      ...(body.teaserBgColor   !== undefined && { teaserBgColor:   body.teaserBgColor }),
+      ...(body.teaserTextColor !== undefined && { teaserTextColor: body.teaserTextColor }),
+      ...(body.teaserCtaYes    !== undefined && { teaserCtaYes:    body.teaserCtaYes }),
+      ...(body.teaserCtaNo     !== undefined && { teaserCtaNo:     body.teaserCtaNo }),
+      // Sticky bar
+      ...(body.stickyBarText      !== undefined && { stickyBarText:      body.stickyBarText }),
+      ...(body.stickyBarBgColor   !== undefined && { stickyBarBgColor:   body.stickyBarBgColor }),
+      ...(body.stickyBarTextColor !== undefined && { stickyBarTextColor: body.stickyBarTextColor }),
+      ...(body.stickyBarPosition  !== undefined && { stickyBarPosition:  body.stickyBarPosition }),
+      ...(body.stickyBarCtaText   !== undefined && { stickyBarCtaText:   body.stickyBarCtaText }),
+      // Slide drawer
+      ...(body.drawerSide     !== undefined && { drawerSide:     body.drawerSide }),
+      ...(body.drawerWidth    !== undefined && { drawerWidth:    body.drawerWidth }),
+      ...(body.drawerTabText  !== undefined && { drawerTabText:  body.drawerTabText }),
+      ...(body.drawerTabBgColor !== undefined && { drawerTabBgColor: body.drawerTabBgColor }),
     };
 
     // Update or create theme

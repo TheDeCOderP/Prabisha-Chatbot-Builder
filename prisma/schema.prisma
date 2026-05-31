@@ -132,6 +132,14 @@ enum WidgetIconType {
   IMAGE
 }
 
+enum EmbedMode {
+  FLOATING_BUTTON
+  INLINE
+  STICKY_BAR
+  TEASER_BUBBLE
+  SLIDE_DRAWER
+}
+
 model ChatbotTheme {
   id              String         @id @default(cuid())
 
@@ -191,6 +199,31 @@ model ChatbotTheme {
   closeButtonBgColor       String? @default("#DD692E")
   quickSuggestionBgColor   String? @default("#ffffff")
   quickSuggestionTextColor String? @default("#0f172a")
+
+  // Embed Mode
+  embedMode            EmbedMode @default(FLOATING_BUTTON)
+
+  // Teaser Bubble settings (TEASER_BUBBLE mode)
+  teaserEnabled        Boolean   @default(true)
+  teaserMessage        String?   @default("👋 Hi! Need help finding what you're looking for?")
+  teaserDelay          Int?      @default(3)
+  teaserBgColor        String?   @default("#111CA8")
+  teaserTextColor      String?   @default("#ffffff")
+  teaserCtaYes         String?   @default("Yes, help me")
+  teaserCtaNo          String?   @default("Not now")
+
+  // Sticky Bar settings (STICKY_BAR mode)
+  stickyBarText        String?   @default("💬 Chat with us — we reply instantly")
+  stickyBarBgColor     String?   @default("#111CA8")
+  stickyBarTextColor   String?   @default("#ffffff")
+  stickyBarPosition    String?   @default("bottom")
+  stickyBarCtaText     String?   @default("Start chat →")
+
+  // Slide Drawer settings (SLIDE_DRAWER mode)
+  drawerSide           String?   @default("right")
+  drawerWidth          Int?      @default(380)
+  drawerTabText        String?   @default("Chat")
+  drawerTabBgColor     String?   @default("#111CA8")
 
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt

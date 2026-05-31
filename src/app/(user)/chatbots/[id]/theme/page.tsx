@@ -4,12 +4,13 @@
 import { toast } from "sonner"
 import { useState, useEffect, useCallback } from "react"
 import { useParams, useRouter } from "next/navigation"
-import { 
-  MousePointer2, 
-  Layout, 
-  ChevronLeft, 
-  Palette, 
-  Settings2 
+import {
+  MousePointer2,
+  Layout,
+  ChevronLeft,
+  Palette,
+  Settings2,
+  Layers,
 } from "lucide-react"
 
 import { Card } from "@/components/ui/card"
@@ -20,6 +21,7 @@ import { useChatbot } from "@/hooks/useChatbot"
 
 import { WidgetThemeForm } from "@/components/forms/widget-form"
 import { WindowThemeForm } from "@/components/forms/window-form"
+import { EmbedModeForm } from "@/components/forms/embed-mode-form"
 
 interface ThemeFeature {
   id: string
@@ -96,6 +98,13 @@ export default function ThemePage() {
       icon: <Layout className="w-5 h-5" />,
       title: "Chat Window",
       description: "Configure the header, messages, and window style.",
+    },
+    {
+      id: "embed",
+      icon: <Layers className="w-5 h-5" />,
+      title: "Embed Style",
+      description: "Choose how the chat appears — floating, inline, sticky bar, drawer, or teaser.",
+      badge: "5 Patterns",
     },
   ]
 
@@ -174,7 +183,8 @@ export default function ThemePage() {
               {themeFeatures.map((feature) => {
                 const isConfigured = !!existingTheme && (
                    (feature.id === "widget" && existingTheme.widgetIcon) ||
-                   (feature.id === "window" && existingTheme.headerBgColor)
+                   (feature.id === "window" && existingTheme.headerBgColor) ||
+                   (feature.id === "embed" && existingTheme.embedMode && existingTheme.embedMode !== "FLOATING_BUTTON")
                 )
 
                 return (
@@ -230,7 +240,7 @@ export default function ThemePage() {
 
           {/* Window Configuration Form */}
           <TabsContent value="window">
-            <WindowThemeForm 
+            <WindowThemeForm
               onBack={resetForm}
               onSave={handleSaveTheme}
               isLoading={isLoading}
@@ -238,6 +248,17 @@ export default function ThemePage() {
               chatbotId={chatbotId}
               onLiveUpdate={handleLivePreviewUpdate}
               chatbotData={chatbot}
+            />
+          </TabsContent>
+
+          {/* Embed Style Form */}
+          <TabsContent value="embed">
+            <EmbedModeForm
+              onBack={resetForm}
+              onSave={handleSaveTheme}
+              isLoading={isLoading}
+              initial={existingTheme}
+              onLiveUpdate={handleLivePreviewUpdate}
             />
           </TabsContent>
 

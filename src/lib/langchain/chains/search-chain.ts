@@ -229,33 +229,29 @@ const RAG_ANSWER_PROMPT = `
 {languageDirective}
 {systemPrompt}
 
-You have access to relevant knowledge below. Use it to answer the user's question naturally — like a knowledgeable person who happens to have read this material, not like a search engine returning results.
+You have relevant knowledge below. Use it to answer like a smart friend who knows this stuff — not like a search engine.
 
 ────────────────────────
-HOW TO USE THE CONTEXT
+HOW TO ANSWER
 ────────────────────────
-- Answer from the context, but write like a human — don't quote chunks verbatim
-- Synthesize information across chunks into a coherent, flowing answer
-- If something isn't in the context, say so honestly rather than guessing
+- Get to the point in the FIRST sentence — don't build up to the answer
+- Write naturally, not like an article — vary sentence length, use contractions
+- Use "I" naturally: "From what I can see...", "Honestly...", "The short answer is..."
+- If the question is simple, give a SHORT answer (1–3 sentences). Don't pad it.
+- If it needs detail, be detailed — but still conversational, not formal
 - Never fabricate URLs, prices, features, or policies
-
-────────────────────────
-TONE & STYLE
-────────────────────────
-- Conversational and direct — get to the point fast
-- Use "I" naturally: "From what I can see...", "Based on this..."
-- Vary sentence length — mix short punchy sentences with longer ones
-- No corporate filler: no "Certainly!", "Great question!", "Of course!"
-- If the answer is simple, keep it short. Don't pad.
+- If something isn't in the context, say "I'm not sure about that" plainly
 
 ────────────────────────
 FORMAT
 ────────────────────────
+- PREFER short paragraphs over long walls of text
 - Wrap paragraphs in <p>
-- Use <ul><li> for genuine lists (3+ items that are truly list-like)
-- Use <strong> only for genuinely important terms or names
+- Use <ul><li> ONLY for genuine lists (3+ truly list-like items) — don't convert natural prose into bullets
+- Use <strong> sparingly — only for the most critical term in a sentence
 - No markdown, no <br> tags
-- End with ONE natural follow-up question in <p class="follow-up-question">...</p>
+- End with ONE short, natural follow-up question in <p class="follow-up-question">...</p>
+  (Make it feel like something a real person would ask, not a formal "Would you like to know more about X?")
 
 ────────────────────────
 CITATION RULES
@@ -294,10 +290,12 @@ USER:
 ────────────────────────
 FORMAT
 ────────────────────────
-- Wrap paragraphs in <p>
-- Use <ul><li> for lists (3+ items)
+- Get to the point in the first sentence
+- Short paragraphs, wrapped in <p>
+- Use <ul><li> ONLY for genuine lists (3+ items) — not for normal prose
 - Use <strong> sparingly
 - No markdown, no <br> tags
+- End with ONE short, natural follow-up question in <p class="follow-up-question">...</p>
 
 Return ONLY clean HTML.
 `;
@@ -738,33 +736,39 @@ function appendReadMoreSection(
     inlineCiteUrls.add(match[1]);
   }
 
-  const allSourcesToShow = sources;
+  // If every source is already cited inline, skip the section entirely
+  const uncitedSources = sources.filter(s => !inlineCiteUrls.has(s.url));
+  const sourcesToShow = uncitedSources.length > 0 ? uncitedSources : sources;
 
-  const sourceItems = allSourcesToShow.map((source) => {
+  const sourceItems = sourcesToShow.map((source) => {
     let hostname = '';
     try { hostname = new URL(source.url).hostname.replace('www.', ''); } catch {}
-    const isInline = inlineCiteUrls.has(source.url);
 
     return `<a href="${source.url}"
        target="_blank"
        rel="noopener noreferrer"
-       style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:#f8fafc;border:1px solid ${isInline ? '#bfdbfe' : '#e2e8f0'};border-radius:8px;text-decoration:none;"
+       style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:7px;text-decoration:none;"
      >
-      <span style="font-size:15px;flex-shrink:0">${isInline ? '🔵' : '🔗'}</span>
-      <span style="display:flex;flex-direction:column;gap:1px;min-width:0;flex:1">
-        <span style="font-size:13px;font-weight:600;color:#1e293b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${source.title}</span>
-        ${hostname ? `<span style="font-size:11px;color:#94a3b8">${hostname}</span>` : ''}
-      </span>
-      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style="flex-shrink:0;color:#94a3b8">
+      <svg width="11" height="11" viewBox="0 0 12 12" fill="none" style="flex-shrink:0;color:#94a3b8">
         <path d="M2 10L10 2M10 2H4M10 2V8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
       </svg>
+      <span style="display:flex;flex-direction:column;gap:1px;min-width:0;flex:1">
+        <span style="font-size:12px;font-weight:500;color:#374151;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${source.title}</span>
+        ${hostname ? `<span style="font-size:10px;color:#9ca3af">${hostname}</span>` : ''}
+      </span>
     </a>`;
   }).join('');
 
-  const readMoreSection = `<div style="margin-top:20px;padding-top:16px;border-top:2px solid #f1f5f9">
-  <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;color:#94a3b8;text-transform:uppercase;margin-bottom:10px">Sources</div>
-  <div style="display:flex;flex-direction:column;gap:8px">${sourceItems}</div>
-</div>`;
+  const count = sourcesToShow.length;
+  const readMoreSection = `<details style="margin-top:14px;border-top:1px solid #f1f5f9;padding-top:10px;">
+  <summary style="cursor:pointer;display:flex;align-items:center;gap:5px;font-size:11px;font-weight:600;letter-spacing:0.06em;color:#9ca3af;text-transform:uppercase;list-style:none;-webkit-user-select:none;user-select:none;outline:none;">
+    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style="flex-shrink:0;transition:transform 0.2s">
+      <path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    Sources (${count})
+  </summary>
+  <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">${sourceItems}</div>
+</details>`;
 
   return htmlResponse + readMoreSection;
 }

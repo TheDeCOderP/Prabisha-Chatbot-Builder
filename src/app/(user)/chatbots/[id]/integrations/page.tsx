@@ -13,7 +13,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { Copy, Check, Download, Loader2 } from 'lucide-react';
+import { Copy, Check, Download, Loader2, Layers, Info } from 'lucide-react';
 import { useChatbot } from '@/hooks/useChatbot';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -147,10 +147,29 @@ const TECH_STACKS: StackMeta[] = [
   },
 ];
 
-// ─── Code generator (same logic as original) ─────────────────────────────────
+// ─── Code generator — embed-mode aware ───────────────────────────────────────
 
-function generateEmbedCode(stack: TechStack, chatbotId: string, baseUrl: string): string {
-  const configObject = `{\n  chatbotId: '${chatbotId}',\n  baseUrl: '${baseUrl}'\n}`;
+type EmbedMode = 'FLOATING_BUTTON' | 'TEASER_BUBBLE' | 'STICKY_BAR' | 'SLIDE_DRAWER' | 'INLINE';
+
+function buildConfigObject(chatbotId: string, baseUrl: string, embedMode: EmbedMode, theme: any): string {
+  const modeStr = embedMode.toLowerCase().replace(/_/g, '-');
+  const lines: string[] = [
+    `  chatbotId: '${chatbotId}'`,
+    `  baseUrl:   '${baseUrl}'`,
+    `  embedMode: '${modeStr}'`,
+  ];
+  if (embedMode === 'INLINE') {
+    lines.push(`  container: 'my-chatbot'  // id of your container div`);
+  }
+  return `{\n${lines.join(',\n')}\n}`;
+}
+
+function generateEmbedCode(stack: TechStack, chatbotId: string, baseUrl: string, embedMode: EmbedMode = 'FLOATING_BUTTON', theme?: any): string {
+  const configObject  = buildConfigObject(chatbotId, baseUrl, embedMode, theme);
+  const inlineDiv     = embedMode === 'INLINE'
+    ? `<!-- Container div for inline mode (place where you want the chat) -->\n<div id="my-chatbot" style="height:600px;border-radius:16px;overflow:hidden;"></div>\n\n`
+    : '';
+
   const loaderSnippet = `(function(w,d,s,o,f,js,fjs){
     w[o]=w[o]||function(){(w[o].q=w[o].q||[]).push(arguments)};
     js=d.createElement(s),fjs=d.getElementsByTagName(s)[0];
@@ -159,22 +178,22 @@ function generateEmbedCode(stack: TechStack, chatbotId: string, baseUrl: string)
 
   switch (stack) {
     case 'vanilla':
-      return `<!-- Add before closing </body> tag -->\n<script>\n  ${loaderSnippet}\n  chatbot('init', ${configObject});\n</script>`;
+      return `${inlineDiv}<!-- Add before closing </body> tag -->\n<script>\n  ${loaderSnippet}\n  chatbot('init', ${configObject});\n</script>`;
 
     case 'react':
-      return `import { useEffect } from 'react';\n\nexport default function App() {\n  useEffect(() => {\n    const script = document.createElement('script');\n    script.src = '${baseUrl}/embed.js';\n    script.async = true;\n    script.onload = () => window.chatbot?.('init', ${configObject});\n    document.body.appendChild(script);\n    return () => document.body.removeChild(script);\n  }, []);\n\n  return <div>{/* your app */}</div>;\n}`;
+      return `import { useEffect } from 'react';\n\nexport default function App() {\n  useEffect(() => {\n    ${embedMode === 'INLINE' ? `// Create container div\n    const container = document.createElement('div');\n    container.id = 'my-chatbot';\n    container.style.height = '600px';\n    document.getElementById('chat-section')?.appendChild(container);\n\n    ` : ''}const script = document.createElement('script');\n    script.src = '${baseUrl}/embed.js';\n    script.async = true;\n    script.onload = () => window.chatbot?.('init', ${configObject});\n    document.body.appendChild(script);\n    return () => document.body.removeChild(script);\n  }, []);\n\n  return <div>${embedMode === 'INLINE' ? '<div id="chat-section" style={{height:\'600px\'}} />' : '{/* your app */}'}</div>;\n}`;
 
     case 'nextjs':
       return `// app/layout.tsx\nimport Script from 'next/script';\n\nexport default function RootLayout({ children }: { children: React.ReactNode }) {\n  return (\n    <html lang="en">\n      <body>\n        {children}\n        <Script\n          id="chatbot-loader"\n          strategy="afterInteractive"\n          dangerouslySetInnerHTML={{\n            __html: \`\n              ${loaderSnippet}\n              chatbot('init', ${configObject});\n            \`\n          }}\n        />\n      </body>\n    </html>\n  );\n}`;
 
     case 'vue':
-      return `<template>\n  <div id="app"><!-- your app --></div>\n</template>\n\n<script>\nexport default {\n  mounted() {\n    const script = document.createElement('script');\n    script.src = '${baseUrl}/embed.js';\n    script.async = true;\n    script.onload = () => window.chatbot?.('init', ${configObject});\n    document.body.appendChild(script);\n  }\n}\n</script>`;
+      return `<template>\n  <div id="app">${embedMode === 'INLINE' ? '\n    <!-- Inline chat container -->\n    <div id="my-chatbot" style="height:600px;border-radius:16px;overflow:hidden;" />' : '<!-- your app -->'}\n  </div>\n</template>\n\n<script>\nexport default {\n  mounted() {\n    const script = document.createElement('script');\n    script.src = '${baseUrl}/embed.js';\n    script.async = true;\n    script.onload = () => window.chatbot?.('init', ${configObject});\n    document.body.appendChild(script);\n  }\n}\n</script>`;
 
     case 'angular':
       return `// app.component.ts\nimport { Component, OnInit } from '@angular/core';\n\n@Component({ selector: 'app-root', templateUrl: './app.component.html' })\nexport class AppComponent implements OnInit {\n  ngOnInit() {\n    const script = document.createElement('script');\n    script.src = '${baseUrl}/embed.js';\n    script.async = true;\n    script.onload = () => (window as any).chatbot?.('init', ${configObject});\n    document.body.appendChild(script);\n  }\n}`;
 
     case 'wordpress':
-      return `<?php\n// Add to functions.php\nfunction add_chatbot_script() { ?>\n  <script>\n    ${loaderSnippet}\n    chatbot('init', ${configObject});\n  </script>\n<?php }\nadd_action('wp_footer', 'add_chatbot_script');\n?>`;
+      return `<?php\n// Add to functions.php\nfunction add_chatbot_script() { ?>\n  ${embedMode === 'INLINE' ? `<!-- Inline container - paste in your page/template -->\n  <div id="my-chatbot" style="height:600px;border-radius:16px;overflow:hidden;"></div>\n\n  ` : ''}<script>\n    ${loaderSnippet}\n    chatbot('init', ${configObject});\n  </script>\n<?php }\nadd_action('wp_footer', 'add_chatbot_script');\n?>`;
 
     case 'shopify':
       return `<!-- Add to theme.liquid before </body> -->\n<!-- Online Store › Themes › Edit code › Layout › theme.liquid -->\n\n<script>\n  ${loaderSnippet}\n  chatbot('init', ${configObject});\n</script>`;
@@ -196,9 +215,18 @@ export default function EmbedPage() {
   const [selectedStack, setSelectedStack] = useState<TechStack>('vanilla');
   const [copied, setCopied] = useState(false);
 
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://chatbots.prabisha.com';
-  const embedCode = generateEmbedCode(selectedStack, chatbotId, baseUrl);
+  const baseUrl   = process.env.NEXT_PUBLIC_APP_URL || 'https://chatbots.prabisha.com';
+  const embedMode = (chatbot?.theme?.embedMode || 'FLOATING_BUTTON') as EmbedMode;
+  const embedCode = generateEmbedCode(selectedStack, chatbotId, baseUrl, embedMode, chatbot?.theme);
   const selectedMeta = TECH_STACKS.find(s => s.id === selectedStack)!;
+
+  const modeLabels: Record<EmbedMode, { label: string; color: string }> = {
+    FLOATING_BUTTON: { label: 'Floating Button',  color: 'bg-blue-100 text-blue-700 border-blue-200' },
+    TEASER_BUBBLE:   { label: 'Teaser Bubble',    color: 'bg-orange-100 text-orange-700 border-orange-200' },
+    STICKY_BAR:      { label: 'Sticky Bar',       color: 'bg-green-100 text-green-700 border-green-200' },
+    SLIDE_DRAWER:    { label: 'Slide Drawer',     color: 'bg-purple-100 text-purple-700 border-purple-200' },
+    INLINE:          { label: 'Inline Embed',     color: 'bg-pink-100 text-pink-700 border-pink-200' },
+  };
 
   function copyToClipboard() {
     navigator.clipboard.writeText(embedCode).then(() => {
@@ -231,6 +259,22 @@ export default function EmbedPage() {
 
   return (
     <div className="space-y-6">
+
+      {/* ── Embed Mode badge ─────────────────────────────────────────────── */}
+      <div className="flex items-center gap-2.5 p-3 rounded-xl border bg-muted/40">
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-medium text-foreground">Active Embed Mode</p>
+          <p className="text-[11px] text-muted-foreground mt-0.5">
+            Configure in <strong>Theme → Embed Style</strong>
+          </p>
+        </div>
+        <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full border ${modeLabels[embedMode].color}`}>
+          {modeLabels[embedMode].label}
+        </span>
+      </div>
+
+      {/* ── Inline mode documentation ─────────────────────────────────── */}
+      {embedMode === 'INLINE' && <InlineModeDocs chatbotId={chatbotId} baseUrl={baseUrl} />}
 
       {/* ── Stack picker ─────────────────────────────────────────────────── */}
       <div className="space-y-2">
@@ -325,6 +369,165 @@ export default function EmbedPage() {
         </Button>
       </div>
 
+    </div>
+  );
+}
+
+// ─── Inline Mode Documentation ────────────────────────────────────────────────
+
+function InlineModeDocs({ chatbotId, baseUrl }: { chatbotId: string; baseUrl: string }) {
+  const [copied, setCopied] = useState<string | null>(null);
+
+  const copy = (text: string, key: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(key);
+      setTimeout(() => setCopied(null), 2000);
+    });
+  };
+
+  const scriptSrc = `${baseUrl}/embed.js`;
+
+  const examples: { key: string; title: string; color: string; code: string; note: string }[] = [
+    {
+      key: 'basic',
+      title: 'Basic — anywhere on page',
+      color: 'bg-blue-500',
+      note: 'Simplest setup. Put the div where you want the chat to appear.',
+      code:
+`<!-- 1. Place this div where you want the chat -->
+<div id="my-chat" style="height:600px; border-radius:16px; overflow:hidden;"></div>
+
+<!-- 2. Add script after the div -->
+<script
+  src="${scriptSrc}"
+  data-chatbot-id="${chatbotId}"
+  data-mode="inline"
+  data-container="my-chat">
+</script>`,
+    },
+    {
+      key: 'sidebar',
+      title: 'Sticky sidebar',
+      color: 'bg-purple-500',
+      note: 'Place the chat in a sticky sidebar next to your content.',
+      code:
+`<aside style="width:380px; position:sticky; top:20px; align-self:flex-start;">
+  <div id="chat-sidebar"
+    style="height:580px; border-radius:16px; overflow:hidden;">
+  </div>
+</aside>
+
+<script
+  src="${scriptSrc}"
+  data-chatbot-id="${chatbotId}"
+  data-mode="inline"
+  data-container="chat-sidebar">
+</script>`,
+    },
+    {
+      key: 'fullpage',
+      title: 'Full-page chat',
+      color: 'bg-green-500',
+      note: 'Dedicated /chat page — chat fills the entire viewport.',
+      code:
+`<!-- Makes the chat fill the full screen -->
+<div id="chat-fullpage"
+  style="position:fixed; inset:0; z-index:50;">
+</div>
+
+<script
+  src="${scriptSrc}"
+  data-chatbot-id="${chatbotId}"
+  data-mode="inline"
+  data-container="chat-fullpage">
+</script>`,
+    },
+    {
+      key: 'autodetect',
+      title: 'Auto-detect (no id needed)',
+      color: 'bg-orange-500',
+      note: 'Add data-chatbot-inline attribute — no container id required.',
+      code:
+`<!-- Script finds this div automatically -->
+<div data-chatbot-inline
+  style="height:600px; border-radius:16px; overflow:hidden;">
+</div>
+
+<script
+  src="${scriptSrc}"
+  data-chatbot-id="${chatbotId}"
+  data-mode="inline">
+</script>`,
+    },
+  ];
+
+  return (
+    <div className="space-y-4 rounded-xl border border-primary/20 bg-primary/5 overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center gap-2.5 px-4 pt-4">
+        <div className="h-7 w-7 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+          <Layers className="h-3.5 w-3.5 text-primary" />
+        </div>
+        <div>
+          <p className="text-sm font-semibold text-foreground">Inline Embed — 4 Ways to Use</p>
+          <p className="text-[11px] text-muted-foreground">Drop a div anywhere on your page — no button, no popup</p>
+        </div>
+      </div>
+
+      {/* Examples */}
+      <div className="px-4 space-y-3">
+        {examples.map((ex) => (
+          <div key={ex.key} className="rounded-lg border border-border/60 overflow-hidden bg-background">
+            {/* Title bar */}
+            <div className="flex items-center justify-between px-3 py-2 bg-muted/40 border-b border-border/40">
+              <div className="flex items-center gap-2">
+                <span className={`w-2 h-2 rounded-full ${ex.color} shrink-0`} />
+                <span className="text-[11px] font-semibold text-foreground">{ex.title}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => copy(ex.code, ex.key)}
+                className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-200 transition-colors"
+              >
+                {copied === ex.key
+                  ? <><Check className="h-2.5 w-2.5" /> Copied</>
+                  : <><Copy className="h-2.5 w-2.5" /> Copy</>
+                }
+              </button>
+            </div>
+            {/* Note */}
+            <p className="text-[11px] text-muted-foreground px-3 pt-2">{ex.note}</p>
+            {/* Code */}
+            <pre className="bg-zinc-950 text-zinc-100 px-4 py-3 text-[10.5px] leading-relaxed overflow-x-auto font-mono mt-2">
+              <code>{ex.code}</code>
+            </pre>
+          </div>
+        ))}
+      </div>
+
+      {/* Rules */}
+      <div className="mx-4 mb-4 rounded-lg bg-amber-50 border border-amber-200 p-3">
+        <div className="flex items-start gap-2">
+          <Info className="h-3.5 w-3.5 text-amber-600 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p className="text-[10px] font-semibold text-amber-800 uppercase tracking-wide">Rules for Inline Mode</p>
+            <ul className="space-y-0.5">
+              {[
+                'Container div MUST have an explicit height (e.g. height:600px)',
+                'Script tag must come AFTER the container div in the HTML',
+                'Only one inline chatbot per page is supported',
+                'Use data-container="div-id" OR the data-chatbot-inline attribute',
+                'Width auto-fills the container — no need to set it',
+              ].map((rule, i) => (
+                <li key={i} className="text-[10px] text-amber-700 flex gap-1.5">
+                  <span className="shrink-0 font-bold">{i + 1}.</span>
+                  <span>{rule}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
