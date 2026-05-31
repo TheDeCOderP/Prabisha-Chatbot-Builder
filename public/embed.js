@@ -109,7 +109,7 @@
     autoOpen:     false,
     delay:        1000,
     position:     'bottom-right',
-    buttonColor:  '#ffffff',
+    buttonColor:  '#3b82f6',
     buttonTextColor: '#ffffff',
     buttonBorderColor: '#3b82f6',
     closeBtnBgColor: '#DF6A2E',
@@ -121,7 +121,9 @@
     widgetTop: null, widgetBottom: null, widgetLeft: null, widgetRight: null,
     widgetShape: 'round',
     windowWidth: 420, windowHeight: 600, windowBorderRadius: 16,
-    iconUrl: null,
+    iconUrl: null,   // IMAGE or SVG URL — used as <img src>
+    iconEmoji: null, // Emoji string — rendered as <span>, never as <img>
+    iconType: 'EMOJI', // 'EMOJI' | 'IMAGE' | 'SVG'
     // Teaser
     teaserEnabled: true,
     teaserMessage: '👋 Hi! Need help finding what you\'re looking for?',
@@ -189,7 +191,7 @@
 
     // ── Step 2: Fetch DB config in background and silently patch the UI ───────
     try {
-      const response = await fetch(`${config.baseUrl}/api/chatbots/${config.chatbotId}`);
+      const response = await fetch(`${config.baseUrl}/api/chatbots/${config.chatbotId}`, { cache: 'no-cache' });
       if (!response.ok) return;
       const db = await response.json();
 
@@ -201,11 +203,17 @@
       const widgetIconType = th.widgetIconType || 'EMOJI';
       const fallbackUrl    = db.icon || db.avatar || null;
 
-      config.iconUrl      = widgetIconType === 'EMOJI' ? null : (widgetIcon || fallbackUrl);
+      const rawIconUrl    = widgetIconType === 'EMOJI' ? null : (widgetIcon || fallbackUrl);
+      // Resolve relative URLs so images work when widget is embedded on external sites
+      config.iconUrl      = rawIconUrl && !/^(https?:\/\/|\/\/|data:)/.test(rawIconUrl)
+        ? config.baseUrl + (rawIconUrl.startsWith('/') ? rawIconUrl : '/' + rawIconUrl)
+        : rawIconUrl;
       config.iconEmoji    = widgetIconType === 'EMOJI' ? (widgetIcon || null) : null;
       config.iconType     = widgetIconType;
 
       updateBtnIcon(config.iconUrl, config.iconEmoji);
+      updateDrawerTabIcon(config.iconUrl, config.iconEmoji);
+      updateStickyBarIcon(config.iconUrl, config.iconEmoji, config.stickyBarTextColor);
 
       // Re-apply visual theme settings that may differ from defaults
       const prevSize     = config.widgetSize;
@@ -282,20 +290,16 @@
       }
 
       // Silently re-apply button position/size/color if they changed from defaults
-      const posChanged   = config.position !== prevPos || config.widgetMargin !== prevMargin || config.widgetCustomPosition !== prevCustom;
-      const sizeChanged  = config.widgetSize !== prevSize || config.widgetSizeMobile !== prevSizeMob;
-      const colorChanged = config.buttonColor !== prevBtnColor || config.buttonBorderColor !== prevBorder || config.widgetShape !== prevShape;
-
-      if (button && (posChanged || sizeChanged || colorChanged)) {
+      // Always apply theme to button after API data loads — ensures external sites always show correct styling
+      if (button) {
         const isMob = window.innerWidth < 768;
         const sz    = isMob ? config.widgetSizeMobile : config.widgetSize;
-        button.style.width       = sz + 'px';
-        button.style.height      = sz + 'px';
-        button.style.borderRadius      = getBtnRadius();
-        button.style.backgroundColor   = config.buttonColor;
-        button.style.border            = `3px solid ${config.buttonBorderColor || config.buttonColor}`;
+        button.style.width            = sz + 'px';
+        button.style.height           = sz + 'px';
+        button.style.borderRadius     = getBtnRadius();
+        button.style.backgroundColor  = config.buttonColor;
+        button.style.border           = `3px solid ${config.buttonBorderColor || config.buttonColor}`;
         applyBtnPosition(button);
-        // Re-position the chat window to match new button size
         if (iframe) applyWinPosition(iframe, sz);
       }
 
@@ -341,6 +345,49 @@
     }
   }
 
+
+  function updateDrawerTabIcon(url, emoji) {
+    if (!drawerTab) return;
+    // Remove any existing icon node (first child before the label span)
+    const first = drawerTab.firstChild;
+    if (first && first.tagName !== 'SPAN' || (first && first.tagName === 'SPAN' && !first.textContent.trim().match(/[a-zA-Z]/))) {
+      first.remove();
+    }
+    const iconNode = document.createElement(emoji ? 'span' : 'div');
+    if (emoji) {
+      iconNode.textContent = emoji;
+      iconNode.style.cssText = 'font-size:18px;line-height:1;';
+    } else if (url) {
+      const img = document.createElement('img');
+      img.src = url;
+      img.style.cssText = 'width:24px;height:24px;object-fit:cover;border-radius:4px;';
+      img.onerror = function () { iconNode.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M20 2H4C2.9 2 2 2.9 2 4V22L6 18H20C21.1 18 22 17.1 22 16V4C22 2.9 21.1 2 20 2Z"/></svg>`; };
+      iconNode.appendChild(img);
+    } else {
+      iconNode.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M20 2H4C2.9 2 2 2.9 2 4V22L6 18H20C21.1 18 22 17.1 22 16V4C22 2.9 21.1 2 20 2Z"/></svg>`;
+    }
+    drawerTab.insertBefore(iconNode, drawerTab.firstChild);
+  }
+
+  function updateStickyBarIcon(url, emoji, textColor) {
+    if (!stickyBarEl) return;
+    const iconDiv = stickyBarEl.querySelector('div');
+    if (!iconDiv) return;
+    iconDiv.innerHTML = '';
+    iconDiv.textContent = '';
+    if (emoji) {
+      iconDiv.textContent = emoji;
+      iconDiv.style.fontSize = '20px';
+    } else if (url) {
+      const img = document.createElement('img');
+      img.src = url;
+      img.style.cssText = 'width:24px;height:24px;object-fit:cover;border-radius:50%;';
+      img.onerror = function () { iconDiv.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="${textColor || '#fff'}"><path d="M20 2H4C2.9 2 2 2.9 2 4V22L6 18H20C21.1 18 22 17.1 22 16V4C22 2.9 21.1 2 20 2Z"/></svg>`; };
+      iconDiv.appendChild(img);
+    } else {
+      iconDiv.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="${textColor || '#fff'}"><path d="M20 2H4C2.9 2 2 2.9 2 4V22L6 18H20C21.1 18 22 17.1 22 16V4C22 2.9 21.1 2 20 2Z"/></svg>`;
+    }
+  }
 
   // ─── Iframe factory ────────────────────────────────────────────────────────
 
@@ -685,9 +732,23 @@
       fontFamily:      'inherit',
     });
 
-    // Icon
+    // Icon — use chatbot's configured icon (emoji / image) or default SVG
     const iconDiv = document.createElement('div');
-    iconDiv.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="${config.stickyBarTextColor}" xmlns="http://www.w3.org/2000/svg"><path d="M20 2H4C2.9 2 2 2.9 2 4V22L6 18H20C21.1 18 22 17.1 22 16V4C22 2.9 21.1 2 20 2Z"/></svg>`;
+    iconDiv.style.cssText = 'display:flex;align-items:center;justify-content:center;width:28px;height:28px;flex-shrink:0;';
+    if (config.iconEmoji) {
+      iconDiv.textContent = config.iconEmoji;
+      iconDiv.style.fontSize = '20px';
+    } else if (config.iconUrl) {
+      const img = document.createElement('img');
+      img.src = config.iconUrl;
+      img.style.cssText = 'width:24px;height:24px;object-fit:cover;border-radius:50%;';
+      img.onerror = function () {
+        iconDiv.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="${config.stickyBarTextColor}" xmlns="http://www.w3.org/2000/svg"><path d="M20 2H4C2.9 2 2 2.9 2 4V22L6 18H20C21.1 18 22 17.1 22 16V4C22 2.9 21.1 2 20 2Z"/></svg>`;
+      };
+      iconDiv.appendChild(img);
+    } else {
+      iconDiv.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="${config.stickyBarTextColor}" xmlns="http://www.w3.org/2000/svg"><path d="M20 2H4C2.9 2 2 2.9 2 4V22L6 18H20C21.1 18 22 17.1 22 16V4C22 2.9 21.1 2 20 2Z"/></svg>`;
+    }
 
     // Text
     const textEl = document.createElement('span');
@@ -819,10 +880,21 @@
       gap: '6px',
     });
 
-    if (config.iconUrl) {
+    // Drawer tab icon — respect iconType same as launcher button
+    if (config.iconEmoji) {
+      const emojiSpan = document.createElement('span');
+      emojiSpan.textContent = config.iconEmoji;
+      emojiSpan.style.cssText = 'font-size:18px;line-height:1;';
+      drawerTab.appendChild(emojiSpan);
+    } else if (config.iconUrl) {
       const img = document.createElement('img');
       img.src = config.iconUrl;
       img.style.cssText = 'width:24px;height:24px;object-fit:cover;border-radius:4px;';
+      img.onerror = function () {
+        img.replaceWith(Object.assign(document.createElement('span'), {
+          innerHTML: `<svg width="18" height="18" viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg"><path d="M20 2H4C2.9 2 2 2.9 2 4V22L6 18H20C21.1 18 22 17.1 22 16V4C22 2.9 21.1 2 20 2Z"/></svg>`,
+        }));
+      };
       drawerTab.appendChild(img);
     } else {
       drawerTab.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg"><path d="M20 2H4C2.9 2 2 2.9 2 4V22L6 18H20C21.1 18 22 17.1 22 16V4C22 2.9 21.1 2 20 2Z"/></svg>`;
