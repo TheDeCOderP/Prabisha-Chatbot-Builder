@@ -78,72 +78,64 @@ console.log('Received theme update request:', { chatbotId, body });
       return NextResponse.json({ error: 'Chatbot not found' }, { status: 404 });
     }
 
+    const themeData = {
+      // Widget settings
+      widgetIcon: body.widgetIcon,
+      widgetIconType: body.widgetIconType,
+      widgetText: body.widgetText,
+      widgetSize: body.widgetSize,
+      widgetSizeMobile: body.widgetSizeMobile,
+      widgetColor: body.widgetColor,
+      widgetShape: body.widgetShape,
+      widgetBorder: body.widgetBorder,
+      widgetBgColor: body.widgetBgColor,
+      widgetPosition: body.widgetPosition,
+      widgetPadding: body.widgetPadding,
+      widgetMargin: body.widgetMargin,
+      popup_onload: body.popup_onload,
+      // Custom position
+      widgetCustomPosition: body.widgetCustomPosition,
+      widgetTop: body.widgetTop ?? null,
+      widgetBottom: body.widgetBottom ?? null,
+      widgetLeft: body.widgetLeft ?? null,
+      widgetRight: body.widgetRight ?? null,
+      // Window size
+      windowWidth: body.windowWidth,
+      windowHeight: body.windowHeight,
+      // Window style
+      windowBorderRadius: body.windowBorderRadius,
+      fontSize: body.fontSize,
+      // Feature toggles
+      showPoweredBy: body.showPoweredBy,
+      showMic: body.showMic,
+      showEmoji: body.showEmoji,
+      showTTS: body.showTTS,
+      showNewChat: body.showNewChat,
+      showLanguageSwitcher: body.showLanguageSwitcher,
+      // Lead card
+      leadCardMessage: body.leadCardMessage,
+      // Window theme colors
+      messageBgColor: body.messageBgColor,
+      headerBgColor: body.headerBgColor,
+      headerTextColor: body.headerTextColor,
+      botMessageBgColor: body.botMessageBgColor,
+      botMessageTextColor: body.botMessageTextColor,
+      userMessageBgColor: body.userMessageBgColor,
+      userMessageTextColor: body.userMessageTextColor,
+      inputBgColor: body.inputBgColor,
+      inputBorderColor: body.inputBorderColor,
+      inputButtonColor: body.inputButtonColor,
+      closeButtonColor: body.closeButtonColor,
+      closeButtonBgColor: body.closeButtonBgColor,
+      quickSuggestionBgColor: body.quickSuggestionBgColor,
+      quickSuggestionTextColor: body.quickSuggestionTextColor,
+    };
+
     // Update or create theme
     const theme = await prisma.chatbotTheme.upsert({
-      where: {
-        chatbotId: chatbotId,
-      },
-      update: {
-        // Widget settings
-        widgetIcon: body.widgetIcon,
-        widgetIconType: body.widgetIconType,
-        widgetText: body.widgetText,
-        widgetSize: body.widgetSize,
-        widgetSizeMobile: body.widgetSizeMobile,
-        widgetColor: body.widgetColor,
-        widgetShape: body.widgetShape,
-        widgetBorder: body.widgetBorder,
-        widgetBgColor: body.widgetBgColor,
-        widgetPosition: body.widgetPosition,
-        widgetPadding: body.widgetPadding,
-        widgetMargin: body.widgetMargin,
-        popup_onload: body.popup_onload,
-        // Window theme colors
-        headerBgColor: body.headerBgColor,
-        headerTextColor: body.headerTextColor,
-        botMessageBgColor: body.botMessageBgColor,
-        botMessageTextColor: body.botMessageTextColor,
-        userMessageBgColor: body.userMessageBgColor,
-        userMessageTextColor: body.userMessageTextColor,
-        inputBgColor: body.inputBgColor,
-        inputBorderColor: body.inputBorderColor,
-        inputButtonColor: body.inputButtonColor,
-        closeButtonColor: body.closeButtonColor,
-        closeButtonBgColor: body.closeButtonBgColor,
-        quickSuggestionBgColor: body.quickSuggestionBgColor,
-        quickSuggestionTextColor: body.quickSuggestionTextColor,
-      },
-      create: {
-        chatbotId: chatbotId,
-        // Widget settings
-        widgetIcon: body.widgetIcon,
-        widgetIconType: body.widgetIconType,
-        widgetText: body.widgetText,
-        widgetSize: body.widgetSize,
-        widgetSizeMobile: body.widgetSizeMobile,
-        widgetColor: body.widgetColor,
-        widgetShape: body.widgetShape,
-        widgetBorder: body.widgetBorder,
-        widgetBgColor: body.widgetBgColor,
-        widgetPosition: body.widgetPosition,
-        widgetPadding: body.widgetPadding,
-        widgetMargin: body.widgetMargin,
-        popup_onload: body.popup_onload,
-        // Window theme colors
-        headerBgColor: body.headerBgColor,
-        headerTextColor: body.headerTextColor,
-        botMessageBgColor: body.botMessageBgColor,
-        botMessageTextColor: body.botMessageTextColor,
-        userMessageBgColor: body.userMessageBgColor,
-        userMessageTextColor: body.userMessageTextColor,
-        inputBgColor: body.inputBgColor,
-        inputBorderColor: body.inputBorderColor,
-        inputButtonColor: body.inputButtonColor,
-        closeButtonColor: body.closeButtonColor,
-        closeButtonBgColor: body.closeButtonBgColor,
-        quickSuggestionBgColor: body.quickSuggestionBgColor,
-        quickSuggestionTextColor: body.quickSuggestionTextColor,
-      },
+      where: { chatbotId },
+      update: themeData,
+      create: { chatbotId, ...themeData },
     });
 
     return NextResponse.json({ theme });

@@ -783,6 +783,34 @@ export default function ChatbotWidget({
     setIsInitialized(true);
     window.parent.postMessage({ type: 'chatbot-loaded', chatbotId }, '*');
   }, [chatbotId]);
+
+  // Once chatbot data is loaded, send theme sizing/position to parent embed script
+  useEffect(() => {
+    if (!chatbot || !chatbotId) return;
+    const th = chatbot.theme || {};
+    window.parent.postMessage({
+      type: 'chatbot-theme',
+      chatbotId,
+      theme: {
+        windowWidth:         th.windowWidth         ?? 420,
+        windowHeight:        th.windowHeight        ?? 600,
+        windowBorderRadius:  th.windowBorderRadius  ?? 16,
+        widgetCustomPosition: th.widgetCustomPosition ?? false,
+        widgetTop:    th.widgetTop    ?? null,
+        widgetBottom: th.widgetBottom ?? 20,
+        widgetLeft:   th.widgetLeft   ?? null,
+        widgetRight:  th.widgetRight  ?? 20,
+        widgetPosition: th.widgetPosition ?? 'BottomRight',
+        widgetMargin:   th.widgetMargin   ?? 20,
+        widgetColor:    th.widgetColor    ?? '#3b82f6',
+        widgetSize:     th.widgetSize     ?? 70,
+        widgetSizeMobile: th.widgetSizeMobile ?? 60,
+        widgetShape:    th.widgetShape    ?? 'ROUND',
+        widgetBgColor:  th.widgetBgColor  ?? '#FFFFFF',
+        popup_onload:   th.popup_onload   ?? false,
+      },
+    }, '*');
+  }, [chatbot, chatbotId]);
  
   useEffect(() => {
     if (messages.length > 0 && !hasSubmittedLead && conversationId) {
@@ -1025,30 +1053,53 @@ function ChatBot({
 
   // All visual theme values come from chatbot.theme
   const th = chatbot.theme || {};
-  const primaryLight = th.inputBgColor      || '#f8fafc';
-  const borderColor  = th.inputBorderColor  || '#e2e8f0';
+  const primaryLight = th.inputBgColor   || '#f8fafc';
+  const borderColor  = th.inputBorderColor || '#e2e8f0';
+  const windowW = th.windowWidth || 420;
+  const windowH = th.windowHeight || 600;
+  const borderR = th.windowBorderRadius ?? 16;
 
   const shellClass = [
-    isMobile || isEmbedded
-      ? 'w-full h-full rounded-none'
-      : 'w-[95vw] sm:w-[420px] h-[600px] rounded-2xl',
+    isMobile || isEmbedded ? 'w-full h-full rounded-none' : `rounded-[${borderR}px]`,
     'flex flex-col relative overflow-hidden',
   ].join(' ');
 
+  const shellStyle = (!isMobile && !isEmbedded)
+    ? { width: `${windowW}px`, height: `${windowH}px`, borderRadius: `${borderR}px` }
+    : {};
+
+  const getPositionStyle = (): React.CSSProperties => {
+    if (isEmbedded || isMobile) return {};
+    if (th.widgetCustomPosition) {
+      const style: React.CSSProperties = { position: 'fixed', zIndex: 50 };
+      if (th.widgetTop    != null) style.top    = `${th.widgetTop}px`;
+      if (th.widgetBottom != null) style.bottom = `${th.widgetBottom}px`;
+      if (th.widgetLeft   != null) style.left   = `${th.widgetLeft}px`;
+      if (th.widgetRight  != null) style.right  = `${th.widgetRight}px`;
+      return style;
+    }
+    const pos = th.widgetPosition || 'BottomRight';
+    const margin = `${th.widgetMargin ?? 20}px`;
+    const style: React.CSSProperties = { position: 'fixed', zIndex: 50 };
+    if (pos.includes('Bottom')) style.bottom = margin; else style.top = margin;
+    if (pos.includes('Right'))  style.right  = margin; else style.left = margin;
+    return style;
+  };
+
   const positionClass = isEmbedded
     ? 'w-full h-full'
-    : `fixed ${isMobile ? 'inset-0' : 'bottom-6 right-6'} z-50`;
+    : isMobile ? 'fixed inset-0 z-50' : 'fixed z-50';
 
   if (!hasLoadedInitialMessages) {
     return (
-      <div className={positionClass}>
-        <div className={shellClass}><LoadingSpinner /></div>
+      <div className={positionClass} style={getPositionStyle()}>
+        <div className={shellClass} style={shellStyle}><LoadingSpinner /></div>
       </div>
     );
   }
 
   return (
-    <div className={positionClass} dir={dir}>
+    <div className={positionClass} style={getPositionStyle()} dir={dir}>
       {isOpen ? (
         <div
           className={[
@@ -1056,7 +1107,7 @@ function ChatBot({
             'transition-all duration-300 ease-out',
             isClosing ? 'animate-out slide-out-to-bottom-full' : 'animate-in slide-in-from-bottom-full',
           ].join(' ')}
-          style={{ backgroundColor: primaryLight, border: `1px solid ${borderColor}` }}
+          style={{ backgroundColor: primaryLight, border: `1px solid ${borderColor}`, ...shellStyle }}
         >
           <ChatHeader
             onClose={handleClose}
@@ -1123,14 +1174,16 @@ function ChatBot({
             availableLanguages={availableLanguages}
           />
 
-          <div className="flex items-center justify-end gap-1.5 p-1 mr-4">
-            <span className="text-xs font-medium tracking-wide text-gray-400 lowercase">
-              {t('poweredBy')}
-            </span>
-            <Link target="_blank" rel="noopener noreferrer" href='https://prabisha.com/' className="cursor-pointer text-sm font-bold text-[#1320AA] hover:text-[#1320AA] transition-colors">
-              Prabisha
-            </Link>
-          </div>
+          {(chatbot.theme?.showPoweredBy ?? true) && (
+            <div className="flex items-center justify-end gap-1.5 p-1 mr-4">
+              <span className="text-xs font-medium tracking-wide text-gray-400 lowercase">
+                {t('poweredBy')}
+              </span>
+              <Link target="_blank" rel="noopener noreferrer" href='https://prabisha.com/' className="cursor-pointer text-sm font-bold text-[#1320AA] hover:text-[#1320AA] transition-colors">
+                Prabisha
+              </Link>
+            </div>
+          )}
         </div>
       ) : (
         !isEmbedded && !isMobile && (
@@ -1295,11 +1348,14 @@ function ChatMessages({
   const [activeSpeakingId, setActiveSpeakingId] = useState<string | null>(null);
 
   const th = chatbot.theme || {};
-  const botBg    = th.botMessageBgColor   || '#FFFFFF';
-  const botText  = th.botMessageTextColor || '#1E293B';
-  const userBg   = th.userMessageBgColor  || '#111CA8';
-  const userText = th.userMessageTextColor|| '#ffffff';
-  const accentColor = th.inputButtonColor || '#DF6A2E';
+  const botBg    = th.botMessageBgColor    || '#FFFFFF';
+  const botText  = th.botMessageTextColor  || '#1E293B';
+  const userBg   = th.userMessageBgColor   || '#111CA8';
+  const userText = th.userMessageTextColor || '#ffffff';
+  const accentColor = th.inputButtonColor  || '#DF6A2E';
+  const msgBg    = th.messageBgColor       || '#f8fafc';
+  const fontSize = th.fontSize             || 14;
+  const showTTS  = th.showTTS              ?? true;
 
   // Icon src: avatar preferred, fall back to icon
   const chatIconSrc = chatbot.icon || chatbot.avatar || '/icons/logo1.png';
@@ -1376,7 +1432,7 @@ function ChatMessages({
               {message.createdAt && (
                 <div className="text-[10px] opacity-70">{formatTime(message.createdAt)}</div>
               )}
-              {!isUser && (
+              {!isUser && showTTS && (
                 <button
                   onClick={() => handleSpeak(id, message.content)}
                   className={[
@@ -1441,7 +1497,7 @@ function ChatMessages({
             className="rounded-2xl rounded-tl-none px-4 py-3 border border-black/5 shadow-[0_4px_16px_rgba(0,0,0,0.05)] text-[13.5px] leading-relaxed"
             style={{ backgroundColor: botBg, color: botText }}
           >
-            <p className="mb-3">Before we continue, mind sharing a few quick details? Totally optional.</p>
+            <p className="mb-3">{chatbot.theme?.leadCardMessage || "Before we continue, mind sharing a few quick details? Totally optional."}</p>
             <div className="flex gap-2">
               <button
                 onClick={onLeadAction}
@@ -1467,7 +1523,8 @@ function ChatMessages({
   return (
     <div
       ref={chatContainerRef}
-      className="flex-1 overflow-y-auto overflow-x-hidden bg-linear-to-b from-background to-muted/30 relative"
+      className="flex-1 overflow-y-auto overflow-x-hidden relative"
+      style={{ backgroundColor: msgBg, fontSize: `${fontSize}px` }}
     >
       <div className="p-4 space-y-6">
         {messages.map((message, index) => {
@@ -1560,9 +1617,13 @@ function ChatInput({
   selectedLang, onLanguageChange, t, availableLanguages,
 }: ChatInputProps) {
   const th = chatbot?.theme || {};
-  const accentColor = th.inputButtonColor  || '#DD692E';
-  const inputBg     = th.inputBgColor      || '#ffffff';
-  const borderColor = th.inputBorderColor  || '#e2e8f0';
+  const accentColor  = th.inputButtonColor  || '#DD692E';
+  const inputBg      = th.inputBgColor      || '#ffffff';
+  const borderColor  = th.inputBorderColor  || '#e2e8f0';
+  const showMic      = th.showMic           ?? true;
+  const showEmoji    = th.showEmoji         ?? true;
+  const showNewChat  = th.showNewChat       ?? true;
+  const showLangSwitch = th.showLanguageSwitcher ?? true;
   const [showPicker, setShowPicker] = useState(false);
 
   const onEmojiClick = (emojiData: EmojiClickData) => {
@@ -1574,7 +1635,7 @@ function ChatInput({
       className="border-t px-2 pt-2 shrink-0 relative transition-all duration-200"
       style={{ backgroundColor: inputBg, borderColor }}
     >
-      {showPicker && (
+      {showPicker && showEmoji && (
         <div className="absolute bottom-full left-0 w-full z-50 animate-in fade-in slide-in-from-bottom-2">
           <div className="flex flex-col border-t bg-card shadow-2xl">
             <div className="flex items-center justify-between p-2 border-b bg-muted/50">
@@ -1621,15 +1682,17 @@ function ChatInput({
 
             <PromptInputToolbar>
               <PromptInputTools>
-                <PromptInputButton
-                  type="button" size="sm" variant="ghost"
-                  onClick={(e) => { e.preventDefault(); setShowPicker(!showPicker); }}
-                  className={`${showPicker ? 'bg-muted' : ''} cursor-pointer`}
-                >
-                  <SmilePlus className="h-4 w-4" />
-                </PromptInputButton>
+                {showEmoji && (
+                  <PromptInputButton
+                    type="button" size="sm" variant="ghost"
+                    onClick={(e) => { e.preventDefault(); setShowPicker(!showPicker); }}
+                    className={`${showPicker ? 'bg-muted' : ''} cursor-pointer`}
+                  >
+                    <SmilePlus className="h-4 w-4" />
+                  </PromptInputButton>
+                )}
 
-                {browserSupportsSpeechRecognition && (
+                {showMic && browserSupportsSpeechRecognition && (
                   <PromptInputButton
                     type="button" size="sm" variant="ghost"
                     onClick={onToggleMicrophone}
@@ -1639,19 +1702,23 @@ function ChatInput({
                   </PromptInputButton>
                 )}
 
-                <PromptInputButton
-                  type="button" size="sm" variant="ghost"
-                  className={`rounded-full cursor-pointer ${isMicrophoneOn ? 'bg-red-100 text-red-600' : 'hover:bg-gray-100'}`}
-                  onClick={onNewChat}
-                >
-                  <RefreshCw className="h-4 w-4" />
-                </PromptInputButton>
+                {showNewChat && (
+                  <PromptInputButton
+                    type="button" size="sm" variant="ghost"
+                    className={`rounded-full cursor-pointer ${isMicrophoneOn ? 'bg-red-100 text-red-600' : 'hover:bg-gray-100'}`}
+                    onClick={onNewChat}
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                  </PromptInputButton>
+                )}
 
-                <LanguageSelector
-                  currentLang={selectedLang}
-                  onChange={onLanguageChange}
-                  languages={availableLanguages}
-                />
+                {showLangSwitch && (
+                  <LanguageSelector
+                    currentLang={selectedLang}
+                    onChange={onLanguageChange}
+                    languages={availableLanguages}
+                  />
+                )}
               </PromptInputTools>
             </PromptInputToolbar>
           </div>

@@ -1,13 +1,14 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
-import { Loader2, Save, ChevronLeft, MessageSquare, Palette, Layout, User, ImageIcon } from "lucide-react"
+import { Loader2, Save, ChevronLeft, MessageSquare, Palette, Layout, User, ImageIcon, ToggleLeft, Type } from "lucide-react"
 import Image from "next/image"
 import { toast } from "sonner"
 
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
+import { Switch } from "@/components/ui/switch"
 
 interface WindowThemeFormProps {
   onBack: () => void
@@ -32,25 +33,37 @@ export function WindowThemeForm({
     // Header Colors
     headerBgColor: "#1320AA",
     headerTextColor: "#ffffff",
-    
+
     // Message Bubble Colors
     botMessageBgColor: "#f1f5f9",
     botMessageTextColor: "#0f172a",
     userMessageBgColor: "#1320AA",
     userMessageTextColor: "#ffffff",
-    
+
     // Input Area Colors
     inputBgColor: "#ffffff",
     inputBorderColor: "#e2e8f0",
     inputButtonColor: "#DD692E",
-    
+
     // Close Button Colors
     closeButtonColor: "#000000",
     closeButtonBgColor: "#DD692E",
-    
+
     // Quick Suggestions Colors
     quickSuggestionBgColor: "#ffffff",
     quickSuggestionTextColor: "#0f172a",
+
+    // New: Window Style
+    messageBgColor: "#f8fafc",
+    windowBorderRadius: 16,
+    fontSize: 14,
+
+    // New: Feature Toggles
+    showPoweredBy: true,
+    showTTS: true,
+
+    // New: Lead Card
+    leadCardMessage: "Before we continue, mind sharing a few quick details? Totally optional.",
   })
 
   // Separate state for avatar (from Chatbot model, not theme)
@@ -83,6 +96,12 @@ export function WindowThemeForm({
         closeButtonBgColor: initial.closeButtonBgColor || "#DD692E",
         quickSuggestionBgColor: initial.quickSuggestionBgColor || "#ffffff",
         quickSuggestionTextColor: initial.quickSuggestionTextColor || "#0f172a",
+        messageBgColor: initial.messageBgColor || "#f8fafc",
+        windowBorderRadius: initial.windowBorderRadius ?? 16,
+        fontSize: initial.fontSize ?? 14,
+        showPoweredBy: initial.showPoweredBy ?? true,
+        showTTS: initial.showTTS ?? true,
+        leadCardMessage: initial.leadCardMessage || "Before we continue, mind sharing a few quick details? Totally optional.",
       })
       
       // Initialize avatar from chatbotData
@@ -220,11 +239,7 @@ export function WindowThemeForm({
         }
       }
       
-      // Save theme colors
-      await onSave({
-        ...initial,
-        ...formData,
-      });
+      await onSave({ ...initial, ...formData });
       
     } catch (error) {
       console.error('Error saving settings:', error);
@@ -337,8 +352,8 @@ export function WindowThemeForm({
   )
 
   return (
-    <>
-      <div className="border-b py-4 flex items-center justify-between">
+    <div className="flex flex-col">
+      <div className="border-b py-4 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" onClick={onBack} className="h-8 w-8">
             <ChevronLeft className="w-4 h-4" />
@@ -350,7 +365,7 @@ export function WindowThemeForm({
         </div>
       </div>
 
-      <div className="space-y-6 py-4 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 16rem)' }}>
+      <div className="space-y-6 py-4 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 22rem)' }}>
         
         {/* Avatar Section - Separate from theme colors */}
         <div className="space-y-4">
@@ -483,34 +498,141 @@ export function WindowThemeForm({
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <ColorPicker 
-              label="Suggestion Background" 
+            <ColorPicker
+              label="Suggestion Background"
               value={formData.quickSuggestionBgColor}
               onChange={(v) => setFormData({ ...formData, quickSuggestionBgColor: v })}
             />
-            <ColorPicker 
-              label="Suggestion Text" 
+            <ColorPicker
+              label="Suggestion Text"
               value={formData.quickSuggestionTextColor}
               onChange={(v) => setFormData({ ...formData, quickSuggestionTextColor: v })}
             />
           </div>
         </div>
 
-        {/* Action Buttons */}
-        <div className="sticky bottom-0 bg-background border-t pt-4 mt-6 flex gap-2">
-          <Button variant="outline" onClick={onBack} className="flex-1">
-            Cancel
-          </Button>
-          <Button onClick={handleSubmit} disabled={isLoading || isAvatarLoading} className="flex-1">
-            {(isLoading || isAvatarLoading) ? (
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-            ) : (
-              <Save className="w-4 h-4 mr-2" />
-            )}
-            Save Window Settings
-          </Button>
+        {/* Message Area Background */}
+        <div className="space-y-4 border-t pt-4">
+          <div className="flex items-center gap-2 text-sm font-semibold">
+            <Palette className="w-4 h-4" />
+            Message Area Background
+          </div>
+          <ColorPicker
+            label="Background Color"
+            value={formData.messageBgColor}
+            onChange={(v) => setFormData({ ...formData, messageBgColor: v })}
+          />
         </div>
+
+        {/* Window Style */}
+        <div className="space-y-4 border-t pt-4">
+          <div className="flex items-center gap-2 text-sm font-semibold">
+            <Type className="w-4 h-4" />
+            Window Style
+          </div>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <Label className="text-xs">Font Size</Label>
+                <span className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded">{formData.fontSize}px</span>
+              </div>
+              <input
+                type="range"
+                min={11} max={18} step={1}
+                value={formData.fontSize}
+                onChange={(e) => setFormData({ ...formData, fontSize: Number(e.target.value) })}
+                className="w-full accent-primary"
+              />
+              <div className="flex justify-between text-[10px] text-muted-foreground">
+                <span>11px (small)</span><span>18px (large)</span>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <Label className="text-xs">Window Corner Radius</Label>
+                <span className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded">{formData.windowBorderRadius}px</span>
+              </div>
+              <input
+                type="range"
+                min={0} max={32} step={2}
+                value={formData.windowBorderRadius}
+                onChange={(e) => setFormData({ ...formData, windowBorderRadius: Number(e.target.value) })}
+                className="w-full accent-primary"
+              />
+              <div className="flex justify-between text-[10px] text-muted-foreground">
+                <span>0 (sharp)</span><span>32 (very rounded)</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Feature Toggles */}
+        <div className="space-y-3 border-t pt-4">
+          <div className="flex items-center gap-2 text-sm font-semibold">
+            <ToggleLeft className="w-4 h-4" />
+            Display Options
+          </div>
+
+          <div className="divide-y divide-border rounded-lg border px-3">
+            <div className="flex items-center justify-between py-2.5">
+              <div>
+                <p className="text-xs font-medium">Read Aloud (TTS)</p>
+                <p className="text-[10px] text-muted-foreground">Show speak button on bot messages</p>
+              </div>
+              <Switch
+                checked={formData.showTTS}
+                onCheckedChange={(v) => setFormData({ ...formData, showTTS: v })}
+              />
+            </div>
+            <div className="flex items-center justify-between py-2.5">
+              <div>
+                <p className="text-xs font-medium">Powered by Prabisha</p>
+                <p className="text-[10px] text-muted-foreground">Show branding at bottom of chat window</p>
+              </div>
+              <Switch
+                checked={formData.showPoweredBy}
+                onCheckedChange={(v) => setFormData({ ...formData, showPoweredBy: v })}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Lead Card Message */}
+        <div className="space-y-3 border-t pt-4">
+          <div className="flex items-center gap-2 text-sm font-semibold">
+            <MessageSquare className="w-4 h-4" />
+            Lead Card Message
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            Text shown when asking users to share their details before continuing.
+          </p>
+          <textarea
+            value={formData.leadCardMessage}
+            onChange={(e) => setFormData({ ...formData, leadCardMessage: e.target.value })}
+            rows={3}
+            placeholder="Before we continue, mind sharing a few quick details? Totally optional."
+            className="w-full px-3 py-2 text-xs border rounded-md bg-background resize-none focus:outline-none focus:ring-2 focus:ring-primary/30"
+          />
+        </div>
+
       </div>
-    </>
+
+      {/* Action Buttons — outside scroll so always visible */}
+      <div className="shrink-0 bg-background border-t pt-4 mt-2 flex gap-2">
+        <Button variant="outline" onClick={onBack} className="flex-1">
+          Cancel
+        </Button>
+        <Button onClick={handleSubmit} disabled={isLoading || isAvatarLoading} className="flex-1">
+          {(isLoading || isAvatarLoading) ? (
+            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+          ) : (
+            <Save className="w-4 h-4 mr-2" />
+          )}
+          Save Window Settings
+        </Button>
+      </div>
+    </div>
   )
 }

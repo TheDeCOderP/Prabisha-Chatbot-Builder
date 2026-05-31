@@ -137,10 +137,10 @@ model ChatbotTheme {
 
   // Widget Settings
   widgetIcon      String?
-  widgetIconType  WidgetIconType @default(EMOJI) 
+  widgetIconType  WidgetIconType @default(EMOJI)
   widgetText      String?        @default("Chat with us")
-  widgetSize      Int            @default(70) 
-  widgetSizeMobile Int?          @default(60) 
+  widgetSize      Int            @default(70)
+  widgetSizeMobile Int?          @default(60)
   widgetColor     String?        @default("#3b82f6")
   widgetShape     ShapeType      @default(ROUND)
   widgetBorder    BorderType     @default(FLAT)
@@ -150,7 +150,34 @@ model ChatbotTheme {
   widgetMargin    Int            @default(20)
   popup_onload    Boolean        @default(false)
 
+  // Custom Position (overrides widgetPosition when enabled)
+  widgetCustomPosition Boolean @default(false)
+  widgetTop            Int?
+  widgetBottom         Int?
+  widgetLeft           Int?
+  widgetRight          Int?
+
+  // Window Size
+  windowWidth   Int? @default(420)
+  windowHeight  Int? @default(600)
+
+  // Window Style
+  windowBorderRadius Int? @default(16)
+  fontSize           Int? @default(14)
+
+  // Feature Toggles
+  showPoweredBy        Boolean @default(true)
+  showMic              Boolean @default(true)
+  showEmoji            Boolean @default(true)
+  showTTS              Boolean @default(true)
+  showNewChat          Boolean @default(true)
+  showLanguageSwitcher Boolean @default(true)
+
+  // Lead Card
+  leadCardMessage String? @default("Before we continue, mind sharing a few quick details? Totally optional.")
+
   // Window Theme Colors
+  messageBgColor           String? @default("#f8fafc")
   headerBgColor            String? @default("#1320AA")
   headerTextColor          String? @default("#ffffff")
   botMessageBgColor        String? @default("#f1f5f9")

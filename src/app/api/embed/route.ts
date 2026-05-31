@@ -68,13 +68,75 @@ export async function GET() {
     // Handle messages from iframe
     window.addEventListener('message', function(event) {
       if (event.data.chatbotId !== config.chatbotId) return;
-      
+
       if (event.data.type === 'chatbot-close') {
         closeChatbot(iframe, config);
+
       } else if (event.data.type === 'chatbot-resize') {
         resizeChatbot(iframe, event.data);
+
+      } else if (event.data.type === 'chatbot-theme') {
+        // Widget has loaded and sent us its DB theme — apply sizing, position, launcher
+        applyThemeFromDB(iframe, config, event.data.theme);
       }
     });
+  }
+
+  function applyThemeFromDB(iframe, config, theme) {
+    var isMobile = window.innerWidth < 480;
+    if (isMobile) return; // mobile is always full-screen, nothing to adjust
+
+    var w  = (theme.windowWidth  || 420) + 'px';
+    var h  = (theme.windowHeight || 600) + 'px';
+    var br = (theme.windowBorderRadius != null ? theme.windowBorderRadius : 16) + 'px';
+
+    // If chat is already open, resize immediately
+    if (iframe.style.display === 'block') {
+      iframe.style.width        = w;
+      iframe.style.height       = h;
+      iframe.style.borderRadius = br;
+    }
+
+    // Store on config so openChatbot picks them up on next open
+    config._dbWidth  = w;
+    config._dbHeight = h;
+    config._dbBorderRadius = br;
+    config._dbTheme  = theme;
+
+    // Reposition launcher button based on DB theme
+    var launcher = document.getElementById('chatbot-launcher-' + config.chatbotId);
+    if (launcher) {
+      applyPositionFromTheme(launcher, theme);
+    }
+
+    // Reposition iframe (closed state stays hidden, but update its fixed coords)
+    applyPositionFromTheme(iframe, theme);
+
+    // Auto-open if popup_onload was set in DB
+    if (theme.popup_onload && iframe.style.display !== 'block') {
+      openChatbot(iframe, config);
+    }
+  }
+
+  function applyPositionFromTheme(el, theme) {
+    // Reset all sides first
+    el.style.top    = '';
+    el.style.bottom = '';
+    el.style.left   = '';
+    el.style.right  = '';
+
+    var margin = (theme.widgetMargin != null ? theme.widgetMargin : 20) + 'px';
+
+    if (theme.widgetCustomPosition) {
+      if (theme.widgetTop    != null) el.style.top    = theme.widgetTop    + 'px';
+      if (theme.widgetBottom != null) el.style.bottom = theme.widgetBottom + 'px';
+      if (theme.widgetLeft   != null) el.style.left   = theme.widgetLeft   + 'px';
+      if (theme.widgetRight  != null) el.style.right  = theme.widgetRight  + 'px';
+    } else {
+      var pos = (theme.widgetPosition || 'BottomRight').toLowerCase();
+      if (pos.includes('bottom')) el.style.bottom = margin; else el.style.top = margin;
+      if (pos.includes('right'))  el.style.right  = margin; else el.style.left = margin;
+    }
   }
   
   function createLauncherButton(config) {
@@ -190,38 +252,38 @@ export async function GET() {
     }
   }
   
-  // UPDATED: Now handles mobile full-screen logic
+  // Handles mobile full-screen and DB-driven sizing/positioning
   function openChatbot(iframe, config) {
     var isMobile = window.innerWidth < 480;
 
     iframe.style.display = 'block';
-    
+
     if (isMobile) {
-      // Mobile: Full screen, no margins, square corners
-      iframe.style.width = '100%';
-      iframe.style.height = '100%';
-      iframe.style.top = '0';
-      iframe.style.left = '0';
-      iframe.style.right = '0';
-      iframe.style.bottom = '0';
+      iframe.style.width        = '100%';
+      iframe.style.height       = '100%';
+      iframe.style.top          = '0';
+      iframe.style.left         = '0';
+      iframe.style.right        = '0';
+      iframe.style.bottom       = '0';
       iframe.style.borderRadius = '0';
     } else {
-      // Desktop: Standard width/height and positioning
-      iframe.style.width = config.width || '380px';
-      iframe.style.height = config.height || '600px';
-      iframe.style.borderRadius = '12px';
-      // Re-apply margins for desktop
-      applyPosition(iframe, config);
+      // Prefer DB-derived values if available, fall back to init config
+      iframe.style.width        = config._dbWidth  || config.width  || '420px';
+      iframe.style.height       = config._dbHeight || config.height || '600px';
+      iframe.style.borderRadius = config._dbBorderRadius || '16px';
+
+      if (config._dbTheme) {
+        applyPositionFromTheme(iframe, config._dbTheme);
+      } else {
+        applyPosition(iframe, config);
+      }
     }
 
-    iframe.style.opacity = '1';
+    iframe.style.opacity   = '1';
     iframe.style.transform = 'translateY(0)';
-    
-    // Hide launcher button when open
-    const button = document.getElementById('chatbot-launcher-' + config.chatbotId);
-    if (button) {
-      button.style.display = 'none';
-    }
+
+    var button = document.getElementById('chatbot-launcher-' + config.chatbotId);
+    if (button) button.style.display = 'none';
   }
   
   function closeChatbot(iframe, config) {

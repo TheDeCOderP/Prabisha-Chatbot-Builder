@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useConversationalLead, ConversationalLeadConfig } from './useConversationalLead';
 import { Message } from '@/types/chat';
 
@@ -240,7 +240,12 @@ export function useChatbot({
   language = 'en',
   retryConfig: customRetryConfig,
 }: UseChatbotProps): UseChatbotReturn {
-  const retryConfig: RetryConfig = { ...DEFAULT_RETRY_CONFIG, ...customRetryConfig };
+  // useMemo prevents a new object reference each render, which would re-trigger fetchChatbotData in a loop.
+  const retryConfig = useMemo<RetryConfig>(
+    () => ({ ...DEFAULT_RETRY_CONFIG, ...customRetryConfig }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
   
   const [chatbot, setChatbot] = useState<ChatbotData | null>(initialChatbotData || null);
   const [isLoadingChatbot, setIsLoadingChatbot] = useState(!initialChatbotData);
