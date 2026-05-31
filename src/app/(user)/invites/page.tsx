@@ -130,9 +130,10 @@ export default function InvitesPage() {
     try {
       const response = await fetch('/api/invites');
       if (!response.ok) throw new Error('Failed to fetch invitations');
-      
+
       const data = await response.json();
-      setReceivedInvitations(data.received || []);
+      // Show pending received invitations (actionable ones)
+      setReceivedInvitations((data.received || []).filter((i: Invitation) => i.status === 'PENDING'));
       setSentInvitations(data.sent || []);
     } catch (error) {
       toast.error('Failed to load invitations');
@@ -194,14 +195,18 @@ export default function InvitesPage() {
   };
 
   const handleRespondToInvitation = async (invitationId: string, action: 'accept' | 'reject') => {
+    // Find the token for this invitation
+    const invitation = receivedInvitations.find(i => i.id === invitationId);
+    if (!invitation?.token) {
+      toast.error('Invalid invitation — token missing');
+      return;
+    }
+
     try {
-      const response = await fetch(`/api/invites/${invitationId}`, {
+      const response = await fetch(`/api/invites/${invitationId}?token=${invitation.token}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action,
-          userId: session?.user?.id,
-        }),
+        body: JSON.stringify({ action }),
       });
 
       const data = await response.json();
@@ -211,7 +216,6 @@ export default function InvitesPage() {
       }
 
       toast.success(`Invitation ${action}ed successfully`);
-
       fetchInvitations();
     } catch (error: any) {
       toast.error(error.message);

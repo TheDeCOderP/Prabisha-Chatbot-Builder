@@ -4,15 +4,18 @@ import * as cheerio from 'cheerio';
 import puppeteer, { Browser } from 'puppeteer';
 import { URL } from 'url';
 
+export type PageScrapeStatus = 'ok' | 'skipped' | 'failed';
+
 export type ScrapeProgressCallback = (
   current: number,
   total: number,
   url: string,
   bytesTotal: number,
   pagesOk: number,
+  pageStatus: PageScrapeStatus,
 ) => void;
 
-const BATCH_SIZE = 5;
+const BATCH_SIZE = 8;
 
 interface ScrapedPage {
   url: string;
@@ -79,7 +82,7 @@ export async function processURL(
 
     if (!crawlSubpages) {
       const page = await scrapePage(validatedUrl);
-      onProgress?.(1, 1, validatedUrl, page.content.length, 1);
+      onProgress?.(1, 1, validatedUrl, page.content.length, 1, 'ok');
       return {
         content: page.content,
         metadata: { ...page.metadata, url: page.url, title: page.title, scrapedAt: new Date().toISOString(), pageCount: 1 },
@@ -184,23 +187,27 @@ async function scrapeUrlsFromList(
       processed++;
       const url = batch[j];
       const result = results[j];
+      let pageStatus: PageScrapeStatus = 'failed';
 
       if (result.status === 'fulfilled') {
         const page = result.value;
         if (page.metadata.wordCount > 80) {
           pages.push(page);
           totalBytes += page.content.length;
+          pageStatus = 'ok';
         } else {
           console.log(`  ↳ Skipped ${url} (${page.metadata.wordCount} words)`);
+          pageStatus = 'skipped';
         }
       } else {
         console.error(`Failed to scrape ${url}:`, result.reason);
+        pageStatus = 'failed';
       }
 
-      onProgress?.(processed, pagesToScrape, url, totalBytes, pages.length);
+      onProgress?.(processed, pagesToScrape, url, totalBytes, pages.length, pageStatus);
     }
 
-    if (i + BATCH_SIZE < urlSlice.length) await delay(300);
+    if (i + BATCH_SIZE < urlSlice.length) await delay(500);
   }
 
   if (pages.length === 0) throw new Error('Failed to scrape any pages from sitemap');
@@ -323,11 +330,11 @@ export async function scrapePage(url: string): Promise<ScrapedPage & { wordCount
       await page.waitForSelector('main, article, [role="main"], .content, #content', { timeout: 5000 });
     } catch { /* page may not have these selectors — continue anyway */ }
 
-    await delay(2000);
+    await delay(1200);
 
     // Scroll to trigger lazy-loaded content
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-    await delay(800);
+    await delay(400);
 
     const result = await page.evaluate(() => {
       // Remove noise elements
@@ -422,19 +429,27 @@ async function crawlWebsite(startUrl: string, maxPages: number, onProgress?: Scr
       processed++;
       const url = batch[j];
       const result = results[j];
+      let pageStatus: PageScrapeStatus = 'failed';
 
       if (result.status === 'fulfilled') {
-        pages.push(result.value);
-        totalBytes += result.value.content.length;
-        console.log(`Scraped: ${url} (${processed}/${total})`);
+        const page = result.value;
+        if (page.metadata.wordCount > 80) {
+          pages.push(page);
+          totalBytes += page.content.length;
+          pageStatus = 'ok';
+        } else {
+          pageStatus = 'skipped';
+        }
+        console.log(`Scraped: ${url} (${processed}/${total}) [${pageStatus}]`);
       } else {
         console.error(`Failed to scrape ${url}:`, result.reason);
+        pageStatus = 'failed';
       }
 
-      onProgress?.(processed, total, url, totalBytes, pages.length);
+      onProgress?.(processed, total, url, totalBytes, pages.length, pageStatus);
     }
 
-    if (i + BATCH_SIZE < uniqueUrls.length) await delay(300);
+    if (i + BATCH_SIZE < uniqueUrls.length) await delay(500);
   }
 
   return pages;

@@ -8,6 +8,11 @@ interface UploadProgress {
   error?: string;
 }
 
+export interface ScrapedPageEntry {
+  url: string;
+  status: 'ok' | 'skipped' | 'failed';
+}
+
 export interface ScrapeProgress {
   phase: 'scraping' | 'storing' | 'done';
   current: number;
@@ -15,8 +20,11 @@ export interface ScrapeProgress {
   currentUrl: string;
   bytesTotal: number;
   pagesOk: number;
+  pagesSkipped: number;
+  pagesFailed: number;
   storedCurrent: number;
   storedTotal: number;
+  log: ScrapedPageEntry[];       // per-page log for scrollable list
 }
 
 export function useKnowledgeUpload(chatbotId: string) {
@@ -26,13 +34,7 @@ export function useKnowledgeUpload(chatbotId: string) {
 
   const uploadFiles = async (files: File[], type: 'file' | 'table', name?: string) => {
     setUploading(true);
-    setProgress(
-      files.map(file => ({
-        fileName: file.name,
-        progress: 0,
-        status: 'pending',
-      }))
-    );
+    setProgress(files.map(file => ({ fileName: file.name, progress: 0, status: 'pending' })));
 
     try {
       const formData = new FormData();
@@ -42,40 +44,25 @@ export function useKnowledgeUpload(chatbotId: string) {
 
       setProgress(prev => prev.map(p => ({ ...p, status: 'uploading', progress: 50 })));
 
-      const response = await fetch(`/api/chatbots/${chatbotId}/knowledge`, {
-        method: 'POST',
-        body: formData,
-      });
-
+      const response = await fetch(`/api/chatbots/${chatbotId}/knowledge`, { method: 'POST', body: formData });
       if (!response.ok) throw new Error('Upload failed');
-
       const result = await response.json();
 
       setProgress(prev =>
         prev.map(p => {
           const fileResult = result.results.find((r: any) => r.fileName === p.fileName);
-          if (fileResult) {
-            return { ...p, status: fileResult.success ? 'success' : 'error', progress: 100, error: fileResult.error };
-          }
+          if (fileResult) return { ...p, status: fileResult.success ? 'success' : 'error', progress: 100, error: fileResult.error };
           return p;
         })
       );
 
       const successCount = result.results.filter((r: any) => r.success).length;
-      const failCount = result.results.filter((r: any) => !r.success).length;
-
-      if (successCount > 0) {
-        toast.success(`Successfully uploaded ${successCount} ${type === 'file' ? 'file(s)' : 'table(s)'}`);
-      }
-      if (failCount > 0) {
-        toast.error(`Failed to upload ${failCount} ${type === 'file' ? 'file(s)' : 'table(s)'}`);
-      }
-
+      const failCount    = result.results.filter((r: any) => !r.success).length;
+      if (successCount > 0) toast.success(`Uploaded ${successCount} ${type === 'file' ? 'file(s)' : 'table(s)'}`);
+      if (failCount    > 0) toast.error(`Failed to upload ${failCount} ${type === 'file' ? 'file(s)' : 'table(s)'}`);
       return result;
     } catch (error) {
-      setProgress(prev =>
-        prev.map(p => ({ ...p, status: 'error', error: error instanceof Error ? error.message : 'Unknown error' }))
-      );
+      setProgress(prev => prev.map(p => ({ ...p, status: 'error', error: error instanceof Error ? error.message : 'Unknown error' })));
       toast.error('Upload failed. Please try again.');
       throw error;
     } finally {
@@ -87,13 +74,12 @@ export function useKnowledgeUpload(chatbotId: string) {
     setUploading(true);
     setScrapeProgress({
       phase: 'scraping',
-      current: 0,
-      total: 0,
+      current: 0, total: 0,
       currentUrl: url,
       bytesTotal: 0,
-      pagesOk: 0,
-      storedCurrent: 0,
-      storedTotal: 0,
+      pagesOk: 0, pagesSkipped: 0, pagesFailed: 0,
+      storedCurrent: 0, storedTotal: 0,
+      log: [],
     });
 
     try {
@@ -105,7 +91,7 @@ export function useKnowledgeUpload(chatbotId: string) {
 
       if (!response.ok || !response.body) throw new Error('Failed to crawl webpage');
 
-      const reader = response.body.getReader();
+      const reader  = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
       let result: any = null;
@@ -124,19 +110,30 @@ export function useKnowledgeUpload(chatbotId: string) {
             const event = JSON.parse(line.slice(6));
 
             if (event.type === 'progress') {
-              setScrapeProgress({
-                phase: 'scraping',
-                current: event.current,
-                total: event.total,
-                currentUrl: event.url,
-                bytesTotal: event.bytes,
-                pagesOk: event.pagesOk,
-                storedCurrent: 0,
-                storedTotal: 0,
+              setScrapeProgress(prev => {
+                const prevLog = prev?.log ?? [];
+                // Add this URL to the log (avoid duplicates)
+                const alreadyLogged = prevLog.some(e => e.url === event.url);
+                const newLog: ScrapedPageEntry[] = alreadyLogged
+                  ? prevLog
+                  : [...prevLog, { url: event.url, status: event.pageStatus ?? 'ok' }];
+                return {
+                  phase: 'scraping',
+                  current: event.current,
+                  total: event.total,
+                  currentUrl: event.url,
+                  bytesTotal: event.bytes,
+                  pagesOk: event.pagesOk,
+                  pagesSkipped: event.pagesSkipped ?? 0,
+                  pagesFailed: event.pagesFailed ?? 0,
+                  storedCurrent: prev?.storedCurrent ?? 0,
+                  storedTotal: prev?.storedTotal ?? 0,
+                  log: newLog,
+                };
               });
             } else if (event.type === 'storing') {
               setScrapeProgress(prev => ({
-                ...(prev ?? { current: 0, total: 0, currentUrl: '', bytesTotal: 0, pagesOk: 0 }),
+                ...(prev ?? { current: 0, total: 0, currentUrl: '', bytesTotal: 0, pagesOk: 0, pagesSkipped: 0, pagesFailed: 0, log: [] }),
                 phase: 'storing',
                 storedCurrent: event.current,
                 storedTotal: event.total,
@@ -169,12 +166,5 @@ export function useKnowledgeUpload(chatbotId: string) {
     setScrapeProgress(null);
   };
 
-  return {
-    uploading,
-    progress,
-    scrapeProgress,
-    uploadFiles,
-    uploadWebpage,
-    reset,
-  };
+  return { uploading, progress, scrapeProgress, uploadFiles, uploadWebpage, reset };
 }

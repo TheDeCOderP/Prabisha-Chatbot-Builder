@@ -55,6 +55,49 @@
     document.head.appendChild(style);
   })();
 
+  // ─── Sound & Voice helpers ────────────────────────────────────────────────
+
+  function playNotificationSound(volume) {
+    if (!volume || volume <= 0) return;
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx  = new AudioCtx();
+      const osc  = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(900, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(500, ctx.currentTime + 0.12);
+      gain.gain.setValueAtTime(volume * 0.35, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.25);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.25);
+      setTimeout(() => ctx.close().catch(() => {}), 600);
+    } catch (_) {}
+  }
+
+  const VOICE_LANG_MAP = {
+    en: 'en-US', hi: 'hi-IN', ar: 'ar-SA', fr: 'fr-FR',
+    es: 'es-ES', de: 'de-DE', ja: 'ja-JP', zh: 'zh-CN',
+    pa: 'pa-IN', kn: 'kn-IN', te: 'te-IN', bn: 'bn-IN', gu: 'gu-IN',
+    pt: 'pt-BR', it: 'it-IT', nl: 'nl-NL', ru: 'ru-RU', ko: 'ko-KR',
+  };
+
+  function speakGreeting(text, volume, rate) {
+    if (!text || !window.speechSynthesis) return;
+    try {
+      const browserLang = (navigator.language || 'en').split('-')[0];
+      window.speechSynthesis.cancel();
+      const utt   = new SpeechSynthesisUtterance(text);
+      utt.lang    = VOICE_LANG_MAP[browserLang] || 'en-US';
+      utt.volume  = Math.min(Math.max(volume || 0.8, 0), 1);
+      utt.rate    = Math.min(Math.max(rate   || 1.0, 0.5), 2);
+      window.speechSynthesis.speak(utt);
+    } catch (_) {}
+  }
+
   // ─── Defaults ──────────────────────────────────────────────────────────────
 
   const defaults = {
@@ -88,7 +131,7 @@
     teaserCtaYes: 'Yes, help me',
     teaserCtaNo: 'Not now',
     // Sticky bar
-    stickyBarText: '💬 Chat with us — we reply instantly',
+    stickyBarText: 'Chat with us — we reply instantly',
     stickyBarBgColor: '#111CA8',
     stickyBarTextColor: '#ffffff',
     stickyBarPosition: 'bottom',
@@ -98,6 +141,14 @@
     drawerWidth: 380,
     drawerTabText: 'Chat',
     drawerTabBgColor: '#111CA8',
+    // Voice & Sound
+    notificationSound:   true,
+    notificationVolume:  0.4,
+    voiceGreeting:       false,
+    voiceGreetingVolume: 0.8,
+    voiceGreetingRate:   1.0,
+    // Internal — greeting text resolved from chatbot data
+    _greetingText: '',
   };
 
   let config = { ...defaults };
@@ -175,6 +226,24 @@
         config.drawerWidth     = th.drawerWidth     || config.drawerWidth;
         config.drawerTabText   = th.drawerTabText   || config.drawerTabText;
         config.drawerTabBgColor = th.drawerTabBgColor || config.drawerTabBgColor;
+
+        // Voice & Sound
+        config.notificationSound   = th.notificationSound   ?? config.notificationSound;
+        config.notificationVolume  = th.notificationVolume  ?? config.notificationVolume;
+        config.voiceGreeting       = th.voiceGreeting       ?? config.voiceGreeting;
+        config.voiceGreetingVolume = th.voiceGreetingVolume ?? config.voiceGreetingVolume;
+        config.voiceGreetingRate   = th.voiceGreetingRate   ?? config.voiceGreetingRate;
+
+        // Resolve greeting text for TTS (use chatbot's greeting field)
+        try {
+          const greetingArr = db.greeting;
+          if (Array.isArray(greetingArr) && greetingArr.length > 0) {
+            const g = greetingArr[0];
+            const browserLang = (navigator.language || 'en').split('-')[0];
+            config._greetingText =
+              (typeof g === 'string' ? g : (g[browserLang] || g['en'] || Object.values(g)[0])) || '';
+          }
+        } catch (_) {}
 
         if (userConfig.autoOpen === undefined) {
           config.autoOpen = th.popup_onload ?? db.popup_onload ?? false;
@@ -315,7 +384,13 @@
 
     if (config.autoOpen) setTimeout(openChat, config.delay);
 
-    window.addEventListener('resize', onResize);
+    // Debounce resize: mobile Safari fires on every scroll pixel as browser
+    // chrome shows/hides — without this it runs 30-60×/s during normal scroll.
+    var _resizeTimer = null;
+    window.addEventListener('resize', function () {
+      clearTimeout(_resizeTimer);
+      _resizeTimer = setTimeout(onResize, 120);
+    });
   }
 
   function buildLauncherBtn(size) {
@@ -398,14 +473,21 @@
 
   function openChat() {
     if (!iframe) return;
+    // Notification sound (user clicked = allowed by browsers)
+    if (config.notificationSound) playNotificationSound(config.notificationVolume);
     iframe.style.display = 'block';
     iframe.style.animation = '__cb_fadeInUp 0.35s cubic-bezier(0.34,1.2,0.64,1) forwards';
     if (closeBtn) { closeBtn.style.display = 'flex'; requestAnimationFrame(positionCloseBtn); }
     if (button && window.innerWidth <= 480) button.style.display = 'none';
+    // Voice greeting after chat is visible
+    if (config.voiceGreeting && config._greetingText) {
+      setTimeout(() => speakGreeting(config._greetingText, config.voiceGreetingVolume, config.voiceGreetingRate), 600);
+    }
   }
 
   function closeChat() {
     if (!iframe) return;
+    try { window.speechSynthesis?.cancel(); } catch (_) {}
     iframe.style.animation = 'none';
     iframe.style.display = 'none';
     if (closeBtn) closeBtn.style.display = 'none';
@@ -537,7 +619,8 @@
 
     // Text
     const textEl = document.createElement('span');
-    textEl.textContent = config.stickyBarText;
+    // Strip any leading emoji so the SVG icon isn't duplicated
+    textEl.textContent = (config.stickyBarText || '').replace(/^[\p{Emoji}\s]+/u, '');
     Object.assign(textEl.style, {
       color: config.stickyBarTextColor, fontSize: '14px', fontWeight: '600',
     });
@@ -587,9 +670,13 @@
   }
 
   function openStickyChat() {
+    if (config.notificationSound) playNotificationSound(config.notificationVolume);
     iframe.style.display = 'block';
     iframe.style.animation = '__cb_fadeInUp 0.35s cubic-bezier(0.34,1.2,0.64,1) forwards';
     stickyBarEl._chatOpen = true;
+    if (config.voiceGreeting && config._greetingText) {
+      setTimeout(() => speakGreeting(config._greetingText, config.voiceGreetingVolume, config.voiceGreetingRate), 600);
+    }
   }
 
   function closeStickyChat() {
@@ -679,13 +766,18 @@
   }
 
   function openDrawer() {
+    if (config.notificationSound) playNotificationSound(config.notificationVolume);
     drawerEl.style.transform = 'translateX(0)';
     overlay.style.opacity    = '1';
     overlay.style.pointerEvents = 'auto';
     drawerTab.style[config.drawerSide] = (config.drawerWidth || 380) + 'px';
+    if (config.voiceGreeting && config._greetingText) {
+      setTimeout(() => speakGreeting(config._greetingText, config.voiceGreetingVolume, config.voiceGreetingRate), 600);
+    }
   }
 
   function closeDrawer() {
+    try { window.speechSynthesis?.cancel(); } catch (_) {}
     const side = config.drawerSide || 'right';
     drawerEl.style.transform = side === 'left' ? 'translateX(-100%)' : 'translateX(100%)';
     overlay.style.opacity    = '0';

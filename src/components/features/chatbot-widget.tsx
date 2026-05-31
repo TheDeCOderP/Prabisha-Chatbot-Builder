@@ -18,6 +18,8 @@ import {
   Volume2,
   MessageCircle,
   SmilePlus,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { Message } from '@/types/chat';
 import {
@@ -970,6 +972,9 @@ function ChatBot({
     policyBlocked, policyMessage,
   } = useSpeechToText({ continuous: true, lang: selectedLang === 'zh' ? 'zh-CN' : selectedLang === 'hi' ? 'hi-IN' : selectedLang === 'pa' ? 'pa-IN' : selectedLang === 'kn' ? 'kn-IN' : selectedLang === 'te' ? 'te-IN' : selectedLang === 'bn' ? 'bn-IN' : selectedLang === 'gu' ? 'gu-IN' : 'en-US' });
   const [isMicrophoneOn, setIsMicrophoneOn] = useState(false);
+  const [isAutoSendPending, setIsAutoSendPending] = useState(false);
+  const autoSendTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingVoiceTextRef = useRef<string>('');
   const [parentPolicyInfo, setParentPolicyInfo] = useState<{
     blocked: boolean;
     permission?: string;
@@ -999,8 +1004,10 @@ function ChatBot({
     document.body.style.overflow = 'hidden';
     document.body.style.margin = '0';
     document.body.style.padding = '0';
-    document.body.style.height = '100vh';
-    document.documentElement.style.height = '100vh';
+    // dvh shrinks when the iOS virtual keyboard opens; fall back to vh on old browsers
+    const h = (typeof CSS !== 'undefined' && CSS.supports('height', '100dvh')) ? '100dvh' : '100vh';
+    document.body.style.height = h;
+    document.documentElement.style.height = h;
     document.documentElement.style.overflow = 'hidden';
   }, [isEmbedded]);
 
@@ -1024,12 +1031,42 @@ function ChatBot({
   }, []);
 
   useEffect(() => {
-    if (transcript) { setText(transcript); resetTranscript(); }
-  }, [transcript, resetTranscript, setText]);
+    if (!transcript) return;
+
+    // Save transcript in a ref so the timer callback always gets the latest text,
+    // even after React re-renders update the closure (stale-closure fix).
+    pendingVoiceTextRef.current = transcript;
+    setText(transcript);
+    resetTranscript();
+
+    if (autoSendTimerRef.current) clearTimeout(autoSendTimerRef.current);
+
+    setIsAutoSendPending(true);
+    autoSendTimerRef.current = setTimeout(() => {
+      setIsAutoSendPending(false);
+      setIsMicrophoneOn(false);
+      const toSend = pendingVoiceTextRef.current;
+      pendingVoiceTextRef.current = '';
+      if (toSend.trim()) {
+        // overrideText bypasses the stale `text` state inside handleSubmit's closure
+        handleSubmit(undefined, toSend);
+      }
+    }, 1500);
+  }, [transcript]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (isMicrophoneOn) startListening();
-    else { stopListening(); resetTranscript(); }
+    if (isMicrophoneOn) {
+      startListening();
+    } else {
+      stopListening();
+      resetTranscript();
+      // Cancel pending auto-send if user manually turned off mic
+      if (autoSendTimerRef.current) {
+        clearTimeout(autoSendTimerRef.current);
+        autoSendTimerRef.current = null;
+        setIsAutoSendPending(false);
+      }
+    }
   }, [isMicrophoneOn, startListening, stopListening, resetTranscript]);
 
   const handleClose = () => {
@@ -1156,6 +1193,7 @@ function ChatBot({
             setText={setText}
             loading={loading}
             isMicrophoneOn={isMicrophoneOn}
+            isAutoSendPending={isAutoSendPending}
             browserSupportsSpeechRecognition={micAllowed}
             onSubmit={handleSubmit}
             onNewChat={handleNewChat}
@@ -1402,6 +1440,15 @@ function ChatMessages({
   }) => {
     const id = `msg-${index}`;
     const isSpeaking = activeSpeakingId === id && isPlaying;
+    const [copied, setCopied] = useState(false);
+
+    const handleCopy = () => {
+      const plain = message.content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+      navigator.clipboard.writeText(plain).then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      }).catch(() => {});
+    };
 
     return (
       <div
@@ -1432,19 +1479,37 @@ function ChatMessages({
               {message.createdAt && (
                 <div className="text-[10px] opacity-70">{formatTime(message.createdAt)}</div>
               )}
-              {!isUser && showTTS && (
-                <button
-                  onClick={() => handleSpeak(id, message.content)}
-                  className={[
-                    'p-1.5 rounded-full transition-all duration-200 cursor-pointer',
-                    isSpeaking
-                      ? 'bg-primary/20 text-primary scale-110'
-                      : 'hover:bg-primary/10 text-muted-foreground opacity-0 group-hover:opacity-100',
-                  ].join(' ')}
-                  title={isSpeaking ? 'Stop reading' : 'Read aloud'}
-                >
-                  {isSpeaking ? <VolumeX className="h-3.5 w-3.5" /> : <Volume2 className="h-3.5 w-3.5" />}
-                </button>
+              {!isUser && (
+                <div className="flex items-center gap-0.5">
+                  {/* Copy button */}
+                  <button
+                    onClick={handleCopy}
+                    className={[
+                      'p-1.5 rounded-full transition-all duration-200 cursor-pointer',
+                      copied
+                        ? 'text-emerald-500'
+                        : 'hover:bg-primary/10 text-muted-foreground opacity-0 group-hover:opacity-100',
+                    ].join(' ')}
+                    title={copied ? 'Copied!' : 'Copy message'}
+                  >
+                    {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                  </button>
+                  {/* TTS button */}
+                  {showTTS && (
+                    <button
+                      onClick={() => handleSpeak(id, message.content)}
+                      className={[
+                        'p-1.5 rounded-full transition-all duration-200 cursor-pointer',
+                        isSpeaking
+                          ? 'bg-primary/20 text-primary scale-110'
+                          : 'hover:bg-primary/10 text-muted-foreground opacity-0 group-hover:opacity-100',
+                      ].join(' ')}
+                      title={isSpeaking ? 'Stop reading' : 'Read aloud'}
+                    >
+                      {isSpeaking ? <VolumeX className="h-3.5 w-3.5" /> : <Volume2 className="h-3.5 w-3.5" />}
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           </div>
@@ -1591,6 +1656,7 @@ interface ChatInputProps {
   setText: (text: string) => void;
   loading: boolean;
   isMicrophoneOn: boolean;
+  isAutoSendPending?: boolean;
   browserSupportsSpeechRecognition: boolean;
   onSubmit: (e?: React.FormEvent) => Promise<void>;
   onNewChat: () => void;
@@ -1610,7 +1676,7 @@ interface ChatInputProps {
 }
 
 function ChatInput({
-  text, setText, loading, isMicrophoneOn, browserSupportsSpeechRecognition,
+  text, setText, loading, isMicrophoneOn, isAutoSendPending = false, browserSupportsSpeechRecognition,
   onSubmit, onNewChat, status, inputRef, onToggleMicrophone,
   hasLeadForm, onLeadAction, isLoadingLeadConfig,
   isAwaitingLeadAnswer, isConversationalMode, chatbot,
@@ -1661,9 +1727,13 @@ function ChatInput({
         </div>
       )}
 
-      {/* Listening indicator — appears when mic is active */}
+      {/* Listening / auto-send indicator */}
       {isMicrophoneOn && (
-        <div className="flex items-center gap-3 px-3 py-2 mb-2 mx-1 bg-red-50 border border-red-100 rounded-xl">
+        <div className={`flex items-center gap-3 px-3 py-2 mb-2 mx-1 border rounded-xl transition-colors duration-300 ${
+          isAutoSendPending
+            ? 'bg-orange-50 border-orange-200'
+            : 'bg-red-50 border-red-100'
+        }`}>
           {/* Animated sound-wave bars */}
           <div className="flex items-end gap-[3px] h-5 flex-shrink-0">
             {([12, 18, 22, 18, 12] as number[]).map((h, i) => (
@@ -1672,18 +1742,21 @@ function ChatInput({
                 className="w-[3px] rounded-full animate-bounce"
                 style={{
                   height: h,
-                  backgroundColor: '#ef4444',
+                  backgroundColor: isAutoSendPending ? '#f97316' : '#ef4444',
                   animationDelay: `${i * 80}ms`,
-                  animationDuration: '0.65s',
+                  animationDuration: isAutoSendPending ? '0.4s' : '0.65s',
                 }}
               />
             ))}
           </div>
-          <span className="text-xs font-medium text-red-600 flex-1 leading-tight">
-            Listening… speak now
+          <span className={`text-xs font-medium flex-1 leading-tight ${
+            isAutoSendPending ? 'text-orange-600' : 'text-red-600'
+          }`}>
+            {isAutoSendPending ? 'Sending… tap mic to cancel' : 'Listening… speak now'}
           </span>
-          {/* Pulsing recording dot */}
-          <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse flex-shrink-0" />
+          <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${
+            isAutoSendPending ? 'bg-orange-500 animate-ping' : 'bg-red-500 animate-pulse'
+          }`} />
         </div>
       )}
 
@@ -1699,12 +1772,17 @@ function ChatInput({
             <PromptInputTextarea
               ref={inputRef}
               value={text}
-              onChange={e => setText(e.target.value)}
+              onChange={e => { if (e.target.value.length <= 2000) setText(e.target.value); }}
               placeholder={isAwaitingLeadAnswer ? t('typeAnswer') : t('typeMessage')}
               disabled={loading || isMicrophoneOn}
               className="min-h-10 max-h-32 w-full text-[14px] bg-white/60 backdrop-blur-sm rounded-lg px-3 py-2 resize-none focus-visible:ring-0 focus-visible:ring-offset-0"
               rows={1}
             />
+            {text.length > 1500 && (
+              <div className={`text-right text-[10px] px-1 pb-0.5 ${text.length >= 2000 ? 'text-red-500' : 'text-muted-foreground'}`}>
+                {text.length}/2000
+              </div>
+            )}
 
             <PromptInputToolbar>
               <PromptInputTools>
@@ -1751,7 +1829,7 @@ function ChatInput({
 
           <PromptInputSubmit
             size="icon"
-            disabled={(!text.trim() && !isMicrophoneOn) || loading}
+            disabled={(!text.trim() && !isMicrophoneOn) || loading || text.length >= 2000}
             status={status}
             className="h-12 w-12 shrink-0 rounded-full m-1 shadow-lg hover:scale-105 transition-all"
             style={{ backgroundColor: accentColor, color: '#ffffff' }}

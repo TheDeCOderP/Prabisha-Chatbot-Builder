@@ -213,7 +213,7 @@ model ChatbotTheme {
   teaserCtaNo          String?   @default("Not now")
 
   // Sticky Bar settings (STICKY_BAR mode)
-  stickyBarText        String?   @default("💬 Chat with us — we reply instantly")
+  stickyBarText        String?   @default("Chat with us — we reply instantly")
   stickyBarBgColor     String?   @default("#111CA8")
   stickyBarTextColor   String?   @default("#ffffff")
   stickyBarPosition    String?   @default("bottom")
@@ -224,6 +224,13 @@ model ChatbotTheme {
   drawerWidth          Int?      @default(380)
   drawerTabText        String?   @default("Chat")
   drawerTabBgColor     String?   @default("#111CA8")
+
+  // Voice & Sound settings
+  notificationSound    Boolean   @default(true)
+  notificationVolume   Float     @default(0.4)
+  voiceGreeting        Boolean   @default(false)
+  voiceGreetingVolume  Float     @default(0.8)
+  voiceGreetingRate    Float     @default(1.0)
 
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt

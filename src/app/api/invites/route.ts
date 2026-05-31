@@ -7,70 +7,39 @@ import { sendMail } from '@/services/mailing.service';
 import { createWorkspaceInvitationEmail } from '@/services/email-template';
 
 class InvitesRoute extends BaseApiRoute {
-  // GET /api/invites - Get all invitations (sent and received)
+  // GET /api/invites - Get all invitations (sent and received, all statuses)
   protected async GET(): Promise<NextResponse> {
-    // Get all workspace invitations sent by the current user
-    const sentInvites = await this.dbOperation(() =>
-      prisma.workspaceInvitation.findMany({
-        where: {
-          invitedById: this.currentUser.id,
-          status: 'PENDING',
-        },
-        include: {
-          workspace: {
-            select: {
-              id: true,
-              name: true,
-            }
+    const [sentInvites, receivedInvites] = await Promise.all([
+      // All invitations sent by the current user
+      this.dbOperation(() =>
+        prisma.workspaceInvitation.findMany({
+          where: { invitedById: this.currentUser.id },
+          include: {
+            workspace: { select: { id: true, name: true } },
+            invitedTo: { select: { id: true, name: true, email: true, image: true } },
           },
-          invitedTo: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-              image: true,
-            }
-          }
-        },
-        orderBy: {
-          createdAt: 'desc'
-        }
-      })
-    );
-
-    // Get all workspace invitations received by the current user
-    const receivedInvites = await this.dbOperation(() =>
-      prisma.workspaceInvitation.findMany({
-        where: {
-          invitedToId: this.currentUser.id,
-          status: 'PENDING',
-        },
-        include: {
-          workspace: {
-            select: {
-              id: true,
-              name: true,
-            }
+          orderBy: { createdAt: 'desc' },
+        })
+      ),
+      // All invitations received by the current user
+      this.dbOperation(() =>
+        prisma.workspaceInvitation.findMany({
+          where: {
+            OR: [
+              { invitedToId: this.currentUser.id },
+              { email: this.currentUser.email },
+            ],
           },
-          invitedBy: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-              image: true,
-            }
-          }
-        },
-        orderBy: {
-          createdAt: 'desc'
-        }
-      })
-    );
+          include: {
+            workspace: { select: { id: true, name: true } },
+            invitedBy: { select: { id: true, name: true, email: true, image: true } },
+          },
+          orderBy: { createdAt: 'desc' },
+        })
+      ),
+    ]);
 
-    return this.json({ 
-      sent: sentInvites,
-      received: receivedInvites 
-    });
+    return this.json({ sent: sentInvites, received: receivedInvites });
   }
 
   // PUT /api/invites - Respond to an invitation (accept/reject)

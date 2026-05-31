@@ -64,7 +64,6 @@ import { Chatbot } from "../../../generated/prisma/client"
 import { usePathname, useRouter } from "next/navigation"
 import { NavMain } from "@/components/nav-main"
 import { NavUser } from "@/components/nav-user"
-import { SidebarOptInForm } from "../sidebar-opt-in-form"
 
 // Types for navigation items
 type NavItem = {
@@ -296,7 +295,6 @@ export default function AppSidebar({ ...props }: React.ComponentProps<typeof Sid
         )}
       </SidebarContent>
       <SidebarFooter>
-        <SidebarOptInForm />
         <NavUser user={user} />
       </SidebarFooter>
       <SidebarRail />

@@ -1,5 +1,5 @@
 
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Poppins } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "sonner";
@@ -19,6 +19,11 @@ const poppins = Poppins({
 export const metadata: Metadata = {
   title: "Prabisha Chatbots",
   description: "Build and customize AI chatbots with ease using Prabisha's intuitive platform.",
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
 };
 
 export default function RootLayout({

@@ -113,7 +113,7 @@ export async function POST(
         data: {
           chatbotId,
           autoUpdate,
-          name: name || `Webpage - ${new Date().toLocaleDateString()}`,
+          name: name || `Webpage - ${new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date())}`,
           type: 'PAGE',
           indexName: `kb_${chatbotId}_${Date.now()}`,
         },
@@ -253,6 +253,87 @@ export async function POST(
     const type = formData.get('type') as string;
     const name = formData.get('name') as string;
 
+    // ── JSON knowledge base import ────────────────────────────────────────────
+    if (type === 'import') {
+      const files = formData.getAll('files') as File[];
+      const jsonFile = files.find(f => f.name.endsWith('.json'));
+      if (!jsonFile) {
+        return NextResponse.json({ error: 'No JSON file provided' }, { status: 400 });
+      }
+
+      let importData: any;
+      try {
+        const text = await jsonFile.text();
+        importData = JSON.parse(text);
+      } catch {
+        return NextResponse.json({ error: 'Invalid JSON file' }, { status: 400 });
+      }
+
+      // Validate format
+      if (importData.format !== 'prabisha-kb' || !Array.isArray(importData.documents)) {
+        return NextResponse.json({ error: 'Invalid knowledge base export format. Use a file exported from this platform.' }, { status: 400 });
+      }
+
+      const kbName = importData.name || `Import - ${new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date())}`;
+      const kbType = importData.type || 'DOC';
+
+      const knowledgeBase = await prisma.knowledgeBase.create({
+        data: {
+          chatbotId,
+          name: kbName,
+          type: kbType as any,
+          autoUpdate: importData.autoUpdate ?? false,
+          indexName: `kb_${chatbotId}_${Date.now()}`,
+        },
+      });
+
+      const results = [];
+      for (const doc of importData.documents) {
+        if (!doc.source || !doc.content) continue;
+        try {
+          const document = await prisma.document.upsert({
+            where: { source: doc.source },
+            update: {
+              content: doc.content,
+              knowledgeBaseId: knowledgeBase.id,
+              metadata: doc.metadata || {},
+            },
+            create: {
+              knowledgeBaseId: knowledgeBase.id,
+              source: doc.source,
+              content: doc.content,
+              metadata: doc.metadata || {},
+            },
+          });
+
+          await embedAndStore({
+            documentId: document.id,
+            content: doc.content,
+            metadata: {
+              chatbotId,
+              knowledgeBaseId: knowledgeBase.id,
+              source: doc.source,
+              ...((doc.metadata?.title) && { title: doc.metadata.title }),
+            },
+            chatbotId,
+            knowledgeBaseId: knowledgeBase.id,
+          });
+
+          results.push({ success: true, source: doc.source, documentId: document.id });
+        } catch (err) {
+          results.push({ success: false, source: doc.source, error: err instanceof Error ? err.message : 'Unknown error' });
+        }
+      }
+
+      const successCount = results.filter(r => r.success).length;
+      return NextResponse.json({
+        knowledgeBaseId: knowledgeBase.id,
+        imported: successCount,
+        failed: results.length - successCount,
+        results,
+      });
+    }
+
     if (type === 'file') {
       const files = formData.getAll('files') as File[];
       
@@ -263,7 +344,7 @@ export async function POST(
       const knowledgeBase = await prisma.knowledgeBase.create({
         data: {
           chatbotId,
-          name: name || `Files - ${new Date().toLocaleDateString()}`,
+          name: name || `Files - ${new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date())}`,
           type: 'DOC',
           indexName: `kb_${chatbotId}_${Date.now()}`,
         },
@@ -329,7 +410,7 @@ export async function POST(
       const knowledgeBase = await prisma.knowledgeBase.create({
         data: {
           chatbotId,
-          name: name || `Tables - ${new Date().toLocaleDateString()}`,
+          name: name || `Tables - ${new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date())}`,
           type: 'FAQ',
           indexName: `kb_${chatbotId}_${Date.now()}`,
         },
@@ -478,7 +559,7 @@ export async function POST(
       const knowledgeBase = await prisma.knowledgeBase.create({
         data: {
           chatbotId,
-          name: name || `Tables - ${new Date().toLocaleDateString()}`,
+          name: name || `Tables - ${new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date())}`,
           type: 'FAQ',
           indexName: `kb_${chatbotId}_${Date.now()}`,
         },
@@ -551,6 +632,34 @@ export async function POST(
       { error: error instanceof Error ? error.message : 'Internal server error' },
       { status: 500 }
     );
+  }
+}
+
+export async function PATCH(request: NextRequest, context: RouterParams) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+    const { id: chatbotId } = await context.params;
+    const { knowledgeBaseId, name } = await request.json();
+
+    if (!knowledgeBaseId || !name?.trim()) {
+      return NextResponse.json({ error: 'knowledgeBaseId and name required' }, { status: 400 });
+    }
+
+    const chatbot = await prisma.chatbot.findFirst({
+      where: { id: chatbotId, workspace: { members: { some: { userId: session.user.id } } } },
+    });
+    if (!chatbot) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+
+    const kb = await prisma.knowledgeBase.update({
+      where: { id: knowledgeBaseId },
+      data: { name: name.trim() },
+    });
+
+    return NextResponse.json({ success: true, kb });
+  } catch (error) {
+    return NextResponse.json({ error: 'Failed to rename' }, { status: 500 });
   }
 }
 

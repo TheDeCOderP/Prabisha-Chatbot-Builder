@@ -154,10 +154,14 @@ export default function MembersPage() {
     if (!activeWorkspace?.id) return
 
     try {
-      const response = await fetch(`/api/workspaces/${activeWorkspace.id}/invitations`)
+      const response = await fetch('/api/invites')
       if (response.ok) {
         const data = await response.json()
-        setInvitations(data.filter((inv: Invitation) => inv.status === "PENDING"))
+        // Filter sent invitations for the active workspace that are still pending
+        const pending = (data.sent || []).filter(
+          (inv: Invitation) => inv.status === "PENDING"
+        )
+        setInvitations(pending)
       }
     } catch (error) {
       console.error("Error fetching invitations:", error)
@@ -166,12 +170,13 @@ export default function MembersPage() {
 
   const onAddMember = async (data: AddMemberFormValues) => {
     try {
-      const response = await fetch(`/api/workspaces/${activeWorkspace?.id}/invitations`, {
+      const response = await fetch('/api/invites', {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
+          workspaceId: activeWorkspace?.id,
           email: data.email,
           role: data.role,
         }),
@@ -199,16 +204,13 @@ export default function MembersPage() {
     try {
       const response = await fetch(`/api/workspaces/${activeWorkspace?.id}/members/${selectedMember.userId}`, {
         method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          role: data.role,
-        }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role: data.role }),
       })
 
+      const result = await response.json()
       if (!response.ok) {
-        throw new Error("Failed to update role")
+        throw new Error(result.message || result.error || "Failed to update role")
       }
 
       setIsEditRoleDialogOpen(false)
@@ -217,7 +219,7 @@ export default function MembersPage() {
       toast.success("Member role updated successfully")
     } catch (error) {
       console.error("Error updating role:", error)
-      toast.error("Failed to update member role")
+      toast.error(error instanceof Error ? error.message : "Failed to update member role")
     }
   }
 
@@ -234,15 +236,16 @@ export default function MembersPage() {
         method: "DELETE",
       })
 
+      const result = await response.json()
       if (!response.ok) {
-        throw new Error("Failed to remove member")
+        throw new Error(result.message || result.error || "Failed to remove member")
       }
 
       setMembers(members.filter(m => m.userId !== memberToDelete.userId))
       toast.success(`${memberToDelete.user.email} has been removed from the workspace`)
     } catch (error) {
       console.error("Error removing member:", error)
-      toast.error("Failed to remove member")
+      toast.error(error instanceof Error ? error.message : "Failed to remove member")
     } finally {
       setDeleteDialogOpen(false)
       setMemberToDelete(null)

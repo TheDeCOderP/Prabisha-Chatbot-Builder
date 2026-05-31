@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Poppins } from "next/font/google";
 import "../globals.css";
 
@@ -12,6 +12,14 @@ const poppins = Poppins({
 export const metadata: Metadata = {
   title: "Chatbot Widget",
   description: "AI-powered chatbot widget",
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,      // prevent accidental pinch-zoom inside the widget iframe
+  userScalable: false,
+  viewportFit: 'cover', // fills notched iPhone screens edge-to-edge
 };
 
 export default function EmbedLayout({
@@ -28,6 +36,7 @@ export default function EmbedLayout({
       <body
         className={`${poppins.className} antialiased`}
         suppressHydrationWarning
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
       >
         {children}
       </body>

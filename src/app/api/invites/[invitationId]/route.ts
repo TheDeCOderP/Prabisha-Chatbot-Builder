@@ -2,6 +2,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { BaseApiRoute, ApiError, ForbiddenError } from '@/lib/api/base-api';
+import { sendMail } from '@/services/mailing.service';
+import { createInvitationAcceptedEmail } from '@/services/email-template';
 
 interface RouteParams {
   params: Promise<{ invitationId: string }>
@@ -249,11 +251,37 @@ class InvitationDetailRoute extends BaseApiRoute {
             data: {
               userId: this.currentUser.id,
               workspaceId: invitation.workspaceId,
-              role: 'MEMBER',
+              role: invitation.role, // use the role set when the invitation was created
               invitations: { connect: { id: this.invitationId } }
             }
           })
         );
+
+        // Notify the inviter that their invitation was accepted (fire-and-forget)
+        prisma.workspaceInvitation.findUnique({
+          where: { id: this.invitationId },
+          include: {
+            invitedBy: { select: { email: true, name: true } },
+            workspace: { select: { name: true } },
+          }
+        }).then(async (inv) => {
+          if (!inv) return;
+          try {
+            const html = createInvitationAcceptedEmail(
+              inv.workspace.name,
+              this.currentUser.name || this.currentUser.email,
+              this.currentUser.email
+            );
+            await sendMail({
+              recipient: inv.invitedBy.email,
+              subject: `✅ ${this.currentUser.name || this.currentUser.email} joined "${inv.workspace.name}"`,
+              message: html,
+            });
+          } catch (e) {
+            console.error('Failed to send acceptance notification:', e);
+          }
+        }).catch(() => {});
+
       } catch (error: any) {
         if (error.message?.includes('Unique constraint')) {
           throw new ApiError(409, 'You are already a member of this workspace', 'ALREADY_MEMBER');
@@ -262,7 +290,7 @@ class InvitationDetailRoute extends BaseApiRoute {
       }
     }
 
-    return this.json({ 
+    return this.json({
       message: `Invitation ${action}ed successfully`,
       status,
       workspaceId: invitation.workspaceId

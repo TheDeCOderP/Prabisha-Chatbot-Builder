@@ -11,6 +11,7 @@ import {
   Palette,
   Settings2,
   Layers,
+  Volume2,
 } from "lucide-react"
 
 import { Card } from "@/components/ui/card"
@@ -22,6 +23,7 @@ import { useChatbot } from "@/hooks/useChatbot"
 import { WidgetThemeForm } from "@/components/forms/widget-form"
 import { WindowThemeForm } from "@/components/forms/window-form"
 import { EmbedModeForm } from "@/components/forms/embed-mode-form"
+import { VoiceForm } from "@/components/forms/voice-form"
 
 interface ThemeFeature {
   id: string
@@ -106,6 +108,13 @@ export default function ThemePage() {
       description: "Choose how the chat appears — floating, inline, sticky bar, drawer, or teaser.",
       badge: "5 Patterns",
     },
+    {
+      id: "voice",
+      icon: <Volume2 className="w-5 h-5" />,
+      title: "Voice & Sound",
+      description: "Notification ping on click + voice greeting when chat opens.",
+      badge: "New",
+    },
   ]
 
   const handleSaveTheme = async (themeData: any) => {
@@ -184,7 +193,8 @@ export default function ThemePage() {
                 const isConfigured = !!existingTheme && (
                    (feature.id === "widget" && existingTheme.widgetIcon) ||
                    (feature.id === "window" && existingTheme.headerBgColor) ||
-                   (feature.id === "embed" && existingTheme.embedMode && existingTheme.embedMode !== "FLOATING_BUTTON")
+                   (feature.id === "embed" && existingTheme.embedMode && existingTheme.embedMode !== "FLOATING_BUTTON") ||
+                   (feature.id === "voice" && (existingTheme.notificationSound || existingTheme.voiceGreeting))
                 )
 
                 return (
@@ -259,6 +269,18 @@ export default function ThemePage() {
               isLoading={isLoading}
               initial={existingTheme}
               onLiveUpdate={handleLivePreviewUpdate}
+            />
+          </TabsContent>
+
+          {/* Voice & Sound Form */}
+          <TabsContent value="voice">
+            <VoiceForm
+              onBack={resetForm}
+              onSave={handleSaveTheme}
+              isLoading={isLoading}
+              initial={existingTheme}
+              onLiveUpdate={handleLivePreviewUpdate}
+              chatbotData={chatbot}
             />
           </TabsContent>
 

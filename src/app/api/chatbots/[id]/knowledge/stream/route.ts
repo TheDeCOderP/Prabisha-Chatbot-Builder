@@ -55,7 +55,7 @@ export async function POST(request: NextRequest, context: RouterParams) {
           data: {
             chatbotId,
             autoUpdate: autoUpdate ?? false,
-            name: name || `Webpage - ${new Date().toLocaleDateString()}`,
+            name: name || `Webpage - ${new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date())}`,
             type: 'PAGE',
             indexName: `kb_${chatbotId}_${Date.now()}`,
           },
@@ -64,12 +64,17 @@ export async function POST(request: NextRequest, context: RouterParams) {
 
         send({ type: 'start', knowledgeBaseId: knowledgeBase.id });
 
+        let pagesSkipped = 0;
+        let pagesFailed  = 0;
+
         const { pages } = await processURL(
           url,
           crawlSubpages ?? false,
           3000,
-          (current, total, currentUrl, bytes, pagesOk) => {
-            send({ type: 'progress', current, total, url: currentUrl, bytes, pagesOk });
+          (current, total, currentUrl, bytes, pagesOk, pageStatus) => {
+            if (pageStatus === 'skipped') pagesSkipped++;
+            if (pageStatus === 'failed')  pagesFailed++;
+            send({ type: 'progress', current, total, url: currentUrl, bytes, pagesOk, pagesSkipped, pagesFailed, pageStatus });
           },
         );
 
@@ -120,6 +125,7 @@ export async function POST(request: NextRequest, context: RouterParams) {
           knowledgeBaseId: knowledgeBase.id,
           pagesScraped: usefulPages.length,
           pagesSkipped: skipped,
+          pagesFailed,
         });
       } catch (error) {
         if (knowledgeBaseId) {

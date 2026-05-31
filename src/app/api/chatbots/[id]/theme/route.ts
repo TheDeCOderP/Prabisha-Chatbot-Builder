@@ -152,6 +152,12 @@ console.log('Received theme update request:', { chatbotId, body });
       ...(body.drawerWidth    !== undefined && { drawerWidth:    body.drawerWidth }),
       ...(body.drawerTabText  !== undefined && { drawerTabText:  body.drawerTabText }),
       ...(body.drawerTabBgColor !== undefined && { drawerTabBgColor: body.drawerTabBgColor }),
+      // Voice & Sound
+      ...(body.notificationSound   !== undefined && { notificationSound:   body.notificationSound }),
+      ...(body.notificationVolume  !== undefined && { notificationVolume:  body.notificationVolume }),
+      ...(body.voiceGreeting       !== undefined && { voiceGreeting:       body.voiceGreeting }),
+      ...(body.voiceGreetingVolume !== undefined && { voiceGreetingVolume: body.voiceGreetingVolume }),
+      ...(body.voiceGreetingRate   !== undefined && { voiceGreetingRate:   body.voiceGreetingRate }),
     };
 
     // Update or create theme

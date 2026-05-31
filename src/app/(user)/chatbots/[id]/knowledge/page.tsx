@@ -1,7 +1,7 @@
 "use client"
 
 import { useParams } from "next/navigation"
-import { useState, useCallback, useEffect } from "react"
+import { useState, useCallback, useEffect, useRef } from "react"
 import { useDropzone } from "react-dropzone"
 import { useKnowledgeUpload, type ScrapeProgress } from "@/hooks/useKnowledgeUpload"
 import { Button } from "@/components/ui/button"
@@ -33,11 +33,15 @@ import {
   ChevronDown,
   RefreshCw,
   ArrowUpCircle,
+  Edit2,
+  Check,
   MinusCircle,
   AlertCircle,
+  Download,
+  FileJson,
 } from "lucide-react"
 import { toast } from "sonner"
-import { formatDistanceToNow } from "date-fns"
+import { format } from "date-fns"
 
 // --- Helper for conditional classes (removes dependency on @/lib/utils) ---
 function cn(...classes: (string | undefined | null | false)[]) {
@@ -75,6 +79,139 @@ interface Document {
   createdAt: string
 }
 
+// --- Helpers ---
+
+function trimUrl(url: string, maxLen = 55): string {
+  if (url.length <= maxLen) return url;
+  try {
+    const { hostname, pathname } = new URL(url);
+    const full = hostname + pathname;
+    if (full.length <= maxLen) return full;
+    const half = Math.floor((maxLen - 3) / 2);
+    return full.slice(0, half) + '…' + full.slice(-half);
+  } catch {
+    const half = Math.floor((maxLen - 3) / 2);
+    return url.slice(0, half) + '…' + url.slice(-half);
+  }
+}
+
+// --- Scrape Progress Panel ---
+function ScrapeProgressPanel({ scrapeProgress }: { scrapeProgress: import('@/hooks/useKnowledgeUpload').ScrapeProgress }) {
+  const isDone = scrapeProgress.phase === 'done';
+  const isStoring = scrapeProgress.phase === 'storing';
+
+  const progressValue = isStoring && scrapeProgress.storedTotal > 0
+    ? (scrapeProgress.storedCurrent / scrapeProgress.storedTotal) * 100
+    : scrapeProgress.total > 0
+    ? (scrapeProgress.current / scrapeProgress.total) * 100
+    : 5;
+
+  return (
+    <div className="rounded-xl border border-border bg-muted/20 overflow-hidden animate-in fade-in duration-300">
+      {/* Header */}
+      <div className="flex items-center gap-2.5 px-4 py-3 border-b bg-background">
+        {isDone
+          ? <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />
+          : <Loader2 className="w-4 h-4 animate-spin text-primary shrink-0" />
+        }
+        <span className="text-sm font-semibold text-foreground">
+          {isStoring ? 'Saving to knowledge base…'
+            : isDone ? 'Import complete!'
+            : 'Scraping pages…'}
+        </span>
+        {!isDone && (
+          <span className="ml-auto text-xs text-muted-foreground font-mono">
+            {isStoring
+              ? `${scrapeProgress.storedCurrent} / ${scrapeProgress.storedTotal}`
+              : `${scrapeProgress.current} / ${scrapeProgress.total || '?'}`}
+          </span>
+        )}
+      </div>
+
+      <div className="p-4 space-y-3">
+        {/* Progress bar */}
+        <Progress value={progressValue} className="h-2" />
+
+        {/* Current URL — trimmed, no overflow */}
+        {!isDone && scrapeProgress.currentUrl && (
+          <div className="flex items-center gap-2 bg-muted/50 border border-border/50 rounded-lg px-3 py-2 min-w-0">
+            <Globe className="w-3 h-3 text-muted-foreground shrink-0" />
+            <span className="text-[11px] font-mono text-muted-foreground truncate" title={scrapeProgress.currentUrl}>
+              {trimUrl(scrapeProgress.currentUrl)}
+            </span>
+          </div>
+        )}
+
+        {/* Stats chips */}
+        <div className="flex flex-wrap gap-2">
+          <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-green-100 text-green-700 text-[11px] font-semibold border border-green-200">
+            <CheckCircle2 className="w-3 h-3" />
+            {scrapeProgress.pagesOk} saved
+          </span>
+          {scrapeProgress.pagesSkipped > 0 && (
+            <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 text-[11px] font-semibold border border-amber-200">
+              <MinusCircle className="w-3 h-3" />
+              {scrapeProgress.pagesSkipped} empty
+            </span>
+          )}
+          {scrapeProgress.pagesFailed > 0 && (
+            <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-100 text-red-700 text-[11px] font-semibold border border-red-200">
+              <AlertCircle className="w-3 h-3" />
+              {scrapeProgress.pagesFailed} failed
+            </span>
+          )}
+          <span className="ml-auto text-[11px] text-muted-foreground flex items-center gap-1">
+            <FileText className="w-3 h-3" />
+            {formatBytes(scrapeProgress.bytesTotal)}
+          </span>
+        </div>
+
+        {/* Scrollable page log */}
+        {scrapeProgress.log.length > 0 && (
+          <div className="rounded-lg border border-border/60 overflow-hidden">
+            <div className="px-3 py-1.5 bg-muted/40 border-b border-border/40 flex items-center justify-between">
+              <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Pages Log</span>
+              <span className="text-[10px] text-muted-foreground">{scrapeProgress.log.length} processed</span>
+            </div>
+            <div className="max-h-44 overflow-y-auto divide-y divide-border/30">
+              {[...scrapeProgress.log].reverse().map((entry, i) => (
+                <div key={i} className="flex items-center gap-2 px-3 py-1.5 hover:bg-muted/30 transition-colors">
+                  {entry.status === 'ok' && <CheckCircle2 className="w-3 h-3 text-green-500 shrink-0" />}
+                  {entry.status === 'skipped' && <MinusCircle className="w-3 h-3 text-amber-500 shrink-0" />}
+                  {entry.status === 'failed' && <AlertCircle className="w-3 h-3 text-red-500 shrink-0" />}
+                  <span
+                    className="text-[11px] font-mono text-muted-foreground truncate flex-1 min-w-0"
+                    title={entry.url}
+                  >
+                    {trimUrl(entry.url, 60)}
+                  </span>
+                  <span className={cn(
+                    "text-[9px] font-bold uppercase shrink-0 px-1.5 py-0.5 rounded",
+                    entry.status === 'ok'      ? "bg-green-100 text-green-700" :
+                    entry.status === 'skipped' ? "bg-amber-100 text-amber-700" :
+                                                 "bg-red-100 text-red-700"
+                  )}>
+                    {entry.status}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Done summary */}
+        {isDone && (
+          <div className="text-xs text-muted-foreground text-center pt-1">
+            ✅ {scrapeProgress.pagesOk} pages saved to knowledge base
+            {scrapeProgress.pagesSkipped > 0 && ` · ${scrapeProgress.pagesSkipped} empty skipped`}
+            {scrapeProgress.pagesFailed  > 0 && ` · ${scrapeProgress.pagesFailed} failed`}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // --- Sub-Component: Knowledge Base Item (Collapsible) ---
 interface SyncResult {
   summary: { total: number; updated: number; unchanged: number; failed: number };
@@ -99,8 +236,13 @@ const KnowledgeBaseItem = ({
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
   const [showSyncResult, setShowSyncResult] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState(kb.name);
+  const [savingRename, setSavingRename] = useState(false);
+  const renameInputRef = useRef<HTMLInputElement>(null);
 
   const handleSync = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -124,6 +266,65 @@ const KnowledgeBaseItem = ({
     }
   };
 
+  const handleExport = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setExporting(true);
+    try {
+      const res = await fetch(
+        `/api/chatbots/${chatbotId}/knowledge/export?knowledgeBaseId=${kb.id}`
+      );
+      if (!res.ok) throw new Error('Export failed');
+      const blob = await res.blob();
+      const fileName = `${kb.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_kb_export.json`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = fileName;
+      document.body.appendChild(a); a.click();
+      document.body.removeChild(a); URL.revokeObjectURL(url);
+      toast.success(`Exported "${kb.name}" as JSON`);
+    } catch {
+      toast.error('Export failed');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleRenameStart = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setRenameValue(kb.name);
+    setRenaming(true);
+    setTimeout(() => renameInputRef.current?.select(), 30);
+  };
+
+  const handleRenameSave = async () => {
+    if (!renameValue.trim() || renameValue.trim() === kb.name) {
+      setRenaming(false);
+      return;
+    }
+    setSavingRename(true);
+    try {
+      const res = await fetch(`/api/chatbots/${chatbotId}/knowledge`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ knowledgeBaseId: kb.id, name: renameValue.trim() }),
+      });
+      if (!res.ok) throw new Error('Failed');
+      kb.name = renameValue.trim(); // optimistic update
+      toast.success('Renamed successfully');
+    } catch {
+      toast.error('Failed to rename');
+      setRenameValue(kb.name);
+    } finally {
+      setSavingRename(false);
+      setRenaming(false);
+    }
+  };
+
+  const handleRenameKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') handleRenameSave();
+    if (e.key === 'Escape') { setRenaming(false); setRenameValue(kb.name); }
+  };
+
   // Get icon for KB type
   const getTypeIcon = (type: string) => {
     switch (type) {
@@ -145,20 +346,43 @@ const KnowledgeBaseItem = ({
         )}
         onClick={() => setIsOpen(!isOpen)}
       >
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-4 min-w-0">
           <div className="w-9 h-9 rounded-md bg-primary/10 text-primary flex items-center justify-center shrink-0">
             {getTypeIcon(kb.type)}
           </div>
-          <div>
-            <h4 className="font-medium text-sm text-foreground flex items-center gap-2">
-              {kb.name || "Untitled Knowledge Base"}
+          <div className="group min-w-0">
+            <h4 className="font-medium text-sm text-foreground flex items-center gap-1.5 min-w-0">
+              {renaming ? (
+                <div className="flex items-center gap-1.5 min-w-0" onClick={e => e.stopPropagation()}>
+                  <input
+                    ref={renameInputRef}
+                    value={renameValue}
+                    onChange={e => setRenameValue(e.target.value)}
+                    onKeyDown={handleRenameKeyDown}
+                    onBlur={handleRenameSave}
+                    className="text-sm font-medium border border-primary rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary bg-background min-w-0 w-52"
+                    autoFocus
+                  />
+                  {savingRename
+                    ? <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground shrink-0" />
+                    : <Check className="w-3.5 h-3.5 text-primary cursor-pointer shrink-0" onClick={handleRenameSave} />
+                  }
+                </div>
+              ) : (
+                <>
+                  <span className="truncate">{kb.name || "Untitled Knowledge Base"}</span>
+                  <button
+                    type="button"
+                    onClick={handleRenameStart}
+                    className="shrink-0 opacity-0 group-hover:opacity-100 hover:text-primary transition-opacity"
+                    title="Rename"
+                  >
+                    <Edit2 className="w-3 h-3" />
+                  </button>
+                </>
+              )}
             </h4>
             <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground flex-wrap">
-              <span className="flex items-center gap-1">
-                <Calendar className="w-3 h-3" />
-                {kb.createdAt ? formatDistanceToNow(new Date(kb.createdAt), { addSuffix: true }) : 'Just now'}
-              </span>
-              <span className="w-1 h-1 rounded-full bg-muted-foreground/30" />
               <span className="flex items-center gap-1">
                 <FileText className="w-3 h-3" />
                 {kb.documents?.length || 0} items
@@ -168,7 +392,7 @@ const KnowledgeBaseItem = ({
                   <span className="w-1 h-1 rounded-full bg-muted-foreground/30" />
                   <span className="flex items-center gap-1 text-primary/70">
                     <RefreshCw className="w-3 h-3" />
-                    synced {formatDistanceToNow(new Date(kb.updatedAt), { addSuffix: true })}
+                    synced {format(new Date(kb.updatedAt), 'dd MMM yyyy')}
                   </span>
                 </>
               )}
@@ -189,6 +413,20 @@ const KnowledgeBaseItem = ({
               <RefreshCw className={cn("w-4 h-4", syncing && "animate-spin")} />
             </Button>
           )}
+          {/* Export button */}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 w-8 p-0 text-muted-foreground hover:text-blue-600 transition-colors"
+            onClick={handleExport}
+            disabled={exporting}
+            title="Export as JSON — re-importable later"
+          >
+            {exporting
+              ? <Loader2 className="w-4 h-4 animate-spin" />
+              : <Download className="w-4 h-4" />
+            }
+          </Button>
           <Button
             variant="ghost"
             size="sm"
@@ -334,6 +572,7 @@ export default function KnowledgePage() {
   const [crawlSubpages, setCrawlSubpages] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([])
   const [uploadedTables, setUploadedTables] = useState<File[]>([])
+  const [importFile, setImportFile] = useState<File | null>(null)
   
   // State for knowledge bases
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([])
@@ -469,6 +708,12 @@ export default function KnowledgePage() {
         setWebpageUrl('')
         setIsDialogOpen(false)
         fetchKnowledgeBases()
+      } else if (selectedType === 'import' && importFile) {
+        await uploadFiles([importFile], 'import' as any, sourceName)
+        setImportFile(null)
+        setIsDialogOpen(false)
+        reset()
+        fetchKnowledgeBases()
       }
       setSourceName('')
     } catch (error) {
@@ -480,6 +725,7 @@ export default function KnowledgePage() {
     if (selectedType === 'file') return uploadedFiles.length > 0
     if (selectedType === 'table') return uploadedTables.length > 0
     if (selectedType === 'webpage') return webpageUrl.trim() !== ''
+    if (selectedType === 'import') return importFile !== null
     return false
   }
 
@@ -535,8 +781,20 @@ export default function KnowledgePage() {
       </div>
 
       {/* ADD SOURCE DIALOG */}
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-150 max-h-[90vh] overflow-y-auto">
+      <Dialog
+        open={isDialogOpen}
+        onOpenChange={(open) => {
+          // BUG FIX: prevent dialog close while scraping/uploading is in progress
+          if (!open && uploading) return;
+          setIsDialogOpen(open);
+        }}
+      >
+        <DialogContent
+          className="sm:max-w-150 max-h-[90vh] overflow-y-auto"
+          // Also block Escape key and outside click while uploading
+          onEscapeKeyDown={(e) => { if (uploading) e.preventDefault(); }}
+          onInteractOutside={(e) => { if (uploading) e.preventDefault(); }}
+        >
           <DialogHeader>
             <DialogTitle>Add Knowledge Source</DialogTitle>
           </DialogHeader>
@@ -544,11 +802,12 @@ export default function KnowledgePage() {
           <div className="space-y-6 py-4">
             <div className="space-y-3">
               <Label className="text-xs font-semibold uppercase text-muted-foreground">Source Type</Label>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-4 gap-2">
                 {[
-                  { id: "webpage", icon: Globe, label: "Webpage" },
-                  { id: "file", icon: FileText, label: "File" },
-                  { id: "table", icon: TableIcon, label: "Table" },
+                  { id: "webpage", icon: Globe,       label: "Webpage" },
+                  { id: "file",    icon: FileText,    label: "File" },
+                  { id: "table",   icon: TableIcon,   label: "Table" },
+                  { id: "import",  icon: FileJson,    label: "Import KB" },
                 ].map((type) => (
                   <div 
                     key={type.id}
@@ -694,61 +953,64 @@ export default function KnowledgePage() {
               </div>
             )}
 
-            {/* Webpage scrape live progress */}
-            {uploading && selectedType === 'webpage' && scrapeProgress && (
-              <div className="space-y-4 pt-2 animate-in fade-in duration-300">
-                <div className="flex items-center gap-2 text-sm font-medium">
-                  {scrapeProgress.phase === 'done'
-                    ? <CheckCircle2 className="w-4 h-4 text-green-500" />
-                    : <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                  }
-                  <span>
-                    {scrapeProgress.phase === 'storing'
-                      ? 'Saving to knowledge base...'
-                      : scrapeProgress.phase === 'done'
-                      ? 'Done!'
-                      : 'Scraping pages...'}
-                  </span>
-                </div>
-
-                {/* Current URL */}
-                <div className="text-xs text-muted-foreground truncate bg-muted/40 px-3 py-2 rounded-md font-mono border">
-                  {scrapeProgress.currentUrl || 'Initializing...'}
-                </div>
-
-                {/* Progress bar */}
-                <div className="space-y-1.5">
-                  <div className="flex justify-between text-xs text-muted-foreground">
-                    <span>
-                      {scrapeProgress.phase === 'storing'
-                        ? `Storing ${scrapeProgress.storedCurrent} / ${scrapeProgress.storedTotal}`
-                        : `${scrapeProgress.current} / ${scrapeProgress.total || '?'} pages`}
-                    </span>
-                    <span>{formatBytes(scrapeProgress.bytesTotal)}</span>
-                  </div>
-                  <Progress
-                    value={
-                      scrapeProgress.phase === 'storing' && scrapeProgress.storedTotal > 0
-                        ? (scrapeProgress.storedCurrent / scrapeProgress.storedTotal) * 100
-                        : scrapeProgress.total > 0
-                        ? (scrapeProgress.current / scrapeProgress.total) * 100
-                        : 0
-                    }
-                    className="h-2"
-                  />
-                </div>
-
-                {/* Stats row */}
-                <div className="flex gap-4 text-xs text-muted-foreground">
-                  <span className="flex items-center gap-1.5">
-                    <CheckCircle2 className="w-3 h-3 text-green-500" />
-                    {scrapeProgress.pagesOk} useful pages
-                  </span>
-                  {scrapeProgress.total > 0 && scrapeProgress.current < scrapeProgress.total && scrapeProgress.phase === 'scraping' && (
-                    <span>{scrapeProgress.total - scrapeProgress.current} remaining</span>
+            {/* Import KB UI */}
+            {selectedType === 'import' && (
+              <div className="space-y-4 animate-in fade-in zoom-in-95 duration-200">
+                {/* Drop zone */}
+                <label
+                  htmlFor="import-json"
+                  className={cn(
+                    "flex flex-col items-center justify-center border border-dashed rounded-md p-8 text-center cursor-pointer transition-colors",
+                    importFile ? "border-primary bg-primary/5" : "border-muted-foreground/25 hover:border-primary/50"
                   )}
+                >
+                  <input
+                    id="import-json"
+                    type="file"
+                    accept=".json"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0] || null
+                      setImportFile(f)
+                    }}
+                  />
+                  {importFile ? (
+                    <>
+                      <FileJson className="w-8 h-8 mx-auto mb-3 text-primary" />
+                      <p className="text-sm font-medium text-primary">{importFile.name}</p>
+                      <p className="text-xs text-muted-foreground mt-1">{(importFile.size / 1024).toFixed(1)} KB — click to change</p>
+                    </>
+                  ) : (
+                    <>
+                      <FileJson className="w-8 h-8 mx-auto mb-3 text-muted-foreground" />
+                      <p className="text-sm font-medium">Click to select export file</p>
+                      <p className="text-xs text-muted-foreground mt-1">Only <code className="font-mono">*_kb_export.json</code> files from this platform</p>
+                    </>
+                  )}
+                </label>
+
+                {/* Info box */}
+                <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 space-y-1.5">
+                  <p className="text-xs font-semibold text-blue-800">How re-import works</p>
+                  <ul className="space-y-1">
+                    {[
+                      "Creates a new knowledge base with the same name & type",
+                      "All documents are re-embedded into the vector store",
+                      "URLs already in another KB are updated (not duplicated)",
+                      "Only files exported from this platform are supported",
+                    ].map((t, i) => (
+                      <li key={i} className="flex gap-1.5 text-[11px] text-blue-700">
+                        <span className="shrink-0">•</span>{t}
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               </div>
+            )}
+
+            {/* Webpage scrape live progress */}
+            {selectedType === 'webpage' && scrapeProgress && (
+              <ScrapeProgressPanel scrapeProgress={scrapeProgress} />
             )}
 
             {/* File/Table upload progress */}

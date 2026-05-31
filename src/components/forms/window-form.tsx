@@ -1,7 +1,10 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
-import { Loader2, Save, ChevronLeft, MessageSquare, Palette, Layout, User, ImageIcon, ToggleLeft, Type } from "lucide-react"
+import {
+  Loader2, Save, ChevronLeft, MessageSquare, Palette,
+  Layout, User, ImageIcon, ToggleLeft, Type, Sparkles,
+} from "lucide-react"
 import Image from "next/image"
 import { toast } from "sonner"
 
@@ -9,6 +12,80 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
+import { Slider } from "@/components/ui/slider"
+import { Textarea } from "@/components/ui/textarea"
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select"
+
+// ─── Shared helpers ───────────────────────────────────────────────────────────
+
+function SectionCard({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <div className="rounded-xl border border-border bg-card overflow-hidden">
+      <div className="flex items-center gap-2 px-4 py-2.5 border-b bg-muted/30">
+        <span className="text-muted-foreground">{icon}</span>
+        <span className="text-xs font-semibold text-foreground uppercase tracking-wide">{title}</span>
+      </div>
+      <div className="p-4 space-y-4">{children}</div>
+    </div>
+  )
+}
+
+function ColorInput({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="space-y-1.5">
+      <Label className="text-xs font-medium">{label}</Label>
+      <div className="flex items-center gap-2 border border-border rounded-lg px-2 py-1.5 bg-background h-9 cursor-pointer">
+        <label className="flex items-center gap-2 cursor-pointer w-full">
+          <div className="w-5 h-5 rounded border border-border/60 shrink-0" style={{ backgroundColor: value }} />
+          <input
+            type="color"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            style={{ opacity: 0, position: 'absolute', width: 0, height: 0, border: 'none', padding: 0 }}
+          />
+          <span className="text-xs font-mono text-muted-foreground truncate">{value}</span>
+        </label>
+      </div>
+    </div>
+  )
+}
+
+function ColorPair({ label, bg, text, onBg, onText }: {
+  label: string; bg: string; text: string; onBg: (v: string) => void; onText: (v: string) => void
+}) {
+  return (
+    <div className="space-y-2">
+      <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">{label}</p>
+      <div className="grid grid-cols-2 gap-3">
+        <ColorInput label="Background" value={bg} onChange={onBg} />
+        <ColorInput label="Text Color" value={text} onChange={onText} />
+      </div>
+      {/* Live mini preview */}
+      <div className="flex items-center gap-2 p-2.5 rounded-lg border border-border/50" style={{ backgroundColor: bg }}>
+        <span className="text-xs font-medium" style={{ color: text }}>Preview text</span>
+        <span className="text-[10px]" style={{ color: text, opacity: 0.7 }}>12:34</span>
+      </div>
+    </div>
+  )
+}
+
+function ToggleRow({ label, description, checked, onChange }: {
+  label: string; description: string; checked: boolean; onChange: (v: boolean) => void
+}) {
+  return (
+    <div className="flex items-center justify-between py-2.5 first:pt-0 last:pb-0">
+      <div className="min-w-0 pr-4">
+        <p className="text-xs font-medium text-foreground">{label}</p>
+        <p className="text-[10px] text-muted-foreground">{description}</p>
+      </div>
+      <Switch checked={checked} onCheckedChange={onChange} />
+    </div>
+  )
+}
+
+// ─── Props ────────────────────────────────────────────────────────────────────
 
 interface WindowThemeFormProps {
   onBack: () => void
@@ -17,56 +94,36 @@ interface WindowThemeFormProps {
   initial?: any
   chatbotId?: string
   onLiveUpdate?: (theme: any) => void
-  chatbotData?: any // Pass the full chatbot data to access avatar/icon
+  chatbotData?: any
 }
 
-export function WindowThemeForm({ 
-  onBack, 
-  onSave, 
-  isLoading, 
-  initial, 
-  chatbotId, 
-  onLiveUpdate,
-  chatbotData 
+// ─── Component ────────────────────────────────────────────────────────────────
+
+export function WindowThemeForm({
+  onBack, onSave, isLoading, initial, chatbotId, onLiveUpdate, chatbotData,
 }: WindowThemeFormProps) {
   const [formData, setFormData] = useState({
-    // Header Colors
     headerBgColor: "#1320AA",
     headerTextColor: "#ffffff",
-
-    // Message Bubble Colors
     botMessageBgColor: "#f1f5f9",
     botMessageTextColor: "#0f172a",
     userMessageBgColor: "#1320AA",
     userMessageTextColor: "#ffffff",
-
-    // Input Area Colors
     inputBgColor: "#ffffff",
     inputBorderColor: "#e2e8f0",
     inputButtonColor: "#DD692E",
-
-    // Close Button Colors
     closeButtonColor: "#000000",
     closeButtonBgColor: "#DD692E",
-
-    // Quick Suggestions Colors
     quickSuggestionBgColor: "#ffffff",
     quickSuggestionTextColor: "#0f172a",
-
-    // New: Window Style
     messageBgColor: "#f8fafc",
     windowBorderRadius: 16,
     fontSize: 14,
-
-    // New: Feature Toggles
     showPoweredBy: true,
     showTTS: true,
-
-    // New: Lead Card
     leadCardMessage: "Before we continue, mind sharing a few quick details? Totally optional.",
   })
 
-  // Separate state for avatar (from Chatbot model, not theme)
   const [avatarData, setAvatarData] = useState({
     type: "EMOJI" as "EMOJI" | "SVG" | "URL",
     value: "",
@@ -79,7 +136,6 @@ export function WindowThemeForm({
   const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const isInitializedRef = useRef(false)
 
-  // Initialize form data from initial prop (theme data)
   useEffect(() => {
     if (initial && !isInitializedRef.current) {
       setFormData({
@@ -103,534 +159,247 @@ export function WindowThemeForm({
         showTTS: initial.showTTS ?? true,
         leadCardMessage: initial.leadCardMessage || "Before we continue, mind sharing a few quick details? Totally optional.",
       })
-      
-      // Initialize avatar from chatbotData
-      if (chatbotData) {
-        if (chatbotData.avatar) {
-          setAvatarData({
-            type: "URL",
-            value: chatbotData.avatar,
-            emojiValue: "🤖",
-            svgValue: "",
-          })
-        } else if (chatbotData.avatarEmoji) {
-          setAvatarData({
-            type: "EMOJI",
-            value: chatbotData.avatarEmoji,
-            emojiValue: chatbotData.avatarEmoji,
-            svgValue: "",
-          })
-        } else if (chatbotData.avatarSvg) {
-          setAvatarData({
-            type: "SVG",
-            value: chatbotData.avatarSvg,
-            emojiValue: "🤖",
-            svgValue: chatbotData.avatarSvg,
-          })
-        }
+      if (chatbotData?.avatar) {
+        setAvatarData({ type: "URL", value: chatbotData.avatar, emojiValue: "🤖", svgValue: "" })
       }
-      
       isInitializedRef.current = true
     }
   }, [initial, chatbotData])
 
-  // Debounced live preview update
   useEffect(() => {
     if (onLiveUpdate && isInitializedRef.current) {
-      if (updateTimeoutRef.current) {
-        clearTimeout(updateTimeoutRef.current)
-      }
-
-      updateTimeoutRef.current = setTimeout(() => {
-        const updatedTheme = {
-          ...initial,
-          ...formData,
-        }
-        onLiveUpdate(updatedTheme)
-      }, 100)
+      if (updateTimeoutRef.current) clearTimeout(updateTimeoutRef.current)
+      updateTimeoutRef.current = setTimeout(() => onLiveUpdate({ ...initial, ...formData }), 100)
     }
-
-    return () => {
-      if (updateTimeoutRef.current) {
-        clearTimeout(updateTimeoutRef.current)
-      }
-    }
+    return () => { if (updateTimeoutRef.current) clearTimeout(updateTimeoutRef.current) }
   }, [formData, initial, onLiveUpdate])
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        toast.error('Image size should be less than 5MB');
-        return;
-      }
-      setSelectedFile(file);
-      // Show preview immediately
-      const previewUrl = URL.createObjectURL(file);
-      setAvatarData({
-        type: "URL",
-        value: previewUrl,
-        emojiValue: "🤖",
-        svgValue: "",
-      });
-    }
-  };
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (file.size > 5 * 1024 * 1024) { toast.error('Image size should be less than 5MB'); return }
+    setSelectedFile(file)
+    setAvatarData({ type: "URL", value: URL.createObjectURL(file), emojiValue: "🤖", svgValue: "" })
+  }
 
   const handleSubmit = async () => {
-    setIsAvatarLoading(true);
-    
+    setIsAvatarLoading(true)
     try {
-      // Upload avatar file if selected
       if (selectedFile && chatbotId) {
-        const uploadFormData = new FormData();
-        uploadFormData.append('avatar', selectedFile);
-        
-        const uploadResponse = await fetch(`/api/chatbots/${chatbotId}`, {
-          method: "PUT",
-          body: uploadFormData,
-        });
-        
-        if (!uploadResponse.ok) throw new Error('Failed to upload avatar');
-        
-        const uploadData = await uploadResponse.json();
-        console.log('Avatar uploaded:', uploadData);
-        
-        // Update avatar data with the new URL
-        setAvatarData({
-          type: "URL",
-          value: uploadData.chatbot.avatar,
-          emojiValue: "🤖",
-          svgValue: "",
-        });
-        
-        toast.success('Avatar uploaded successfully');
-        setSelectedFile(null);
+        const fd = new FormData()
+        fd.append('avatar', selectedFile)
+        const res = await fetch(`/api/chatbots/${chatbotId}`, { method: "PUT", body: fd })
+        if (!res.ok) throw new Error('Failed to upload avatar')
+        const data = await res.json()
+        setAvatarData({ type: "URL", value: data.chatbot.avatar, emojiValue: "🤖", svgValue: "" })
+        toast.success('Avatar uploaded')
+        setSelectedFile(null)
       }
-      
-      // Save avatar emoji or SVG if they changed (and no file upload)
-      if (!selectedFile && chatbotId) {
-        const avatarPayload: any = {};
-        
-        if (avatarData.type === "EMOJI" && avatarData.value !== chatbotData?.avatarEmoji) {
-          avatarPayload.avatarEmoji = avatarData.value;
-          avatarPayload.avatar = null;
-          avatarPayload.avatarSvg = null;
-        } else if (avatarData.type === "SVG" && avatarData.value !== chatbotData?.avatarSvg) {
-          avatarPayload.avatarSvg = avatarData.value;
-          avatarPayload.avatar = null;
-          avatarPayload.avatarEmoji = null;
-        } else if (avatarData.type === "URL" && avatarData.value !== chatbotData?.avatar && !avatarData.value.startsWith('blob:')) {
-          // Only save if it's a permanent URL (not a blob preview)
-          avatarPayload.avatar = avatarData.value;
-          avatarPayload.avatarEmoji = null;
-          avatarPayload.avatarSvg = null;
-        }
-        
-        // Only make the request if there are changes
-        if (Object.keys(avatarPayload).length > 0) {
-          const avatarResponse = await fetch(`/api/chatbots/${chatbotId}`, {
-            method: "PATCH",
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(avatarPayload),
-          });
-          
-          if (!avatarResponse.ok) throw new Error('Failed to save avatar');
-          toast.success('Avatar saved successfully');
-        }
-      }
-      
-      await onSave({ ...initial, ...formData });
-      
-    } catch (error) {
-      console.error('Error saving settings:', error);
-      toast.error('Failed to save settings');
+      await onSave({ ...initial, ...formData })
+    } catch {
+      toast.error('Failed to save settings')
     } finally {
-      setIsAvatarLoading(false);
+      setIsAvatarLoading(false)
     }
-  };
+  }
 
-  const ColorPicker = ({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) => (
-    <div className="space-y-2">
-      <Label className="text-xs">{label}</Label>
-      <div className="flex items-center gap-2">
-        <div 
-          className="relative w-8 h-8 rounded-full border-2 border-gray-200 cursor-pointer overflow-hidden"
-          onClick={() => document.getElementById(`color-input-${label.replace(/\s/g, '')}`)?.click()}
-        >
-          <div 
-            className="absolute inset-0"
-            style={{ backgroundColor: value }}
-          />
-          <input
-            id={`color-input-${label.replace(/\s/g, '')}`}
-            type="color" 
-            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-            value={value} 
-            onChange={(e) => onChange(e.target.value)}
-          />
-        </div>
-        <Input 
-          value={value} 
-          onChange={(e) => onChange(e.target.value)}
-          className="flex-1 font-mono text-xs"
-          placeholder="#000000"
-        />
-      </div>
-    </div>
-  );
-
-  const AvatarSelector = () => (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <Label>Chat Avatar</Label>
-        <select 
-          value={avatarData.type}
-          onChange={(e) => setAvatarData({ ...avatarData, type: e.target.value as any })}
-          className="text-xs border rounded-md px-2 py-1 bg-background"
-        >
-          <option value="EMOJI">Emoji</option>
-          <option value="SVG">SVG Path</option>
-          <option value="URL">Image Upload</option>
-        </select>
-      </div>
-
-      {avatarData.type === "EMOJI" && (
-        <div className="space-y-2">
-          <Input 
-            value={avatarData.value || avatarData.emojiValue}
-            onChange={(e) => setAvatarData({ 
-              ...avatarData, 
-              value: e.target.value,
-              emojiValue: e.target.value 
-            })}
-            placeholder="Enter emoji (e.g., 🤖)"
-            className="font-mono"
-          />
-        </div>
-      )}
-
-      {avatarData.type === "SVG" && (
-        <div className="space-y-2">
-          <textarea 
-            value={avatarData.value || avatarData.svgValue}
-            onChange={(e) => setAvatarData({ 
-              ...avatarData, 
-              value: e.target.value,
-              svgValue: e.target.value 
-            })}
-            placeholder='Paste SVG path or code (e.g., <path d="..." />)'
-            className="w-full min-h-[80px] px-3 py-2 text-xs font-mono border rounded-md bg-background resize-none"
-          />
-        </div>
-      )}
-
-      {avatarData.type === "URL" && (
-        <div className="space-y-2">
-          <div className="flex items-center gap-4 p-3 border rounded-md bg-muted/30">
-            <div className="h-12 w-12 shrink-0 rounded-md border bg-background flex items-center justify-center overflow-hidden">
-              {avatarData.value && !avatarData.value.startsWith('blob:') ? (
-                <Image src={avatarData.value} alt="Avatar" width={48} height={48} className="h-full w-full object-contain" />
-              ) : avatarData.value && avatarData.value.startsWith('blob:') ? (
-                <img src={avatarData.value} alt="Avatar Preview" className="h-full w-full object-contain" />
-              ) : (
-                <ImageIcon className="h-6 w-6 text-muted-foreground" />
-              )}
-            </div>
-            <div className="flex-1">
-              <Input 
-                type="file" 
-                accept="image/*"
-                className="text-xs cursor-pointer"
-                onChange={handleFileSelect}
-              />
-            </div>
-          </div>
-          <p className="text-[10px] text-muted-foreground">Recommended: 48×48px PNG or SVG. Max 5MB</p>
-        </div>
-      )}
-    </div>
-  )
+  const update = (patch: Partial<typeof formData>) => setFormData(p => ({ ...p, ...patch }))
 
   return (
     <div className="flex flex-col">
-      <div className="border-b py-4 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={onBack} className="h-8 w-8">
-            <ChevronLeft className="w-4 h-4" />
-          </Button>
-          <div>
-            <h2 className="font-semibold text-foreground text-sm">Window Customization</h2>
-            <p className="text-xs text-muted-foreground">Customize chat window colors and avatar</p>
-          </div>
-        </div>
-      </div>
-
-      <div className="space-y-6 py-4 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 22rem)' }}>
-        
-        {/* Avatar Section - Separate from theme colors */}
-        <div className="space-y-4">
-          <div className="flex items-center gap-2 text-sm font-semibold">
-            <User className="w-4 h-4 text-orange-500" />
-            Chat Avatar
-          </div>
-          
-          <AvatarSelector />
-          <p className="text-[11px] text-muted-foreground mt-2">
-            Note: The avatar appears in the chat header and next to bot messages.
-          </p>
-        </div>
-
-        <hr />
-
-        {/* Header Colors */}
-        <div className="space-y-4">
-          <div className="flex items-center gap-2 text-sm font-semibold">
-            <Layout className="w-4 h-4" />
-            Header Colors
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <ColorPicker 
-              label="Header Background" 
-              value={formData.headerBgColor}
-              onChange={(v) => setFormData({ ...formData, headerBgColor: v })}
-            />
-            <ColorPicker 
-              label="Header Text" 
-              value={formData.headerTextColor}
-              onChange={(v) => setFormData({ ...formData, headerTextColor: v })}
-            />
-          </div>
-        </div>
-
-        {/* Message Bubble Colors */}
-        <div className="space-y-4 border-t pt-4">
-          <div className="flex items-center gap-2 text-sm font-semibold">
-            <MessageSquare className="w-4 h-4" />
-            Message Bubbles
-          </div>
-
-          <div className="space-y-3">
-            <p className="text-xs text-muted-foreground">Bot Messages</p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <ColorPicker 
-                label="Bot Background" 
-                value={formData.botMessageBgColor}
-                onChange={(v) => setFormData({ ...formData, botMessageBgColor: v })}
-              />
-              <ColorPicker 
-                label="Bot Text" 
-                value={formData.botMessageTextColor}
-                onChange={(v) => setFormData({ ...formData, botMessageTextColor: v })}
-              />
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            <p className="text-xs text-muted-foreground">User Messages</p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <ColorPicker 
-                label="User Background" 
-                value={formData.userMessageBgColor}
-                onChange={(v) => setFormData({ ...formData, userMessageBgColor: v })}
-              />
-              <ColorPicker 
-                label="User Text" 
-                value={formData.userMessageTextColor}
-                onChange={(v) => setFormData({ ...formData, userMessageTextColor: v })}
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Input Area Colors */}
-        <div className="space-y-4 border-t pt-4">
-          <div className="flex items-center gap-2 text-sm font-semibold">
-            <Palette className="w-4 h-4" />
-            Input Area
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <ColorPicker 
-              label="Input Background" 
-              value={formData.inputBgColor}
-              onChange={(v) => setFormData({ ...formData, inputBgColor: v })}
-            />
-            <ColorPicker 
-              label="Input Border" 
-              value={formData.inputBorderColor}
-              onChange={(v) => setFormData({ ...formData, inputBorderColor: v })}
-            />
-            <ColorPicker 
-              label="Send Button" 
-              value={formData.inputButtonColor}
-              onChange={(v) => setFormData({ ...formData, inputButtonColor: v })}
-            />
-          </div>
-        </div>
-
-        {/* Close Button Colors */}
-        <div className="space-y-4 border-t pt-4">
-          <div className="flex items-center gap-2 text-sm font-semibold">
-            <Palette className="w-4 h-4" />
-            Close Button
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <ColorPicker 
-              label="Button Background" 
-              value={formData.closeButtonBgColor}
-              onChange={(v) => setFormData({ ...formData, closeButtonBgColor: v })}
-            />
-            <ColorPicker 
-              label="Icon Color" 
-              value={formData.closeButtonColor}
-              onChange={(v) => setFormData({ ...formData, closeButtonColor: v })}
-            />
-          </div>
-        </div>
-
-        {/* Quick Suggestions Colors */}
-        <div className="space-y-4 border-t pt-4">
-          <div className="flex items-center gap-2 text-sm font-semibold">
-            <Palette className="w-4 h-4" />
-            Quick Suggestions
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <ColorPicker
-              label="Suggestion Background"
-              value={formData.quickSuggestionBgColor}
-              onChange={(v) => setFormData({ ...formData, quickSuggestionBgColor: v })}
-            />
-            <ColorPicker
-              label="Suggestion Text"
-              value={formData.quickSuggestionTextColor}
-              onChange={(v) => setFormData({ ...formData, quickSuggestionTextColor: v })}
-            />
-          </div>
-        </div>
-
-        {/* Message Area Background */}
-        <div className="space-y-4 border-t pt-4">
-          <div className="flex items-center gap-2 text-sm font-semibold">
-            <Palette className="w-4 h-4" />
-            Message Area Background
-          </div>
-          <ColorPicker
-            label="Background Color"
-            value={formData.messageBgColor}
-            onChange={(v) => setFormData({ ...formData, messageBgColor: v })}
-          />
-        </div>
-
-        {/* Window Style */}
-        <div className="space-y-4 border-t pt-4">
-          <div className="flex items-center gap-2 text-sm font-semibold">
-            <Type className="w-4 h-4" />
-            Window Style
-          </div>
-
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <div className="flex justify-between items-center">
-                <Label className="text-xs">Font Size</Label>
-                <span className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded">{formData.fontSize}px</span>
-              </div>
-              <input
-                type="range"
-                min={11} max={18} step={1}
-                value={formData.fontSize}
-                onChange={(e) => setFormData({ ...formData, fontSize: Number(e.target.value) })}
-                className="w-full accent-primary"
-              />
-              <div className="flex justify-between text-[10px] text-muted-foreground">
-                <span>11px (small)</span><span>18px (large)</span>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex justify-between items-center">
-                <Label className="text-xs">Window Corner Radius</Label>
-                <span className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded">{formData.windowBorderRadius}px</span>
-              </div>
-              <input
-                type="range"
-                min={0} max={32} step={2}
-                value={formData.windowBorderRadius}
-                onChange={(e) => setFormData({ ...formData, windowBorderRadius: Number(e.target.value) })}
-                className="w-full accent-primary"
-              />
-              <div className="flex justify-between text-[10px] text-muted-foreground">
-                <span>0 (sharp)</span><span>32 (very rounded)</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Feature Toggles */}
-        <div className="space-y-3 border-t pt-4">
-          <div className="flex items-center gap-2 text-sm font-semibold">
-            <ToggleLeft className="w-4 h-4" />
-            Display Options
-          </div>
-
-          <div className="divide-y divide-border rounded-lg border px-3">
-            <div className="flex items-center justify-between py-2.5">
-              <div>
-                <p className="text-xs font-medium">Read Aloud (TTS)</p>
-                <p className="text-[10px] text-muted-foreground">Show speak button on bot messages</p>
-              </div>
-              <Switch
-                checked={formData.showTTS}
-                onCheckedChange={(v) => setFormData({ ...formData, showTTS: v })}
-              />
-            </div>
-            <div className="flex items-center justify-between py-2.5">
-              <div>
-                <p className="text-xs font-medium">Powered by Prabisha</p>
-                <p className="text-[10px] text-muted-foreground">Show branding at bottom of chat window</p>
-              </div>
-              <Switch
-                checked={formData.showPoweredBy}
-                onCheckedChange={(v) => setFormData({ ...formData, showPoweredBy: v })}
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Lead Card Message */}
-        <div className="space-y-3 border-t pt-4">
-          <div className="flex items-center gap-2 text-sm font-semibold">
-            <MessageSquare className="w-4 h-4" />
-            Lead Card Message
-          </div>
-          <p className="text-[11px] text-muted-foreground">
-            Text shown when asking users to share their details before continuing.
-          </p>
-          <textarea
-            value={formData.leadCardMessage}
-            onChange={(e) => setFormData({ ...formData, leadCardMessage: e.target.value })}
-            rows={3}
-            placeholder="Before we continue, mind sharing a few quick details? Totally optional."
-            className="w-full px-3 py-2 text-xs border rounded-md bg-background resize-none focus:outline-none focus:ring-2 focus:ring-primary/30"
-          />
-        </div>
-
-      </div>
-
-      {/* Action Buttons — outside scroll so always visible */}
-      <div className="shrink-0 bg-background border-t pt-4 mt-2 flex gap-2">
-        <Button variant="outline" onClick={onBack} className="flex-1">
-          Cancel
+      {/* Header */}
+      <div className="border-b py-3.5 flex items-center gap-3 shrink-0">
+        <Button variant="ghost" size="icon" onClick={onBack} className="h-8 w-8 shrink-0">
+          <ChevronLeft className="w-4 h-4" />
         </Button>
-        <Button onClick={handleSubmit} disabled={isLoading || isAvatarLoading} className="flex-1">
-          {(isLoading || isAvatarLoading) ? (
-            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-          ) : (
-            <Save className="w-4 h-4 mr-2" />
+        <div>
+          <h2 className="font-semibold text-sm">Window Customization</h2>
+          <p className="text-xs text-muted-foreground">Customize chat window colors and style</p>
+        </div>
+      </div>
+
+      <div className="space-y-3 py-4 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 22rem)' }}>
+
+        {/* Avatar */}
+        <SectionCard title="Chat Avatar" icon={<User className="w-3.5 h-3.5" />}>
+          <div className="space-y-1.5">
+            <Label className="text-xs font-medium">Avatar Type</Label>
+            <Select value={avatarData.type} onValueChange={(v) => setAvatarData({ ...avatarData, type: v as any })}>
+              <SelectTrigger className="text-sm"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="URL">Image Upload</SelectItem>
+                <SelectItem value="EMOJI">Emoji</SelectItem>
+                <SelectItem value="SVG">SVG Code</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {avatarData.type === "EMOJI" && (
+            <Input
+              value={avatarData.value || avatarData.emojiValue}
+              onChange={(e) => setAvatarData({ ...avatarData, value: e.target.value, emojiValue: e.target.value })}
+              placeholder="🤖"
+              className="font-mono text-lg"
+            />
           )}
-          Save Window Settings
+
+          {avatarData.type === "SVG" && (
+            <Textarea
+              value={avatarData.value || avatarData.svgValue}
+              onChange={(e) => setAvatarData({ ...avatarData, value: e.target.value, svgValue: e.target.value })}
+              placeholder='<path d="..." />'
+              className="font-mono text-xs min-h-[80px]"
+            />
+          )}
+
+          {avatarData.type === "URL" && (
+            <div className="flex items-center gap-3 p-3 rounded-lg border bg-muted/30">
+              <div className="h-12 w-12 shrink-0 rounded-xl border bg-background flex items-center justify-center overflow-hidden">
+                {avatarData.value
+                  ? <img src={avatarData.value} alt="avatar" className="h-full w-full object-contain" />
+                  : <ImageIcon className="h-5 w-5 text-muted-foreground" />
+                }
+              </div>
+              <div className="flex-1 min-w-0">
+                <Input type="file" accept="image/*" className="text-xs" onChange={handleFileSelect} />
+                <p className="text-[10px] text-muted-foreground mt-1">PNG/SVG • 48×48px • Max 5MB</p>
+              </div>
+            </div>
+          )}
+          <p className="text-[11px] text-muted-foreground">Appears in the chat header and next to bot messages.</p>
+        </SectionCard>
+
+        {/* Header */}
+        <SectionCard title="Header" icon={<Layout className="w-3.5 h-3.5" />}>
+          <ColorPair
+            label="Header"
+            bg={formData.headerBgColor}
+            text={formData.headerTextColor}
+            onBg={(v) => update({ headerBgColor: v })}
+            onText={(v) => update({ headerTextColor: v })}
+          />
+        </SectionCard>
+
+        {/* Messages */}
+        <SectionCard title="Message Bubbles" icon={<MessageSquare className="w-3.5 h-3.5" />}>
+          <ColorPair
+            label="Bot Messages"
+            bg={formData.botMessageBgColor}
+            text={formData.botMessageTextColor}
+            onBg={(v) => update({ botMessageBgColor: v })}
+            onText={(v) => update({ botMessageTextColor: v })}
+          />
+          <ColorPair
+            label="User Messages"
+            bg={formData.userMessageBgColor}
+            text={formData.userMessageTextColor}
+            onBg={(v) => update({ userMessageBgColor: v })}
+            onText={(v) => update({ userMessageTextColor: v })}
+          />
+          <ColorInput
+            label="Message Area Background"
+            value={formData.messageBgColor}
+            onChange={(v) => update({ messageBgColor: v })}
+          />
+        </SectionCard>
+
+        {/* Input area */}
+        <SectionCard title="Input Area" icon={<Palette className="w-3.5 h-3.5" />}>
+          <div className="grid grid-cols-1 gap-3">
+            <div className="grid grid-cols-2 gap-3">
+              <ColorInput label="Background" value={formData.inputBgColor} onChange={(v) => update({ inputBgColor: v })} />
+              <ColorInput label="Border" value={formData.inputBorderColor} onChange={(v) => update({ inputBorderColor: v })} />
+            </div>
+            <ColorInput label="Send Button" value={formData.inputButtonColor} onChange={(v) => update({ inputButtonColor: v })} />
+          </div>
+        </SectionCard>
+
+        {/* Close button */}
+        <SectionCard title="Close Button" icon={<Palette className="w-3.5 h-3.5" />}>
+          <div className="grid grid-cols-2 gap-3">
+            <ColorInput label="Background" value={formData.closeButtonBgColor} onChange={(v) => update({ closeButtonBgColor: v })} />
+            <ColorInput label="Icon Color" value={formData.closeButtonColor} onChange={(v) => update({ closeButtonColor: v })} />
+          </div>
+        </SectionCard>
+
+        {/* Suggestions */}
+        <SectionCard title="Quick Suggestions" icon={<Sparkles className="w-3.5 h-3.5" />}>
+          <div className="grid grid-cols-2 gap-3">
+            <ColorInput label="Background" value={formData.quickSuggestionBgColor} onChange={(v) => update({ quickSuggestionBgColor: v })} />
+            <ColorInput label="Text Color" value={formData.quickSuggestionTextColor} onChange={(v) => update({ quickSuggestionTextColor: v })} />
+          </div>
+          {/* Preview pills */}
+          <div className="flex gap-2 flex-wrap">
+            {["How to get started?", "Contact support"].map(s => (
+              <span key={s} className="text-[11px] px-3 py-1.5 rounded-full border font-medium"
+                style={{ backgroundColor: formData.quickSuggestionBgColor, color: formData.quickSuggestionTextColor, borderColor: formData.inputBorderColor }}>
+                {s}
+              </span>
+            ))}
+          </div>
+        </SectionCard>
+
+        {/* Style */}
+        <SectionCard title="Window Style" icon={<Type className="w-3.5 h-3.5" />}>
+          <div className="space-y-2">
+            <div className="flex justify-between items-center">
+              <Label className="text-xs font-medium">Font Size</Label>
+              <span className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded">{formData.fontSize}px</span>
+            </div>
+            <Slider value={[formData.fontSize]} min={11} max={18} step={1}
+              onValueChange={([v]) => update({ fontSize: v })} />
+            <div className="flex justify-between text-[10px] text-muted-foreground">
+              <span>11 — small</span><span>18 — large</span>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex justify-between items-center">
+              <Label className="text-xs font-medium">Corner Radius</Label>
+              <span className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded">{formData.windowBorderRadius}px</span>
+            </div>
+            <Slider value={[formData.windowBorderRadius]} min={0} max={32} step={2}
+              onValueChange={([v]) => update({ windowBorderRadius: v })} />
+            <div className="flex justify-between text-[10px] text-muted-foreground">
+              <span>0 — sharp</span><span>32 — pill</span>
+            </div>
+          </div>
+        </SectionCard>
+
+        {/* Toggles */}
+        <SectionCard title="Display Options" icon={<ToggleLeft className="w-3.5 h-3.5" />}>
+          <div className="divide-y divide-border -mx-4 -mb-4 px-4">
+            <ToggleRow label="Read Aloud (TTS)" description="Show speak button on bot messages"
+              checked={formData.showTTS} onChange={(v) => update({ showTTS: v })} />
+            <ToggleRow label="Powered by Prabisha" description="Show branding at bottom of chat"
+              checked={formData.showPoweredBy} onChange={(v) => update({ showPoweredBy: v })} />
+          </div>
+        </SectionCard>
+
+        {/* Lead card */}
+        <SectionCard title="Lead Card Message" icon={<MessageSquare className="w-3.5 h-3.5" />}>
+          <p className="text-[11px] text-muted-foreground">
+            Shown when asking users to share their details before continuing.
+          </p>
+          <Textarea
+            value={formData.leadCardMessage}
+            onChange={(e) => update({ leadCardMessage: e.target.value })}
+            rows={3}
+            placeholder="Before we continue, mind sharing a few quick details?"
+            className="text-xs resize-none"
+          />
+        </SectionCard>
+
+      </div>
+
+      {/* Sticky footer */}
+      <div className="shrink-0 bg-background border-t pt-4 mt-2 flex gap-2">
+        <Button variant="outline" onClick={onBack} className="flex-1">Cancel</Button>
+        <Button onClick={handleSubmit} disabled={isLoading || isAvatarLoading} className="flex-1">
+          {(isLoading || isAvatarLoading)
+            ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            : <Save className="w-4 h-4 mr-2" />}
+          Save Window
         </Button>
       </div>
     </div>
