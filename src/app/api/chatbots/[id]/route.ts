@@ -66,19 +66,15 @@ interface RouterParams {
   params: Promise<{ id: string }>
 }
 
-// CORS is intentionally restricted to same-origin for the widget embed.
-// The embed widget page itself is same-origin; third-party sites that need
-// chatbot config should use the public /api/chatbots/[id]/config endpoint
-// which exposes only the fields required by the widget (no member data).
 const corsHeaders = {
-  'Access-Control-Allow-Origin': process.env.NEXT_PUBLIC_APP_URL || '',
+  'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 };
 
 const cacheHeaders = {
   ...corsHeaders,
-  'Cache-Control': 'public, s-maxage=600, stale-while-revalidate=300',
+  'Cache-Control': 'no-cache, no-store, must-revalidate',
 };
 
 export async function GET(
