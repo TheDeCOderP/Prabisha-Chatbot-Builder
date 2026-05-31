@@ -3,7 +3,7 @@
 import { useParams } from "next/navigation"
 import { useState, useCallback, useEffect } from "react"
 import { useDropzone } from "react-dropzone"
-import { useKnowledgeUpload } from "@/hooks/useKnowledgeUpload"
+import { useKnowledgeUpload, type ScrapeProgress } from "@/hooks/useKnowledgeUpload"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -42,6 +42,13 @@ import { formatDistanceToNow } from "date-fns"
 // --- Helper for conditional classes (removes dependency on @/lib/utils) ---
 function cn(...classes: (string | undefined | null | false)[]) {
   return classes.filter(Boolean).join(" ")
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 B';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 // --- Types ---
@@ -335,7 +342,7 @@ export default function KnowledgePage() {
   const [kbToDelete, setKbToDelete] = useState<KnowledgeBase | null>(null)
   const [docToDelete, setDocToDelete] = useState<{ kbId: string, doc: Document } | null>(null)
 
-  const { uploading, progress, uploadFiles, uploadWebpage, reset } = useKnowledgeUpload(chatbotId)
+  const { uploading, progress, scrapeProgress, uploadFiles, uploadWebpage, reset } = useKnowledgeUpload(chatbotId)
 
   // Fetch knowledge bases
   const fetchKnowledgeBases = useCallback(async () => {
@@ -563,7 +570,7 @@ export default function KnowledgePage() {
             </div>
 
             {/* Webpage URL Input */}
-            {selectedType === "webpage" && (
+            {selectedType === "webpage" && !(uploading && scrapeProgress) && (
               <div className="space-y-4 animate-in fade-in zoom-in-95 duration-200">
                 <div className="space-y-2">
                   <Label htmlFor="url">Website URL</Label>
@@ -687,18 +694,75 @@ export default function KnowledgePage() {
               </div>
             )}
 
-            {/* Upload Progress */}
-            {uploading && progress.length > 0 && (
+            {/* Webpage scrape live progress */}
+            {uploading && selectedType === 'webpage' && scrapeProgress && (
+              <div className="space-y-4 pt-2 animate-in fade-in duration-300">
+                <div className="flex items-center gap-2 text-sm font-medium">
+                  {scrapeProgress.phase === 'done'
+                    ? <CheckCircle2 className="w-4 h-4 text-green-500" />
+                    : <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                  }
+                  <span>
+                    {scrapeProgress.phase === 'storing'
+                      ? 'Saving to knowledge base...'
+                      : scrapeProgress.phase === 'done'
+                      ? 'Done!'
+                      : 'Scraping pages...'}
+                  </span>
+                </div>
+
+                {/* Current URL */}
+                <div className="text-xs text-muted-foreground truncate bg-muted/40 px-3 py-2 rounded-md font-mono border">
+                  {scrapeProgress.currentUrl || 'Initializing...'}
+                </div>
+
+                {/* Progress bar */}
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>
+                      {scrapeProgress.phase === 'storing'
+                        ? `Storing ${scrapeProgress.storedCurrent} / ${scrapeProgress.storedTotal}`
+                        : `${scrapeProgress.current} / ${scrapeProgress.total || '?'} pages`}
+                    </span>
+                    <span>{formatBytes(scrapeProgress.bytesTotal)}</span>
+                  </div>
+                  <Progress
+                    value={
+                      scrapeProgress.phase === 'storing' && scrapeProgress.storedTotal > 0
+                        ? (scrapeProgress.storedCurrent / scrapeProgress.storedTotal) * 100
+                        : scrapeProgress.total > 0
+                        ? (scrapeProgress.current / scrapeProgress.total) * 100
+                        : 0
+                    }
+                    className="h-2"
+                  />
+                </div>
+
+                {/* Stats row */}
+                <div className="flex gap-4 text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3 h-3 text-green-500" />
+                    {scrapeProgress.pagesOk} useful pages
+                  </span>
+                  {scrapeProgress.total > 0 && scrapeProgress.current < scrapeProgress.total && scrapeProgress.phase === 'scraping' && (
+                    <span>{scrapeProgress.total - scrapeProgress.current} remaining</span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* File/Table upload progress */}
+            {uploading && selectedType !== 'webpage' && progress.length > 0 && (
               <div className="space-y-3 pt-2">
                 <Label className="text-xs font-semibold uppercase text-muted-foreground">Processing</Label>
                 {progress.map((item, idx) => (
                   <div key={idx} className="space-y-1">
                     <div className="flex items-center justify-between text-xs">
-                        <div className="flex items-center gap-2">
-                            {item.status === 'success' ? <CheckCircle2 className="w-3 h-3 text-green-500"/> : <Loader2 className="w-3 h-3 animate-spin"/>}
-                            <span className="truncate max-w-50">{item.fileName}</span>
-                        </div>
-                        <span>{item.progress}%</span>
+                      <div className="flex items-center gap-2">
+                        {item.status === 'success' ? <CheckCircle2 className="w-3 h-3 text-green-500"/> : <Loader2 className="w-3 h-3 animate-spin"/>}
+                        <span className="truncate max-w-50">{item.fileName}</span>
+                      </div>
+                      <span>{item.progress}%</span>
                     </div>
                     <Progress value={item.progress} className="h-1" />
                   </div>

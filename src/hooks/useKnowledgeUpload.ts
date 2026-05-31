@@ -1,6 +1,5 @@
-// hooks/useKnowledgeUpload.ts
 import { useState } from 'react';
-import { toast } from 'sonner'; // or your toast library
+import { toast } from 'sonner';
 
 interface UploadProgress {
   fileName: string;
@@ -9,9 +8,21 @@ interface UploadProgress {
   error?: string;
 }
 
+export interface ScrapeProgress {
+  phase: 'scraping' | 'storing' | 'done';
+  current: number;
+  total: number;
+  currentUrl: string;
+  bytesTotal: number;
+  pagesOk: number;
+  storedCurrent: number;
+  storedTotal: number;
+}
+
 export function useKnowledgeUpload(chatbotId: string) {
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState<UploadProgress[]>([]);
+  const [scrapeProgress, setScrapeProgress] = useState<ScrapeProgress | null>(null);
 
   const uploadFiles = async (files: File[], type: 'file' | 'table', name?: string) => {
     setUploading(true);
@@ -27,40 +38,24 @@ export function useKnowledgeUpload(chatbotId: string) {
       const formData = new FormData();
       formData.append('type', type);
       if (name) formData.append('name', name);
-      
-      files.forEach(file => {
-        formData.append('files', file);
-      });
+      files.forEach(file => formData.append('files', file));
 
-      // Update progress to uploading
-      setProgress(prev =>
-        prev.map(p => ({ ...p, status: 'uploading', progress: 50 }))
-      );
+      setProgress(prev => prev.map(p => ({ ...p, status: 'uploading', progress: 50 })));
 
       const response = await fetch(`/api/chatbots/${chatbotId}/knowledge`, {
         method: 'POST',
         body: formData,
       });
 
-      if (!response.ok) {
-        throw new Error('Upload failed');
-      }
+      if (!response.ok) throw new Error('Upload failed');
 
       const result = await response.json();
 
-      // Update progress based on results
       setProgress(prev =>
         prev.map(p => {
-          const fileResult = result.results.find(
-            (r: any) => r.fileName === p.fileName
-          );
+          const fileResult = result.results.find((r: any) => r.fileName === p.fileName);
           if (fileResult) {
-            return {
-              ...p,
-              status: fileResult.success ? 'success' : 'error',
-              progress: 100,
-              error: fileResult.error,
-            };
+            return { ...p, status: fileResult.success ? 'success' : 'error', progress: 100, error: fileResult.error };
           }
           return p;
         })
@@ -70,11 +65,8 @@ export function useKnowledgeUpload(chatbotId: string) {
       const failCount = result.results.filter((r: any) => !r.success).length;
 
       if (successCount > 0) {
-        toast.success(
-          `Successfully uploaded ${successCount} ${type === 'file' ? 'file(s)' : 'table(s)'}`
-        );
+        toast.success(`Successfully uploaded ${successCount} ${type === 'file' ? 'file(s)' : 'table(s)'}`);
       }
-
       if (failCount > 0) {
         toast.error(`Failed to upload ${failCount} ${type === 'file' ? 'file(s)' : 'table(s)'}`);
       }
@@ -82,11 +74,7 @@ export function useKnowledgeUpload(chatbotId: string) {
       return result;
     } catch (error) {
       setProgress(prev =>
-        prev.map(p => ({
-          ...p,
-          status: 'error',
-          error: error instanceof Error ? error.message : 'Unknown error',
-        }))
+        prev.map(p => ({ ...p, status: 'error', error: error instanceof Error ? error.message : 'Unknown error' }))
       );
       toast.error('Upload failed. Please try again.');
       throw error;
@@ -97,27 +85,76 @@ export function useKnowledgeUpload(chatbotId: string) {
 
   const uploadWebpage = async (url: string, crawlSubpages: boolean, autoUpdate: boolean) => {
     setUploading(true);
+    setScrapeProgress({
+      phase: 'scraping',
+      current: 0,
+      total: 0,
+      currentUrl: url,
+      bytesTotal: 0,
+      pagesOk: 0,
+      storedCurrent: 0,
+      storedTotal: 0,
+    });
 
     try {
-      const response = await fetch(`/api/chatbots/${chatbotId}/knowledge`, {
+      const response = await fetch(`/api/chatbots/${chatbotId}/knowledge/stream`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          url,
-          autoUpdate,
-          crawlSubpages,
-          type: 'webpage',
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, crawlSubpages, autoUpdate, type: 'webpage' }),
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to crawl webpage');
+      if (!response.ok || !response.body) throw new Error('Failed to crawl webpage');
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let result: any = null;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const event = JSON.parse(line.slice(6));
+
+            if (event.type === 'progress') {
+              setScrapeProgress({
+                phase: 'scraping',
+                current: event.current,
+                total: event.total,
+                currentUrl: event.url,
+                bytesTotal: event.bytes,
+                pagesOk: event.pagesOk,
+                storedCurrent: 0,
+                storedTotal: 0,
+              });
+            } else if (event.type === 'storing') {
+              setScrapeProgress(prev => ({
+                ...(prev ?? { current: 0, total: 0, currentUrl: '', bytesTotal: 0, pagesOk: 0 }),
+                phase: 'storing',
+                storedCurrent: event.current,
+                storedTotal: event.total,
+              }));
+            } else if (event.type === 'done') {
+              result = event;
+              setScrapeProgress(prev => prev ? { ...prev, phase: 'done' } : null);
+              toast.success(`Scraped ${event.pagesScraped} page(s) successfully`);
+            } else if (event.type === 'error') {
+              throw new Error(event.message);
+            }
+          } catch (parseErr) {
+            if (parseErr instanceof SyntaxError) continue;
+            throw parseErr;
+          }
+        }
       }
 
-      const result = await response.json();
-      toast.success(`Successfully crawled ${result.pageCount} page(s)`);
       return result;
     } catch (error) {
       toast.error('Failed to crawl webpage');
@@ -129,11 +166,13 @@ export function useKnowledgeUpload(chatbotId: string) {
 
   const reset = () => {
     setProgress([]);
+    setScrapeProgress(null);
   };
 
   return {
     uploading,
     progress,
+    scrapeProgress,
     uploadFiles,
     uploadWebpage,
     reset,

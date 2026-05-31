@@ -4,6 +4,16 @@ import * as cheerio from 'cheerio';
 import puppeteer, { Browser } from 'puppeteer';
 import { URL } from 'url';
 
+export type ScrapeProgressCallback = (
+  current: number,
+  total: number,
+  url: string,
+  bytesTotal: number,
+  pagesOk: number,
+) => void;
+
+const BATCH_SIZE = 5;
+
 interface ScrapedPage {
   url: string;
   content: string;
@@ -57,17 +67,19 @@ async function closeBrowser(): Promise<void> {
 export async function processURL(
   url: string,
   crawlSubpages: boolean = false,
-  maxPages?: number
+  maxPages?: number,
+  onProgress?: ScrapeProgressCallback
 ): Promise<{ content: string; metadata: Record<string, unknown>; pages?: ScrapedPage[] }> {
   try {
     const validatedUrl = validateAndNormalizeURL(url);
 
     if (isSitemapUrl(validatedUrl)) {
-      return await processSitemapDirectly(validatedUrl, maxPages);
+      return await processSitemapDirectly(validatedUrl, maxPages, onProgress);
     }
 
     if (!crawlSubpages) {
       const page = await scrapePage(validatedUrl);
+      onProgress?.(1, 1, validatedUrl, page.content.length, 1);
       return {
         content: page.content,
         metadata: { ...page.metadata, url: page.url, title: page.title, scrapedAt: new Date().toISOString(), pageCount: 1 },
@@ -82,7 +94,7 @@ export async function processURL(
         : 50;
     }
 
-    const pages = await crawlWebsite(validatedUrl, actualMaxPages);
+    const pages = await crawlWebsite(validatedUrl, actualMaxPages, onProgress);
     const combinedContent = pages
       .map((p, i) => `\n\n--- Page ${i + 1}: ${p.title} (${p.url}) ---\n\n${p.content}`)
       .join('\n');
@@ -108,16 +120,18 @@ export async function processURL(
 
 export async function processSitemap(
   sitemapUrl: string,
-  maxPages?: number
+  maxPages?: number,
+  onProgress?: ScrapeProgressCallback
 ): Promise<{ content: string; metadata: Record<string, unknown>; pages?: ScrapedPage[] }> {
-  return processSitemapDirectly(sitemapUrl, maxPages);
+  return processSitemapDirectly(sitemapUrl, maxPages, onProgress);
 }
 
 // ─── Sitemap processing (cheerio — XML doesn't need JS) ──────────────────────
 
 async function processSitemapDirectly(
   sitemapUrl: string,
-  maxPages?: number
+  maxPages?: number,
+  onProgress?: ScrapeProgressCallback
 ): Promise<{ content: string; metadata: Record<string, unknown>; pages?: ScrapedPage[] }> {
   try {
     const validatedUrl = validateAndNormalizeURL(sitemapUrl);
@@ -133,12 +147,12 @@ async function processSitemapDirectly(
           } catch { /* skip failed child sitemaps */ }
         }
         if (allUrls.length === 0) throw new Error('No URLs found in child sitemaps');
-        return await scrapeUrlsFromList(allUrls, validatedUrl, maxPages, isSitemapIndex, childSitemaps);
+        return await scrapeUrlsFromList(allUrls, validatedUrl, maxPages, isSitemapIndex, childSitemaps, onProgress);
       }
       throw new Error('No URLs found in sitemap');
     }
 
-    return await scrapeUrlsFromList(urls, validatedUrl, maxPages, isSitemapIndex, childSitemaps);
+    return await scrapeUrlsFromList(urls, validatedUrl, maxPages, isSitemapIndex, childSitemaps, onProgress);
   } catch (error) {
     throw new Error(`Failed to process sitemap: ${error instanceof Error ? error.message : 'Unknown error'}`);
   } finally {
@@ -151,25 +165,42 @@ async function scrapeUrlsFromList(
   sitemapUrl: string,
   maxPages?: number,
   isSitemapIndex = false,
-  childSitemaps?: string[]
+  childSitemaps?: string[],
+  onProgress?: ScrapeProgressCallback
 ): Promise<{ content: string; metadata: Record<string, unknown>; pages?: ScrapedPage[] }> {
   const pagesToScrape = Math.min(maxPages || urls.length, urls.length);
-  console.log(`Sitemap contains ${urls.length} URLs. Scraping ${pagesToScrape} pages.`);
+  console.log(`Sitemap: ${urls.length} URLs, scraping ${pagesToScrape} in batches of ${BATCH_SIZE}`);
 
   const pages: ScrapedPage[] = [];
-  for (const url of urls.slice(0, pagesToScrape)) {
-    try {
-      console.log(`Scraping: ${url} (${pages.length + 1}/${pagesToScrape})`);
-      const page = await scrapePage(url);
-      if (page.metadata.wordCount > 80) {
-        pages.push(page);
+  let processed = 0;
+  let totalBytes = 0;
+  const urlSlice = urls.slice(0, pagesToScrape);
+
+  for (let i = 0; i < urlSlice.length; i += BATCH_SIZE) {
+    const batch = urlSlice.slice(i, i + BATCH_SIZE);
+    const results = await Promise.allSettled(batch.map(url => scrapePage(url)));
+
+    for (let j = 0; j < results.length; j++) {
+      processed++;
+      const url = batch[j];
+      const result = results[j];
+
+      if (result.status === 'fulfilled') {
+        const page = result.value;
+        if (page.metadata.wordCount > 80) {
+          pages.push(page);
+          totalBytes += page.content.length;
+        } else {
+          console.log(`  ↳ Skipped ${url} (${page.metadata.wordCount} words)`);
+        }
       } else {
-        console.log(`  ↳ Skipped (${page.metadata.wordCount} words — too little content)`);
+        console.error(`Failed to scrape ${url}:`, result.reason);
       }
-      await delay(500);
-    } catch (error) {
-      console.error(`Failed to scrape ${url}:`, error);
+
+      onProgress?.(processed, pagesToScrape, url, totalBytes, pages.length);
     }
+
+    if (i + BATCH_SIZE < urlSlice.length) await delay(300);
   }
 
   if (pages.length === 0) throw new Error('Failed to scrape any pages from sitemap');
@@ -367,32 +398,46 @@ export async function scrapePage(url: string): Promise<ScrapedPage & { wordCount
 
 // ─── Crawl website ────────────────────────────────────────────────────────────
 
-async function crawlWebsite(startUrl: string, maxPages: number): Promise<ScrapedPage[]> {
-  const visited = new Set<string>();
-  const toVisit: string[] = [startUrl];
-  const scrapedPages: ScrapedPage[] = [];
-
+async function crawlWebsite(startUrl: string, maxPages: number, onProgress?: ScrapeProgressCallback): Promise<ScrapedPage[]> {
   const sitemapInfo = await discoverSitemaps(startUrl);
+
+  const allUrls = [startUrl];
   if (sitemapInfo.urls.length > 0) {
-    toVisit.push(...sitemapInfo.urls.slice(0, maxPages));
+    allUrls.push(...sitemapInfo.urls);
   }
 
-  while (toVisit.length > 0 && scrapedPages.length < maxPages) {
-    const currentUrl = toVisit.shift()!;
-    if (visited.has(currentUrl)) continue;
-    visited.add(currentUrl);
+  const uniqueUrls = [...new Set(allUrls)].slice(0, maxPages);
+  const total = uniqueUrls.length;
+  const pages: ScrapedPage[] = [];
+  let processed = 0;
+  let totalBytes = 0;
 
-    try {
-      console.log(`Scraping: ${currentUrl} (${scrapedPages.length + 1}/${maxPages})`);
-      const page = await scrapePage(currentUrl);
-      scrapedPages.push(page);
-      await delay(500);
-    } catch (error) {
-      console.error(`Failed to scrape ${currentUrl}:`, error);
+  for (let i = 0; i < uniqueUrls.length; i += BATCH_SIZE) {
+    if (pages.length >= maxPages) break;
+
+    const batch = uniqueUrls.slice(i, i + BATCH_SIZE);
+    const results = await Promise.allSettled(batch.map(url => scrapePage(url)));
+
+    for (let j = 0; j < results.length; j++) {
+      processed++;
+      const url = batch[j];
+      const result = results[j];
+
+      if (result.status === 'fulfilled') {
+        pages.push(result.value);
+        totalBytes += result.value.content.length;
+        console.log(`Scraped: ${url} (${processed}/${total})`);
+      } else {
+        console.error(`Failed to scrape ${url}:`, result.reason);
+      }
+
+      onProgress?.(processed, total, url, totalBytes, pages.length);
     }
+
+    if (i + BATCH_SIZE < uniqueUrls.length) await delay(300);
   }
 
-  return scrapedPages;
+  return pages;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
