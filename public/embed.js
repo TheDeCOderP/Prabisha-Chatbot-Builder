@@ -31,6 +31,17 @@
     closeBtnColor: '#ffffff',
     widgetSize: 70,
     widgetSizeMobile: 60,
+    widgetMargin: 20,
+    // Custom position
+    widgetCustomPosition: false,
+    widgetTop: null,
+    widgetBottom: null,
+    widgetLeft: null,
+    widgetRight: null,
+    // Window size
+    windowWidth: 420,
+    windowHeight: 600,
+    windowBorderRadius: 16,
     // Image source for the toggle button — comes from chatbot.avatar || chatbot.icon
     iconUrl: null,
     // Shape for the toggle button — comes from theme.widgetShape
@@ -90,6 +101,19 @@
               .replace(/([A-Z])/g, '-$1')
               .toLowerCase();
           }
+
+          // Custom position
+          config.widgetCustomPosition = th.widgetCustomPosition || false;
+          config.widgetTop    = th.widgetTop    ?? null;
+          config.widgetBottom = th.widgetBottom ?? null;
+          config.widgetLeft   = th.widgetLeft   ?? null;
+          config.widgetRight  = th.widgetRight  ?? null;
+          config.widgetMargin = th.widgetMargin ?? 20;
+
+          // Window size
+          config.windowWidth          = th.windowWidth          || 420;
+          config.windowHeight         = th.windowHeight         || 600;
+          config.windowBorderRadius   = th.windowBorderRadius   ?? 16;
         }
 
         // popup_onload — respect theme first, then chatbot root field
@@ -302,21 +326,34 @@
   // ─── Position helpers ─────────────────────────────────────────────────────
 
   function applyPosition(el, isIframe) {
-    const pos = config.position || 'bottom-right';
-    const margin = '20px';
-    const iframeOffset = '90px';
-
     el.style.bottom = 'auto';
     el.style.top    = 'auto';
     el.style.left   = 'auto';
     el.style.right  = 'auto';
 
-    const offset = isIframe ? iframeOffset : margin;
+    const isMob    = window.innerWidth < 768;
+    const btnSize  = (isMob ? config.widgetSizeMobile : config.widgetSize) || 60;
+    const margin   = config.widgetMargin ?? 20;
 
-    if (pos.includes('bottom')) el.style.bottom = offset;
-    if (pos.includes('top'))    el.style.top    = offset;
-    if (pos.includes('right'))  el.style.right  = margin;
-    if (pos.includes('left'))   el.style.left   = margin;
+    if (config.widgetCustomPosition) {
+      if (config.widgetLeft   != null) el.style.left   = config.widgetLeft   + 'px';
+      if (config.widgetRight  != null) el.style.right  = config.widgetRight  + 'px';
+      if (isIframe) {
+        // Chat window sits above the button
+        if (config.widgetBottom != null) el.style.bottom = (config.widgetBottom + btnSize + 10) + 'px';
+        else if (config.widgetTop != null) el.style.top  = (config.widgetTop   + btnSize + 10) + 'px';
+      } else {
+        if (config.widgetTop    != null) el.style.top    = config.widgetTop    + 'px';
+        if (config.widgetBottom != null) el.style.bottom = config.widgetBottom + 'px';
+      }
+    } else {
+      const pos    = config.position || 'bottom-right';
+      const offset = isIframe ? (margin + btnSize + 10) + 'px' : margin + 'px';
+      if (pos.includes('bottom')) el.style.bottom = offset;
+      if (pos.includes('top'))    el.style.top    = offset;
+      if (pos.includes('right'))  el.style.right  = margin + 'px';
+      if (pos.includes('left'))   el.style.left   = margin + 'px';
+    }
   }
 
   function updateIframeDimensions() {
@@ -332,11 +369,11 @@
       iframe.style.top          = '0';
       iframe.style.borderRadius = '0';
     } else {
-      iframe.style.width        = '380px';
+      iframe.style.width        = (config.windowWidth  || 420) + 'px';
       iframe.style.maxWidth     = 'calc(100% - 40px)';
-      iframe.style.height       = '600px';
-      iframe.style.maxHeight    = '80vh';
-      iframe.style.borderRadius = '12px';
+      iframe.style.height       = (config.windowHeight || 600) + 'px';
+      iframe.style.maxHeight    = '85vh';
+      iframe.style.borderRadius = (config.windowBorderRadius ?? 16) + 'px';
       applyPosition(iframe, true);
     }
   }
@@ -397,6 +434,26 @@
         positionCloseButton();
       }
 
+      // Widget iframe sends this on load with full DB theme — apply position & size
+      if (event.data.type === 'chatbot-theme' && event.data.theme) {
+        const th = event.data.theme;
+        config.widgetCustomPosition = th.widgetCustomPosition || false;
+        config.widgetTop    = th.widgetTop    ?? null;
+        config.widgetBottom = th.widgetBottom ?? null;
+        config.widgetLeft   = th.widgetLeft   ?? null;
+        config.widgetRight  = th.widgetRight  ?? null;
+        config.widgetMargin = th.widgetMargin ?? 20;
+        if (th.widgetPosition) {
+          config.position = th.widgetPosition.toLowerCase().replace(/([A-Z])/g, '-$1').toLowerCase();
+        }
+        if (th.windowWidth)         config.windowWidth         = th.windowWidth;
+        if (th.windowHeight)        config.windowHeight        = th.windowHeight;
+        if (th.windowBorderRadius != null) config.windowBorderRadius = th.windowBorderRadius;
+        if (button) applyPosition(button, false);
+        if (iframe) updateIframeDimensions();
+        positionCloseButton();
+      }
+
       // Live theme updates broadcast from the admin panel
       if (event.data.type === 'theme-update' && event.data.theme) {
         const theme = event.data.theme;
@@ -445,17 +502,20 @@
           }
         }
 
-        // Position
-        if (theme.widgetPosition && button) {
-          config.position = theme.widgetPosition
-            .toLowerCase()
-            .replace(/([A-Z])/g, '-$1')
-            .toLowerCase();
-          applyPosition(button, false);
-          if (iframe) {
-            applyPosition(iframe, true);
-            positionCloseButton();
-          }
+        // Position (preset or custom)
+        if (theme.widgetPosition) {
+          config.position = theme.widgetPosition.toLowerCase().replace(/([A-Z])/g, '-$1').toLowerCase();
+        }
+        if (theme.widgetCustomPosition !== undefined) config.widgetCustomPosition = theme.widgetCustomPosition;
+        if (theme.widgetTop    !== undefined) config.widgetTop    = theme.widgetTop;
+        if (theme.widgetBottom !== undefined) config.widgetBottom = theme.widgetBottom;
+        if (theme.widgetLeft   !== undefined) config.widgetLeft   = theme.widgetLeft;
+        if (theme.widgetRight  !== undefined) config.widgetRight  = theme.widgetRight;
+        if (theme.widgetMargin !== undefined) config.widgetMargin = theme.widgetMargin;
+        if (button) applyPosition(button, false);
+        if (iframe) {
+          updateIframeDimensions();
+          positionCloseButton();
         }
       }
     });
