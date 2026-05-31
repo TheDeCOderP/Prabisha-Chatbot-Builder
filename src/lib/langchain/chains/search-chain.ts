@@ -166,14 +166,14 @@ async function getCachedResponse(chatbotId: string, userMessage: string, languag
   return null;
 }
 
-async function setCachedResponse(chatbotId: string, userMessage: string, htmlResponse: string) {
+async function setCachedResponse(chatbotId: string, userMessage: string, htmlResponse: string, language = 'en') {
   const normalized = normalizeQuestion(userMessage);
   const hash = hashQuestion(normalized);
 
   await prisma.questionCache.upsert({
     where: { chatbotId_questionHash: { chatbotId, questionHash: hash } },
-    update: { htmlResponse, lastUsedAt: new Date() },
-    create: { chatbotId, normalizedQ: normalized, questionHash: hash, htmlResponse }
+    update: { htmlResponse, language, lastUsedAt: new Date() },
+    create: { chatbotId, normalizedQ: normalized, questionHash: hash, htmlResponse, language }
   });
 }
 
@@ -446,11 +446,15 @@ function selectDiverseResults(results: any[], limit: number): any[] {
   return selected;
 }
 
+function stripHtml(html: string): string {
+  return html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
 export function formatHistory(messages: any[]): string {
   if (!messages.length) return "This is the start of the conversation.";
   const recent = messages.slice(-6);
   return recent.map(m =>
-    `${m.senderType === 'USER' ? 'User' : 'Assistant'}: ${m.content}`
+    `${m.senderType === 'USER' ? 'User' : 'Assistant'}: ${m.senderType === 'BOT' ? stripHtml(m.content) : m.content}`
   ).join('\n');
 }
 
@@ -937,7 +941,7 @@ ${lastAssistant.content}
 
   console.log(`   └─ knowledgeContext length: ${knowledgeContext.length} chars, sources: ${sources.length}`);
 
-  const strongContext = bestScore >= 0.45 && knowledgeContext.length > 0;
+  const strongContext = bestScore >= 0.35 && knowledgeContext.length > 0;
 
   // STEP 3: LLM generation — language directive injected into both prompt branches
   const systemPrompt = generateSystemPrompt(chatbot);
@@ -960,8 +964,8 @@ ${lastAssistant.content}
     model: chatbot.model || 'gemini-2.5-flash',
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
     config: {
-      maxOutputTokens: chatbot.max_tokens || 800,
-      temperature: chatbot.temperature ?? 0.9,
+      maxOutputTokens: chatbot.max_tokens || 1200,
+      temperature: chatbot.temperature ?? 0.4,
     },
   }));
   const text = response.text ?? '';
@@ -1153,7 +1157,7 @@ export async function executeSearchChain(config: SearchChainConfig): Promise<Sea
     );
 
     if (!realtimeIntent.isRealtime) {
-      await setCachedResponse(chatbotId, userMessage, htmlResponse);
+      await setCachedResponse(chatbotId, userMessage, htmlResponse, language);
       console.log('💾 Response cached for future identical questions');
     }
 
@@ -1321,8 +1325,8 @@ export async function streamRAGResponse(
     model: chatbot.model || 'gemini-2.5-flash',
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
     config: {
-      maxOutputTokens: chatbot.max_tokens || 800,
-      temperature: chatbot.temperature ?? 0.9,
+      maxOutputTokens: chatbot.max_tokens || 1200,
+      temperature: chatbot.temperature ?? 0.4,
     },
   });
   tStreamInit.end();

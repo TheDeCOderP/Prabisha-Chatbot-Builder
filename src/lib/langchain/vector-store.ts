@@ -29,8 +29,14 @@ export async function embedAndStore({
   knowledgeBaseId,
 }: EmbedAndStoreParams) {
   try {
-    // Split content into chunks
-    const chunks = chunkText(content, 1000);
+    // Skip embedding if content is too thin
+    const wordCount = content.trim().split(/\s+/).length;
+    if (wordCount < 30) {
+      console.log(`⏭️  Skipping embed for doc ${documentId} — only ${wordCount} words`);
+      return { documentId, chunksStored: 0 };
+    }
+
+    const chunks = chunkText(content, 1500);
     
     console.log(`Generating embeddings for ${chunks.length} chunks...`);
     
@@ -102,16 +108,15 @@ export async function embedAndStore({
   }
 }
 
-export async function generateEmbedding(text: string): Promise<number[]> {
+export async function generateEmbedding(text: string, taskType: TaskType = TaskType.RETRIEVAL_DOCUMENT): Promise<number[]> {
   try {
     const embeddings = new GoogleGenerativeAIEmbeddings({
-      taskType: TaskType.RETRIEVAL_DOCUMENT,
+      taskType,
       apiKey: process.env.GEMINI_API_KEY!,
       model: "gemini-embedding-001",
     });
 
     const embedding = await embeddings.embedQuery(text);
-    console.log('Generated Gemini embedding with length:', embedding.length);
     return embedding;
   } catch (error) {
     console.error('Error generating embedding:', error);
@@ -136,7 +141,7 @@ export async function searchSimilar({
   threshold = 0.5,
 }: SearchParams) {
   try {
-    const queryEmbedding = await generateEmbedding(query);
+    const queryEmbedding = await generateEmbedding(query, TaskType.RETRIEVAL_QUERY);
     const vectorString = `[${queryEmbedding.join(',')}]`;
 
     // Use two separate static queries to avoid dynamic $N parameter position issues
@@ -209,28 +214,27 @@ async function fallbackTextSearch({
   }
 }
 
-function chunkText(text: string, maxChunkSize: number = 1000): string[] {
-  // Split by sentences first
+function chunkText(text: string, maxChunkSize: number = 1500, overlapSize: number = 150): string[] {
   const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
   const chunks: string[] = [];
   let currentChunk = '';
-  
+  let overlapBuffer = '';
+
   for (const sentence of sentences) {
-    // If adding this sentence would exceed max chunk size and we already have content
     if ((currentChunk + sentence).length > maxChunkSize && currentChunk.length > 0) {
       chunks.push(currentChunk.trim());
-      currentChunk = sentence;
+      // Keep last `overlapSize` chars as overlap for next chunk
+      overlapBuffer = currentChunk.slice(-overlapSize);
+      currentChunk = overlapBuffer + sentence;
     } else {
       currentChunk += sentence;
     }
   }
-  
-  // Add the last chunk if it exists
+
   if (currentChunk.trim()) {
     chunks.push(currentChunk.trim());
   }
-  
-  // If no chunks were created (e.g., text is empty), return empty array
+
   return chunks.length > 0 ? chunks : [];
 }
 

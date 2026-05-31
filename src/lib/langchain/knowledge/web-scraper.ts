@@ -161,13 +161,10 @@ async function scrapeUrlsFromList(
     try {
       console.log(`Scraping: ${url} (${pages.length + 1}/${pagesToScrape})`);
       const page = await scrapePage(url);
-      // Skip pages with no meaningful content
-      if (page.metadata.wordCount > 20) {
+      if (page.metadata.wordCount > 80) {
         pages.push(page);
       } else {
         console.log(`  ↳ Skipped (${page.metadata.wordCount} words — too little content)`);
-        // Still push so document record is created, but content will be empty
-        pages.push(page);
       }
       await delay(500);
     } catch (error) {
@@ -271,7 +268,7 @@ async function extractSitemapInfo(sitemapUrl: string): Promise<SitemapInfo> {
 
 // ─── Page scraping (Puppeteer) ────────────────────────────────────────────────
 
-async function scrapePage(url: string): Promise<ScrapedPage> {
+export async function scrapePage(url: string): Promise<ScrapedPage & { wordCount: number }> {
   const browser = await getBrowser();
   const page = await browser.newPage();
 
@@ -287,11 +284,19 @@ async function scrapePage(url: string): Promise<ScrapedPage> {
       }
     });
 
-    await page.setUserAgent('Mozilla/5.0 (compatible; KnowledgeBot/1.0)');
-    await page.goto(url, { waitUntil: 'networkidle2', timeout: 20000 });
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+    await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
 
-    // Wait a bit for any lazy-loaded content
-    await delay(1000);
+    // Wait for JS-rendered content — try to find main content selector
+    try {
+      await page.waitForSelector('main, article, [role="main"], .content, #content', { timeout: 5000 });
+    } catch { /* page may not have these selectors — continue anyway */ }
+
+    await delay(2000);
+
+    // Scroll to trigger lazy-loaded content
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await delay(800);
 
     const result = await page.evaluate(() => {
       // Remove noise elements
@@ -327,15 +332,30 @@ async function scrapePage(url: string): Promise<ScrapedPage> {
       return { title, description, keywords, author, content, links, images };
     });
 
+    // Detect JS-loaded empty pages — content is just error/login messages
+    const USELESS_PATTERNS = [
+      /no destinations found/i,
+      /sign in to manage your account/i,
+      /welcome back.*sign in/i,
+      /0 destinations/i,
+      /no posts found/i,
+      /check back soon/i,
+      /page not found/i,
+      /404/i,
+    ];
+    const isUseless = USELESS_PATTERNS.some(p => p.test(result.content));
+    const finalContent = isUseless ? '' : result.content;
+
     return {
       url,
-      content: result.content,
+      content: finalContent,
       title: result.title,
+      wordCount: countWords(finalContent),
       metadata: {
         description: result.description,
         keywords: result.keywords,
         author: result.author,
-        wordCount: countWords(result.content),
+        wordCount: countWords(finalContent),
         links: result.links,
         images: result.images,
       },

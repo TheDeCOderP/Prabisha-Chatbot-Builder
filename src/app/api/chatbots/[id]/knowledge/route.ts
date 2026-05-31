@@ -127,8 +127,12 @@ export async function POST(
         console.log(`Finished scraping: ${url} (crawl: ${crawlSubpages})`);
 
         if (pages && pages.length > 0) {
+          // Filter out thin/useless pages before storing
+          const usefulPages = pages.filter(p => p.metadata.wordCount >= 80);
+          console.log(`📄 Useful pages: ${usefulPages.length}/${pages.length} (filtered ${pages.length - usefulPages.length} thin pages)`);
+
           // Store each page as a separate document
-          const documentPromises = pages.map(async (page) => {
+          const documentPromises = usefulPages.map(async (page) => {
             // Use upsert to handle the unique constraint on 'source' automatically
             const document = await prisma.document.upsert({
               where: {
@@ -180,11 +184,11 @@ export async function POST(
           });
 
           const results = await Promise.allSettled(documentPromises);
-          
+
           const successResults = results
             .filter(r => r.status === 'fulfilled')
             .map(r => (r as PromiseFulfilledResult<any>).value);
-          
+
           const errorResults = results
             .filter(r => r.status === 'rejected')
             .map(r => ({
@@ -194,10 +198,11 @@ export async function POST(
 
           return NextResponse.json({
             knowledgeBaseId: knowledgeBase.id,
-            pagesScraped: pages.length,
+            pagesScraped: usefulPages.length,
+            pagesSkipped: pages.length - usefulPages.length,
             results: [...successResults, ...errorResults],
             metadata: {
-              totalPages: pages.length,
+              totalPages: usefulPages.length,
               totalWords: metadata.totalWordCount,
               crawled: crawlSubpages,
             },
@@ -546,6 +551,50 @@ export async function POST(
       { error: error instanceof Error ? error.message : 'Internal server error' },
       { status: 500 }
     );
+  }
+}
+
+export async function DELETE(request: NextRequest, context: RouterParams) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session?.user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { id: chatbotId } = await context.params;
+    const { searchParams } = new URL(request.url);
+    const knowledgeBaseId = searchParams.get('knowledgeBaseId');
+    const documentId = searchParams.get('documentId');
+
+    // Verify ownership
+    const chatbot = await prisma.chatbot.findFirst({
+      where: { id: chatbotId, workspace: { members: { some: { userId: session.user.id } } } },
+    });
+    if (!chatbot) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+
+    // Delete a single document
+    if (documentId) {
+      await prisma.documentVector.deleteMany({ where: { documentId } });
+      await prisma.document.delete({ where: { id: documentId } });
+      return NextResponse.json({ success: true, deleted: 'document', documentId });
+    }
+
+    // Delete an entire knowledge base
+    if (knowledgeBaseId) {
+      const kb = await prisma.knowledgeBase.findFirst({ where: { id: knowledgeBaseId, chatbotId } });
+      if (!kb) return NextResponse.json({ error: 'KB not found' }, { status: 404 });
+
+      await prisma.documentVector.deleteMany({ where: { knowledgeBaseId } });
+      await prisma.document.deleteMany({ where: { knowledgeBaseId } });
+      await prisma.knowledgeBase.delete({ where: { id: knowledgeBaseId } });
+
+      return NextResponse.json({ success: true, deleted: 'knowledgeBase', knowledgeBaseId });
+    }
+
+    return NextResponse.json({ error: 'knowledgeBaseId or documentId required' }, { status: 400 });
+  } catch (error) {
+    console.error('Error deleting knowledge:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
 

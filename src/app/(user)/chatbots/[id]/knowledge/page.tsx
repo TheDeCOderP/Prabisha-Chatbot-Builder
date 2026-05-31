@@ -14,24 +14,29 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 
 // Icons - Aliased to prevent conflicts with standard Types
-import { 
-  Plus, 
-  Globe, 
-  Table as TableIcon, 
-  FileText, 
-  X, 
-  Upload, 
-  File as FileIcon, // FIX: Aliased to avoid conflict with 'File' type
-  CheckCircle2, 
-  Loader2, 
-  Trash2, 
+import {
+  Plus,
+  Globe,
+  Table as TableIcon,
+  FileText,
+  X,
+  Upload,
+  File as FileIcon,
+  CheckCircle2,
+  Loader2,
+  Trash2,
   Book,
   Package,
   Globe as WebIcon,
   FileQuestion,
   Calendar,
   ChevronDown,
+  RefreshCw,
+  ArrowUpCircle,
+  MinusCircle,
+  AlertCircle,
 } from "lucide-react"
+import { toast } from "sonner"
 import { formatDistanceToNow } from "date-fns"
 
 // --- Helper for conditional classes (removes dependency on @/lib/utils) ---
@@ -45,7 +50,9 @@ interface KnowledgeBase {
   name: string
   type: string
   indexName: string
+  autoUpdate: boolean
   createdAt: string
+  updatedAt: string
   documents: Array<{
     id: string
     source: string
@@ -62,16 +69,53 @@ interface Document {
 }
 
 // --- Sub-Component: Knowledge Base Item (Collapsible) ---
-const KnowledgeBaseItem = ({ 
-  kb, 
-  onDeleteKb, 
-  onDeleteDoc 
-}: { 
-  kb: KnowledgeBase, 
-  onDeleteKb: (kb: KnowledgeBase) => void, 
-  onDeleteDoc: (kbId: string, doc: Document) => void 
+interface SyncResult {
+  summary: { total: number; updated: number; unchanged: number; failed: number };
+  details: {
+    updated: Array<{ url: string; oldWords: number; newWords: number }>;
+    unchanged: string[];
+    failed: Array<{ url: string; error: string }>;
+  };
+  syncedAt: string;
+}
+
+const KnowledgeBaseItem = ({
+  kb,
+  chatbotId,
+  onDeleteKb,
+  onDeleteDoc,
+}: {
+  kb: KnowledgeBase;
+  chatbotId: string;
+  onDeleteKb: (kb: KnowledgeBase) => void;
+  onDeleteDoc: (kbId: string, doc: Document) => void;
 }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
+  const [showSyncResult, setShowSyncResult] = useState(false);
+
+  const handleSync = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSyncing(true);
+    setSyncResult(null);
+    try {
+      const res = await fetch(`/api/chatbots/${chatbotId}/knowledge/sync`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ knowledgeBaseId: kb.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Sync failed');
+      setSyncResult(data);
+      setShowSyncResult(true);
+      toast.success(`Sync complete — ${data.summary.updated} pages updated`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Sync failed');
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   // Get icon for KB type
   const getTypeIcon = (type: string) => {
@@ -102,7 +146,7 @@ const KnowledgeBaseItem = ({
             <h4 className="font-medium text-sm text-foreground flex items-center gap-2">
               {kb.name || "Untitled Knowledge Base"}
             </h4>
-            <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
+            <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground flex-wrap">
               <span className="flex items-center gap-1">
                 <Calendar className="w-3 h-3" />
                 {kb.createdAt ? formatDistanceToNow(new Date(kb.createdAt), { addSuffix: true }) : 'Just now'}
@@ -112,19 +156,37 @@ const KnowledgeBaseItem = ({
                 <FileText className="w-3 h-3" />
                 {kb.documents?.length || 0} items
               </span>
+              {kb.updatedAt && kb.updatedAt !== kb.createdAt && (
+                <>
+                  <span className="w-1 h-1 rounded-full bg-muted-foreground/30" />
+                  <span className="flex items-center gap-1 text-primary/70">
+                    <RefreshCw className="w-3 h-3" />
+                    synced {formatDistanceToNow(new Date(kb.updatedAt), { addSuffix: true })}
+                  </span>
+                </>
+              )}
             </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1">
+          {kb.type === 'PAGE' && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 w-8 p-0 text-muted-foreground hover:text-primary transition-colors"
+              onClick={handleSync}
+              disabled={syncing}
+              title="Sync — re-scrape all URLs"
+            >
+              <RefreshCw className={cn("w-4 h-4", syncing && "animate-spin")} />
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="sm"
             className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive transition-colors"
-            onClick={(e) => {
-              e.stopPropagation();
-              onDeleteKb(kb);
-            }}
+            onClick={(e) => { e.stopPropagation(); onDeleteKb(kb); }}
           >
             <Trash2 className="w-4 h-4" />
           </Button>
@@ -133,6 +195,66 @@ const KnowledgeBaseItem = ({
           </div>
         </div>
       </div>
+
+      {/* Sync Result Banner */}
+      {syncResult && showSyncResult && (
+        <div className="border-t bg-muted/30 px-4 py-3 text-sm space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="font-medium text-xs uppercase tracking-wider text-muted-foreground">
+              Sync Result — {new Date(syncResult.syncedAt).toLocaleString()}
+            </span>
+            <button onClick={() => setShowSyncResult(false)} className="text-muted-foreground hover:text-foreground">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {/* Summary chips */}
+          <div className="flex flex-wrap gap-2">
+            <span className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-green-100 text-green-700 text-xs font-medium">
+              <ArrowUpCircle className="w-3 h-3" />
+              {syncResult.summary.updated} updated
+            </span>
+            <span className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-muted text-muted-foreground text-xs font-medium">
+              <MinusCircle className="w-3 h-3" />
+              {syncResult.summary.unchanged} unchanged
+            </span>
+            {syncResult.summary.failed > 0 && (
+              <span className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-red-100 text-red-600 text-xs font-medium">
+                <AlertCircle className="w-3 h-3" />
+                {syncResult.summary.failed} failed
+              </span>
+            )}
+          </div>
+
+          {/* Updated pages detail */}
+          {syncResult.details.updated.length > 0 && (
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-green-700">Changed pages:</p>
+              {syncResult.details.updated.map((u) => (
+                <div key={u.url} className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <ArrowUpCircle className="w-3 h-3 text-green-500 shrink-0" />
+                  <span className="truncate flex-1">{u.url}</span>
+                  <span className="shrink-0 text-muted-foreground/70">{u.oldWords}w → {u.newWords}w</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Failed pages */}
+          {syncResult.details.failed.length > 0 && (
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-red-600">Failed:</p>
+              {syncResult.details.failed.map((f) => (
+                <div key={f.url} className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <AlertCircle className="w-3 h-3 text-red-400 shrink-0" />
+                  <span className="truncate flex-1">{f.url}</span>
+                  <span className="shrink-0 text-red-400">{f.error}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Collapsible Content */}
       {isOpen && (
@@ -234,40 +356,44 @@ export default function KnowledgePage() {
   // Delete knowledge base
   const deleteKnowledgeBase = async (kbId: string) => {
     try {
-      const response = await fetch(`/api/knowledge/${kbId}`, {
-        method: 'DELETE',
-      })
-      
+      const response = await fetch(
+        `/api/chatbots/${chatbotId}/knowledge?knowledgeBaseId=${kbId}`,
+        { method: 'DELETE' }
+      )
       if (response.ok) {
         setKnowledgeBases(prev => prev.filter(kb => kb.id !== kbId))
         setDeleteDialogOpen(false)
         setKbToDelete(null)
+        toast.success('Knowledge base deleted')
       }
     } catch (error) {
       console.error('Failed to delete knowledge base:', error)
+      toast.error('Failed to delete')
     }
   }
 
   // Delete document
   const deleteDocument = async (kbId: string, docId: string) => {
     try {
-      const response = await fetch(`/api/chatbots/${chatbotId}/knowledge/${kbId}/documents/${docId}`, {
-        method: 'DELETE',
-      })
-      
+      const response = await fetch(
+        `/api/chatbots/${chatbotId}/knowledge?documentId=${docId}`,
+        { method: 'DELETE' }
+      )
       if (response.ok) {
-        setKnowledgeBases(prev => 
-          prev.map(kb => 
-            kb.id === kbId 
+        setKnowledgeBases(prev =>
+          prev.map(kb =>
+            kb.id === kbId
               ? { ...kb, documents: kb.documents.filter(doc => doc.id !== docId) }
               : kb
           )
         )
         setDeleteDialogOpen(false)
         setDocToDelete(null)
+        toast.success('Document deleted')
       }
     } catch (error) {
       console.error('Failed to delete document:', error)
+      toast.error('Failed to delete')
     }
   }
 
@@ -382,9 +508,10 @@ export default function KnowledgePage() {
           ) : (
             <div className="space-y-3">
               {knowledgeBases.map((kb) => (
-                <KnowledgeBaseItem 
-                  key={kb.id} 
-                  kb={kb} 
+                <KnowledgeBaseItem
+                  key={kb.id}
+                  kb={kb}
+                  chatbotId={chatbotId}
                   onDeleteKb={(k) => {
                     setKbToDelete(k)
                     setDeleteDialogOpen(true)
