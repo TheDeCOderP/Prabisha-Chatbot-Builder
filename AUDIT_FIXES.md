@@ -62,9 +62,9 @@
 | M-04 | `console.log` statements in production paths | `src/app/api/chatbots/[id]/theme/route.ts`, `src/app/(user)/invites/page.tsx` | ✅ Fixed |
 | M-05 | `/api/workspaces` GET returned only id+role, not name | `src/app/api/workspaces/route.ts` | ✅ Fixed |
 | M-06 | `isPublished` flag not checked in public chat API | `src/app/api/chat/route.ts` | ✅ Fixed |
-| M-07 | Auto-translate Gemini call on every chatbot save — slow & costly | `src/app/api/chatbots/[id]/route.ts` | ⏳ Deferred |
-| M-08 | Conversation message history hard-capped at 50, no pagination | `src/app/api/chat/route.ts` | ⏳ Deferred |
-| M-09 | No GDPR account/data deletion endpoint | new endpoint needed | ⏳ Deferred |
+| M-07 | Auto-translate Gemini call on every chatbot save — now skipped if English text unchanged | `src/app/api/chatbots/[id]/route.ts` | ✅ Fixed |
+| M-08 | Conversation message history hard-capped at 50 — cursor-based pagination added | `src/app/api/chat/route.ts` | ✅ Fixed |
+| M-09 | No GDPR account/data deletion endpoint | `src/app/api/account/route.ts`, `src/app/(user)/account/page.tsx` | ✅ Fixed |
 | M-10 | `NEXTAUTH_SECRET` not validated on startup | `src/lib/auth.ts` | ✅ Fixed (part of H-01) |
 | M-11 | Domain field no URL format validation on PUT | `src/app/api/chatbots/[id]/route.ts` | ✅ Fixed (part of C-01) |
 | M-12 | Invitation PUT role escalation via request body | `src/app/api/invites/route.ts` | ✅ Fixed (H-10) |
@@ -76,6 +76,7 @@
 | File | Purpose |
 |------|---------|
 | `src/lib/rate-limit.ts` | Shared in-memory sliding-window rate limiter (chatLimiter, knowledgeLimiter, inviteLimiter) |
+| `src/app/api/account/route.ts` | GDPR Art. 17 — GET (data preview) + DELETE (account erasure with sole-owner guard) |
 
 ---
 
@@ -111,4 +112,12 @@
 
 ---
 
-_Last updated: 2026-05-31 — 27/31 fixes applied (4 deferred)_
+### 2026-05-31 (Session 2)
+- **M-07** — Auto-translate now compares incoming `en` text with existing DB value; Gemini is called only when the English source actually changed
+- **M-08** — `GET /api/chat?conversationId=` supports `?cursor=<messageId>&limit=<n>` (default 50, max 100); response includes `pagination.hasMore` and `pagination.nextCursor`
+- **M-09** — `DELETE /api/account` permanently erases user + data; blocks if sole workspace owner; `GET /api/account` returns data-preview; Account page updated with "Danger Zone" UI requiring email confirmation before deletion
+- **M-10** — `PUT /api/chat` now verifies the caller is a workspace member of the conversation's chatbot before allowing updates
+
+---
+
+_Last updated: 2026-05-31 — **31/31 fixes applied ✅**_
