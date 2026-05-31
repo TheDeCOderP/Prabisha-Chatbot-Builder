@@ -109,6 +109,7 @@
     autoOpen:     false,
     delay:        1000,
     position:     'bottom-right',
+    widgetText:   'Chat with us',
     buttonColor:  '#3b82f6',
     buttonTextColor: '#ffffff',
     buttonBorderColor: '#3b82f6',
@@ -165,6 +166,13 @@
   let drawerEl = null;
   let drawerTab = null;
   let overlay = null;
+
+  function teardown() {
+    [button, closeBtn, iframe, teaserEl, stickyBarEl, drawerEl, drawerTab, overlay].forEach(el => {
+      if (el && el.parentNode) el.parentNode.removeChild(el);
+    });
+    button = closeBtn = iframe = teaserEl = stickyBarEl = drawerEl = drawerTab = overlay = null;
+  }
 
   // ─── Init ──────────────────────────────────────────────────────────────────
 
@@ -230,6 +238,7 @@
       config.widgetSize       = th.widgetSize       || 70;
       config.widgetSizeMobile = th.widgetSizeMobile || 60;
       config.widgetShape      = th.widgetShape      || 'round';
+      if (th.widgetText)     config.widgetText       = th.widgetText;
       if (th.widgetBgColor)  config.buttonColor      = th.widgetBgColor;
       if (th.widgetColor)    config.buttonBorderColor = th.widgetColor;
       config.closeBtnBgColor = th.closeButtonBgColor || config.closeBtnBgColor;
@@ -245,10 +254,19 @@
       config.windowHeight       = th.windowHeight       || 600;
       config.windowBorderRadius = th.windowBorderRadius ?? 16;
 
-      // Embed mode — only switch if it changed AND we haven't opened yet
+      // Embed mode — if DB says a different mode, teardown current UI and rebuild
       const newMode = (th.embedMode || config.embedMode || 'FLOATING_BUTTON').toUpperCase().replace(/-/g, '_');
-      if (newMode !== config.embedMode && iframe && iframe.style.display === 'none') {
+      if (newMode !== config.embedMode) {
         config.embedMode = newMode;
+        teardown();
+        switch (newMode) {
+          case 'INLINE':        await buildInline();       break;
+          case 'STICKY_BAR':   await buildStickyBar();    break;
+          case 'SLIDE_DRAWER': await buildSlideDrawer();  break;
+          case 'TEASER_BUBBLE':await buildTeaserBubble(); break;
+          default:             await buildFloating();      break;
+        }
+        return; // Button update below not needed — rebuild already applied full theme
       }
 
       // Mode-specific settings
@@ -301,6 +319,8 @@
         button.style.borderRadius     = getBtnRadius();
         button.style.backgroundColor  = config.buttonColor;
         button.style.border           = `3px solid ${config.buttonBorderColor || config.buttonColor}`;
+        button.title                  = config.widgetText || '';
+        button.setAttribute('aria-label', config.widgetText || 'Open chatbot');
         applyBtnPosition(button);
         if (iframe) applyWinPosition(iframe, sz);
       }
