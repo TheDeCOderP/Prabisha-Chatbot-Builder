@@ -172,99 +172,175 @@
     config = { ...defaults, ...userConfig };
     if (!config.chatbotId) { console.error('Chatbot ID is required'); return; }
 
-    try {
-      const response = await fetch(`${config.baseUrl}/api/chatbots/${config.chatbotId}`);
-      if (response.ok) {
-        const db = await response.json();
-
-        config.iconUrl = db.icon || db.avatar || null;
-
-        const th = db.theme || {};
-
-        // Embed mode from DB (overrides userConfig only if not explicitly set)
-        if (th.embedMode && userConfig.embedMode === undefined) {
-          config.embedMode = th.embedMode;
-        }
-        // Normalise casing from script attribute
-        if (typeof config.embedMode === 'string') {
-          config.embedMode = config.embedMode.toUpperCase().replace(/-/g, '_');
-        }
-
-        // Visual settings from theme
-        config.widgetSize       = th.widgetSize       || 70;
-        config.widgetSizeMobile = th.widgetSizeMobile || 60;
-        config.widgetShape      = th.widgetShape      || 'round';
-        if (th.widgetBgColor)  config.buttonColor       = th.widgetBgColor;
-        if (th.widgetColor)    config.buttonBorderColor  = th.widgetColor;
-        config.closeBtnBgColor = th.closeButtonBgColor || config.closeBtnBgColor;
-        config.closeBtnColor   = th.closeButtonColor   || config.closeBtnColor;
-        if (th.widgetPosition) config.position = th.widgetPosition.toLowerCase().replace(/([A-Z])/g, '-$1').toLowerCase();
-        config.widgetCustomPosition = th.widgetCustomPosition || false;
-        config.widgetTop    = th.widgetTop    ?? null;
-        config.widgetBottom = th.widgetBottom ?? null;
-        config.widgetLeft   = th.widgetLeft   ?? null;
-        config.widgetRight  = th.widgetRight  ?? null;
-        config.widgetMargin = th.widgetMargin ?? 20;
-        config.windowWidth          = th.windowWidth          || 420;
-        config.windowHeight         = th.windowHeight         || 600;
-        config.windowBorderRadius   = th.windowBorderRadius   ?? 16;
-
-        // Mode-specific settings
-        config.teaserEnabled   = th.teaserEnabled   ?? true;
-        config.teaserMessage   = th.teaserMessage   || config.teaserMessage;
-        config.teaserDelay     = th.teaserDelay     ?? 3;
-        config.teaserBgColor   = th.teaserBgColor   || config.teaserBgColor;
-        config.teaserTextColor = th.teaserTextColor || config.teaserTextColor;
-        config.teaserCtaYes    = th.teaserCtaYes    || config.teaserCtaYes;
-        config.teaserCtaNo     = th.teaserCtaNo     || config.teaserCtaNo;
-        config.stickyBarText      = th.stickyBarText      || config.stickyBarText;
-        config.stickyBarBgColor   = th.stickyBarBgColor   || config.stickyBarBgColor;
-        config.stickyBarTextColor = th.stickyBarTextColor || config.stickyBarTextColor;
-        config.stickyBarPosition  = th.stickyBarPosition  || config.stickyBarPosition;
-        config.stickyBarCtaText   = th.stickyBarCtaText   || config.stickyBarCtaText;
-        config.drawerSide      = th.drawerSide      || config.drawerSide;
-        config.drawerWidth     = th.drawerWidth     || config.drawerWidth;
-        config.drawerTabText   = th.drawerTabText   || config.drawerTabText;
-        config.drawerTabBgColor = th.drawerTabBgColor || config.drawerTabBgColor;
-
-        // Voice & Sound
-        config.notificationSound   = th.notificationSound   ?? config.notificationSound;
-        config.notificationVolume  = th.notificationVolume  ?? config.notificationVolume;
-        config.voiceGreeting       = th.voiceGreeting       ?? config.voiceGreeting;
-        config.voiceGreetingVolume = th.voiceGreetingVolume ?? config.voiceGreetingVolume;
-        config.voiceGreetingRate   = th.voiceGreetingRate   ?? config.voiceGreetingRate;
-
-        // Resolve greeting text for TTS (use chatbot's greeting field)
-        try {
-          const greetingArr = db.greeting;
-          if (Array.isArray(greetingArr) && greetingArr.length > 0) {
-            const g = greetingArr[0];
-            const browserLang = (navigator.language || 'en').split('-')[0];
-            config._greetingText =
-              (typeof g === 'string' ? g : (g[browserLang] || g['en'] || Object.values(g)[0])) || '';
-          }
-        } catch (_) {}
-
-        if (userConfig.autoOpen === undefined) {
-          config.autoOpen = th.popup_onload ?? db.popup_onload ?? false;
-        }
-      }
-    } catch (e) {
-      console.warn('Chatbot: failed to fetch config, using defaults');
+    // ── Step 1: Render immediately with defaults so button appears instantly ──
+    // No layout shift or late-pop — position is set on first paint.
+    if (typeof config.embedMode === 'string') {
+      config.embedMode = config.embedMode.toUpperCase().replace(/-/g, '_');
     }
-
-    // Build the right mode
     switch (config.embedMode) {
       case 'INLINE':          buildInline();       break;
       case 'STICKY_BAR':      buildStickyBar();    break;
       case 'SLIDE_DRAWER':    buildSlideDrawer();  break;
       case 'TEASER_BUBBLE':   buildTeaserBubble(); break;
-      default:                buildFloating();     break; // FLOATING_BUTTON
+      default:                buildFloating();     break;
     }
-
     setupMessageListener();
     isInitialized = true;
+
+    // ── Step 2: Fetch DB config in background and silently patch the UI ───────
+    try {
+      const response = await fetch(`${config.baseUrl}/api/chatbots/${config.chatbotId}`);
+      if (!response.ok) return;
+      const db = await response.json();
+
+      const th = db.theme || {};
+
+      // Patch icon — use theme widget icon with correct type, fall back to chatbot icon/avatar
+      // widgetIconType: 'EMOJI' | 'SVG' | 'IMAGE'
+      const widgetIcon     = th.widgetIcon     || null;
+      const widgetIconType = th.widgetIconType || 'EMOJI';
+      const fallbackUrl    = db.icon || db.avatar || null;
+
+      config.iconUrl      = widgetIconType === 'EMOJI' ? null : (widgetIcon || fallbackUrl);
+      config.iconEmoji    = widgetIconType === 'EMOJI' ? (widgetIcon || null) : null;
+      config.iconType     = widgetIconType;
+
+      updateBtnIcon(config.iconUrl, config.iconEmoji);
+
+      // Re-apply visual theme settings that may differ from defaults
+      const prevSize     = config.widgetSize;
+      const prevSizeMob  = config.widgetSizeMobile;
+      const prevShape    = config.widgetShape;
+      const prevBtnColor = config.buttonColor;
+      const prevBorder   = config.buttonBorderColor;
+      const prevPos      = config.position;
+      const prevMargin   = config.widgetMargin;
+      const prevCustom   = config.widgetCustomPosition;
+
+      config.widgetSize       = th.widgetSize       || 70;
+      config.widgetSizeMobile = th.widgetSizeMobile || 60;
+      config.widgetShape      = th.widgetShape      || 'round';
+      if (th.widgetBgColor)  config.buttonColor      = th.widgetBgColor;
+      if (th.widgetColor)    config.buttonBorderColor = th.widgetColor;
+      config.closeBtnBgColor = th.closeButtonBgColor || config.closeBtnBgColor;
+      config.closeBtnColor   = th.closeButtonColor   || config.closeBtnColor;
+      if (th.widgetPosition) config.position = th.widgetPosition.toLowerCase().replace(/([A-Z])/g, '-$1').toLowerCase();
+      config.widgetCustomPosition = th.widgetCustomPosition || false;
+      config.widgetTop    = th.widgetTop    ?? null;
+      config.widgetBottom = th.widgetBottom ?? null;
+      config.widgetLeft   = th.widgetLeft   ?? null;
+      config.widgetRight  = th.widgetRight  ?? null;
+      config.widgetMargin = th.widgetMargin ?? 20;
+      config.windowWidth        = th.windowWidth        || 420;
+      config.windowHeight       = th.windowHeight       || 600;
+      config.windowBorderRadius = th.windowBorderRadius ?? 16;
+
+      // Embed mode — only switch if it changed AND we haven't opened yet
+      const newMode = (th.embedMode || config.embedMode || 'FLOATING_BUTTON').toUpperCase().replace(/-/g, '_');
+      if (newMode !== config.embedMode && iframe && iframe.style.display === 'none') {
+        config.embedMode = newMode;
+      }
+
+      // Mode-specific settings
+      config.teaserEnabled   = th.teaserEnabled   ?? config.teaserEnabled;
+      config.teaserMessage   = th.teaserMessage   || config.teaserMessage;
+      config.teaserDelay     = th.teaserDelay     ?? config.teaserDelay;
+      config.teaserBgColor   = th.teaserBgColor   || config.teaserBgColor;
+      config.teaserTextColor = th.teaserTextColor || config.teaserTextColor;
+      config.teaserCtaYes    = th.teaserCtaYes    || config.teaserCtaYes;
+      config.teaserCtaNo     = th.teaserCtaNo     || config.teaserCtaNo;
+      config.stickyBarText      = th.stickyBarText      || config.stickyBarText;
+      config.stickyBarBgColor   = th.stickyBarBgColor   || config.stickyBarBgColor;
+      config.stickyBarTextColor = th.stickyBarTextColor || config.stickyBarTextColor;
+      config.stickyBarPosition  = th.stickyBarPosition  || config.stickyBarPosition;
+      config.stickyBarCtaText   = th.stickyBarCtaText   || config.stickyBarCtaText;
+      config.drawerSide       = th.drawerSide      || config.drawerSide;
+      config.drawerWidth      = th.drawerWidth     || config.drawerWidth;
+      config.drawerTabText    = th.drawerTabText   || config.drawerTabText;
+      config.drawerTabBgColor = th.drawerTabBgColor|| config.drawerTabBgColor;
+
+      // Voice & Sound
+      config.notificationSound   = th.notificationSound   ?? config.notificationSound;
+      config.notificationVolume  = th.notificationVolume  ?? config.notificationVolume;
+      config.voiceGreeting       = th.voiceGreeting       ?? config.voiceGreeting;
+      config.voiceGreetingVolume = th.voiceGreetingVolume ?? config.voiceGreetingVolume;
+      config.voiceGreetingRate   = th.voiceGreetingRate   ?? config.voiceGreetingRate;
+
+      // Resolve greeting text for TTS
+      try {
+        const greetingArr = db.greeting;
+        if (Array.isArray(greetingArr) && greetingArr.length > 0) {
+          const g = greetingArr[0];
+          const browserLang = (navigator.language || 'en').split('-')[0];
+          config._greetingText =
+            (typeof g === 'string' ? g : (g[browserLang] || g['en'] || Object.values(g)[0])) || '';
+        }
+      } catch (_) {}
+
+      if (userConfig.autoOpen === undefined) {
+        config.autoOpen = th.popup_onload ?? db.popup_onload ?? false;
+      }
+
+      // Silently re-apply button position/size/color if they changed from defaults
+      const posChanged   = config.position !== prevPos || config.widgetMargin !== prevMargin || config.widgetCustomPosition !== prevCustom;
+      const sizeChanged  = config.widgetSize !== prevSize || config.widgetSizeMobile !== prevSizeMob;
+      const colorChanged = config.buttonColor !== prevBtnColor || config.buttonBorderColor !== prevBorder || config.widgetShape !== prevShape;
+
+      if (button && (posChanged || sizeChanged || colorChanged)) {
+        const isMob = window.innerWidth < 768;
+        const sz    = isMob ? config.widgetSizeMobile : config.widgetSize;
+        button.style.width       = sz + 'px';
+        button.style.height      = sz + 'px';
+        button.style.borderRadius      = getBtnRadius();
+        button.style.backgroundColor   = config.buttonColor;
+        button.style.border            = `3px solid ${config.buttonBorderColor || config.buttonColor}`;
+        applyBtnPosition(button);
+        // Re-position the chat window to match new button size
+        if (iframe) applyWinPosition(iframe, sz);
+      }
+
+      // Auto-open after theme loaded (popup_onload)
+      if (config.autoOpen && iframe && iframe.style.display === 'none') {
+        setTimeout(openChat, config.delay || 1000);
+      }
+    } catch (e) {
+      // Non-fatal — widget already rendered with defaults above
+    }
   }
+
+  // ─── Update button icon after config loads ────────────────────────────────
+  // url  = Cloudinary/SVG URL (for IMAGE / SVG types)
+  // emoji = emoji character string (for EMOJI type)
+  // Either can be null — if both null, renders default chat SVG.
+
+  function updateBtnIcon(url, emoji) {
+    if (!button) return;
+    const inner = button.querySelector('div');
+    if (!inner) return;
+    inner.innerHTML = ''; // clear whatever was there before
+
+    const defaultSvg = `<svg width="24" height="24" viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg"><path d="M20 2H4C2.9 2 2 2.9 2 4V22L6 18H20C21.1 18 22 17.1 22 16V4C22 2.9 21.1 2 20 2Z"/></svg>`;
+
+    if (emoji) {
+      // Emoji — render as text, never as <img>
+      const span = document.createElement('span');
+      span.textContent = emoji;
+      span.style.cssText = 'font-size:28px;line-height:1;user-select:none;';
+      inner.appendChild(span);
+    } else if (url) {
+      // IMAGE or SVG URL
+      const img = document.createElement('img');
+      img.src = url;
+      img.alt = 'Chat';
+      img.style.cssText = `width:100%;height:100%;object-fit:cover;border-radius:${getBtnRadius()};`;
+      img.onerror = function () { inner.innerHTML = defaultSvg; };
+      inner.appendChild(img);
+    } else {
+      // Nothing set — default chat bubble SVG
+      inner.innerHTML = defaultSvg;
+    }
+  }
+
 
   // ─── Iframe factory ────────────────────────────────────────────────────────
 
@@ -400,19 +476,15 @@
     button.setAttribute('role', 'button');
     button.setAttribute('aria-label', 'Open chatbot');
 
-    // Inner icon
+    // Inner icon container — actual icon rendered via updateBtnIcon() so
+    // the same type-aware logic (EMOJI / IMAGE / SVG / fallback) is used
+    // both at initial build time and after the API config patch.
     const inner = document.createElement('div');
     inner.style.cssText = 'width:100%;height:100%;display:flex;align-items:center;justify-content:center;overflow:hidden;';
-    if (config.iconUrl) {
-      const img = document.createElement('img');
-      img.src = config.iconUrl;
-      img.alt = 'Chat';
-      img.style.cssText = `width:100%;height:100%;object-fit:contain;padding:4px;border-radius:${getBtnRadius()};`;
-      inner.appendChild(img);
-    } else {
-      inner.innerHTML = `<svg width="24" height="24" viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg"><path d="M20 2H4C2.9 2 2 2.9 2 4V22L6 18H20C21.1 18 22 17.1 22 16V4C22 2.9 21.1 2 20 2Z"/></svg>`;
-    }
     button.appendChild(inner);
+
+    // Render icon immediately; updateBtnIcon patches it again after API fetch
+    updateBtnIcon(config.iconUrl || null, config.iconEmoji || null);
 
     // Online dot
     const dot = document.createElement('span');
