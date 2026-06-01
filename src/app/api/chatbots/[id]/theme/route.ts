@@ -153,11 +153,13 @@ export async function PUT(
       ...(body.drawerTabText  !== undefined && { drawerTabText:  body.drawerTabText }),
       ...(body.drawerTabBgColor !== undefined && { drawerTabBgColor: body.drawerTabBgColor }),
       // Voice & Sound
-      ...(body.notificationSound   !== undefined && { notificationSound:   body.notificationSound }),
-      ...(body.notificationVolume  !== undefined && { notificationVolume:  body.notificationVolume }),
-      ...(body.voiceGreeting       !== undefined && { voiceGreeting:       body.voiceGreeting }),
-      ...(body.voiceGreetingVolume !== undefined && { voiceGreetingVolume: body.voiceGreetingVolume }),
-      ...(body.voiceGreetingRate   !== undefined && { voiceGreetingRate:   body.voiceGreetingRate }),
+      ...(body.notificationSound    !== undefined && { notificationSound:    body.notificationSound }),
+      ...(body.notificationVolume   !== undefined && { notificationVolume:   body.notificationVolume }),
+      ...(body.notificationSoundType !== undefined && { notificationSoundType: body.notificationSoundType }),
+      ...(body.notificationSoundUrl  !== undefined && { notificationSoundUrl:  body.notificationSoundUrl ?? null }),
+      ...(body.voiceGreeting        !== undefined && { voiceGreeting:        body.voiceGreeting }),
+      ...(body.voiceGreetingVolume  !== undefined && { voiceGreetingVolume:  body.voiceGreetingVolume }),
+      ...(body.voiceGreetingRate    !== undefined && { voiceGreetingRate:    body.voiceGreetingRate }),
     };
 
     // Update or create theme

@@ -215,28 +215,42 @@ function ScrapeProgressPanel({ scrapeProgress }: { scrapeProgress: import('@/hoo
 // --- Sync Progress Types ---
 interface SyncProgressEntry {
   url: string;
-  result: 'updated' | 'unchanged' | 'failed';
+  result: 'added' | 'updated' | 'unchanged' | 'failed';
   oldWords?: number;
   newWords?: number;
   error?: string;
 }
 
 interface SyncProgress {
-  phase: 'syncing' | 'saving' | 'done';
+  phase: 'crawling' | 'storing' | 'done';
+  // Crawl phase
   current: number;
   total: number;
   currentUrl: string;
+  bytesTotal: number;
+  pagesOk: number;
+  pagesSkipped: number;
+  pagesFailed: number;
+  // Store phase
+  storedCurrent: number;
+  storedTotal: number;
+  added: number;
   updated: number;
   unchanged: number;
-  failed: number;
   log: SyncProgressEntry[];
 }
 
 // --- Sync Progress Panel ---
 function SyncProgressPanel({ progress, onDismiss }: { progress: SyncProgress; onDismiss: () => void }) {
-  const isDone = progress.phase === 'done';
-  const isSaving = progress.phase === 'saving';
-  const progressValue = progress.total > 0 ? (progress.current / progress.total) * 100 : 5;
+  const isDone     = progress.phase === 'done';
+  const isStoring  = progress.phase === 'storing';
+  const isCrawling = progress.phase === 'crawling';
+
+  const progressValue = isStoring && progress.storedTotal > 0
+    ? (progress.storedCurrent / progress.storedTotal) * 100
+    : progress.total > 0
+    ? (progress.current / progress.total) * 100
+    : 5;
 
   return (
     <div className="rounded-xl border border-border bg-muted/20 overflow-hidden animate-in fade-in duration-300">
@@ -247,13 +261,15 @@ function SyncProgressPanel({ progress, onDismiss }: { progress: SyncProgress; on
           : <Loader2 className="w-4 h-4 animate-spin text-primary shrink-0" />
         }
         <span className="text-sm font-semibold text-foreground">
-          {isDone ? 'Sync complete!'
-            : isSaving ? 'Saving changes…'
-            : 'Syncing pages…'}
+          {isDone     ? 'Full sync complete!'
+           : isStoring ? 'Saving changes…'
+           :             'Re-crawling site…'}
         </span>
         {!isDone && (
           <span className="ml-auto text-xs text-muted-foreground font-mono">
-            {progress.current} / {progress.total || '?'}
+            {isStoring
+              ? `${progress.storedCurrent} / ${progress.storedTotal}`
+              : `${progress.current} / ${progress.total || '?'}`}
           </span>
         )}
         {isDone && (
@@ -277,38 +293,67 @@ function SyncProgressPanel({ progress, onDismiss }: { progress: SyncProgress; on
           </div>
         )}
 
-        {/* Stats chips */}
-        <div className="flex flex-wrap gap-2">
-          {(progress.updated > 0 || isDone) && (
+        {/* Crawl phase stats */}
+        {isCrawling && (
+          <div className="flex flex-wrap gap-2">
             <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-green-100 text-green-700 text-[11px] font-semibold border border-green-200">
-              <ArrowUpCircle className="w-3 h-3" />
-              {progress.updated} updated
+              <CheckCircle2 className="w-3 h-3" />
+              {progress.pagesOk} found
             </span>
-          )}
-          {(progress.unchanged > 0 || isDone) && (
-            <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-muted text-muted-foreground text-[11px] font-semibold border border-border">
-              <MinusCircle className="w-3 h-3" />
-              {progress.unchanged} unchanged
+            {progress.pagesSkipped > 0 && (
+              <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 text-[11px] font-semibold border border-amber-200">
+                <MinusCircle className="w-3 h-3" />
+                {progress.pagesSkipped} empty
+              </span>
+            )}
+            {progress.pagesFailed > 0 && (
+              <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-100 text-red-700 text-[11px] font-semibold border border-red-200">
+                <AlertCircle className="w-3 h-3" />
+                {progress.pagesFailed} failed
+              </span>
+            )}
+            <span className="ml-auto text-[11px] text-muted-foreground flex items-center gap-1">
+              <FileText className="w-3 h-3" />
+              {formatBytes(progress.bytesTotal)}
             </span>
-          )}
-          {progress.failed > 0 && (
-            <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-100 text-red-700 text-[11px] font-semibold border border-red-200">
-              <AlertCircle className="w-3 h-3" />
-              {progress.failed} failed
-            </span>
-          )}
-        </div>
+          </div>
+        )}
 
-        {/* Scrollable log */}
+        {/* Store / done stats */}
+        {(isStoring || isDone) && (
+          <div className="flex flex-wrap gap-2">
+            {progress.added > 0 && (
+              <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-100 text-blue-700 text-[11px] font-semibold border border-blue-200">
+                <Plus className="w-3 h-3" />
+                {progress.added} new
+              </span>
+            )}
+            {progress.updated > 0 && (
+              <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-green-100 text-green-700 text-[11px] font-semibold border border-green-200">
+                <ArrowUpCircle className="w-3 h-3" />
+                {progress.updated} updated
+              </span>
+            )}
+            {(progress.unchanged > 0 || isDone) && (
+              <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-muted text-muted-foreground text-[11px] font-semibold border border-border">
+                <MinusCircle className="w-3 h-3" />
+                {progress.unchanged} unchanged
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Scrollable log — only shown during storing/done */}
         {progress.log.length > 0 && (
           <div className="rounded-lg border border-border/60 overflow-hidden">
             <div className="px-3 py-1.5 bg-muted/40 border-b border-border/40 flex items-center justify-between">
               <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Pages Log</span>
-              <span className="text-[10px] text-muted-foreground">{progress.log.length} checked</span>
+              <span className="text-[10px] text-muted-foreground">{progress.log.length} processed</span>
             </div>
             <div className="max-h-44 overflow-y-auto divide-y divide-border/30">
               {[...progress.log].reverse().map((entry, i) => (
                 <div key={i} className="flex items-center gap-2 px-3 py-1.5 hover:bg-muted/30 transition-colors">
+                  {entry.result === 'added'     && <Plus className="w-3 h-3 text-blue-500 shrink-0" />}
                   {entry.result === 'updated'   && <ArrowUpCircle className="w-3 h-3 text-green-500 shrink-0" />}
                   {entry.result === 'unchanged' && <MinusCircle className="w-3 h-3 text-muted-foreground shrink-0" />}
                   {entry.result === 'failed'    && <AlertCircle className="w-3 h-3 text-red-500 shrink-0" />}
@@ -322,6 +367,7 @@ function SyncProgressPanel({ progress, onDismiss }: { progress: SyncProgress; on
                   )}
                   <span className={cn(
                     "text-[9px] font-bold uppercase shrink-0 px-1.5 py-0.5 rounded",
+                    entry.result === 'added'     ? "bg-blue-100 text-blue-700" :
                     entry.result === 'updated'   ? "bg-green-100 text-green-700" :
                     entry.result === 'unchanged' ? "bg-muted text-muted-foreground" :
                                                    "bg-red-100 text-red-700"
@@ -337,8 +383,8 @@ function SyncProgressPanel({ progress, onDismiss }: { progress: SyncProgress; on
         {/* Done summary */}
         {isDone && (
           <div className="text-xs text-muted-foreground text-center pt-1">
-            ✅ {progress.updated} updated · {progress.unchanged} unchanged
-            {progress.failed > 0 && ` · ${progress.failed} failed`}
+            ✅ {progress.added > 0 ? `${progress.added} new · ` : ''}{progress.updated} updated · {progress.unchanged} unchanged
+            {progress.pagesFailed + (progress.log.filter(e => e.result === 'failed').length) > 0 && ` · some failed`}
           </div>
         )}
       </div>
@@ -370,7 +416,11 @@ const KnowledgeBaseItem = ({
   const handleSync = async (e: React.MouseEvent) => {
     e.stopPropagation();
     setSyncing(true);
-    setSyncProgress({ phase: 'syncing', current: 0, total: 0, currentUrl: '', updated: 0, unchanged: 0, failed: 0, log: [] });
+    setSyncProgress({
+      phase: 'crawling', current: 0, total: 0, currentUrl: '',
+      bytesTotal: 0, pagesOk: 0, pagesSkipped: 0, pagesFailed: 0,
+      storedCurrent: 0, storedTotal: 0, added: 0, updated: 0, unchanged: 0, log: [],
+    });
 
     try {
       const res = await fetch(`/api/chatbots/${chatbotId}/knowledge/sync/stream`, {
@@ -401,35 +451,48 @@ const KnowledgeBaseItem = ({
           try {
             const data = JSON.parse(line.slice(6));
 
-            if (data.type === 'start') {
-              setSyncProgress(prev => prev ? { ...prev, total: data.total } : prev);
-            } else if (data.type === 'progress' || data.type === 'saving') {
-              setSyncProgress(prev => prev
-                ? { ...prev, phase: data.type === 'saving' ? 'saving' : 'syncing', current: data.current, currentUrl: data.url }
-                : prev
-              );
+            if (data.type === 'crawl_progress') {
+              setSyncProgress(prev => prev ? {
+                ...prev,
+                phase: 'crawling',
+                current: data.current,
+                total: data.total,
+                currentUrl: data.url,
+                bytesTotal: data.bytes,
+                pagesOk: data.pagesOk,
+                pagesSkipped: data.pagesSkipped,
+                pagesFailed: data.pagesFailed,
+              } : prev);
+
+            } else if (data.type === 'crawl_done') {
+              // Crawl finished — switch to storing phase
+              setSyncProgress(prev => prev ? {
+                ...prev,
+                phase: 'storing',
+                storedTotal: data.totalFound,
+                storedCurrent: 0,
+                currentUrl: '',
+              } : prev);
+
             } else if (data.type === 'page') {
               setSyncProgress(prev => {
                 if (!prev) return prev;
                 return {
                   ...prev,
-                  current: data.current,
+                  storedCurrent: data.current,
                   currentUrl: data.url,
+                  added:     prev.added     + (data.result === 'added'     ? 1 : 0),
                   updated:   prev.updated   + (data.result === 'updated'   ? 1 : 0),
                   unchanged: prev.unchanged + (data.result === 'unchanged' ? 1 : 0),
-                  failed:    prev.failed    + (data.result === 'failed'    ? 1 : 0),
-                  log: [...prev.log, {
-                    url: data.url,
-                    result: data.result,
-                    oldWords: data.oldWords,
-                    newWords: data.newWords,
-                    error: data.error,
-                  }],
+                  log: [...prev.log, { url: data.url, result: data.result, oldWords: data.oldWords, newWords: data.newWords, error: data.error }],
                 };
               });
+
             } else if (data.type === 'done') {
-              setSyncProgress(prev => prev ? { ...prev, phase: 'done' } : prev);
-              toast.success(`Sync complete — ${data.summary.updated} pages updated`);
+              setSyncProgress(prev => prev ? { ...prev, phase: 'done', currentUrl: '' } : prev);
+              const s = data.summary;
+              toast.success(`Sync complete — ${s.added} new, ${s.updated} updated, ${s.unchanged} unchanged`);
+
             } else if (data.type === 'error') {
               throw new Error(data.message);
             }

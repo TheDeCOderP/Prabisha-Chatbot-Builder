@@ -228,6 +228,8 @@ model ChatbotTheme {
   // Voice & Sound settings
   notificationSound    Boolean   @default(true)
   notificationVolume   Float     @default(0.4)
+  notificationSoundType String?  @default("ding")
+  notificationSoundUrl  String?
   voiceGreeting        Boolean   @default(false)
   voiceGreetingVolume  Float     @default(0.8)
   voiceGreetingRate    Float     @default(1.0)

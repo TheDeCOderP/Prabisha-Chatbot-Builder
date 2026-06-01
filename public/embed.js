@@ -59,22 +59,73 @@
 
   function playNotificationSound(volume) {
     if (!volume || volume <= 0) return;
+
+    // Custom audio file URL — user-provided MP3/WAV
+    if (config.notificationSoundUrl) {
+      try {
+        const audio = new Audio(config.notificationSoundUrl);
+        audio.volume = Math.min(Math.max(volume, 0), 1);
+        audio.play().catch(() => {});
+      } catch (_) {}
+      return;
+    }
+
+    // Web Audio API presets
     try {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       if (!AudioCtx) return;
       const ctx  = new AudioCtx();
-      const osc  = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(900, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(500, ctx.currentTime + 0.12);
-      gain.gain.setValueAtTime(volume * 0.35, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.25);
-      osc.start(ctx.currentTime);
-      osc.stop(ctx.currentTime + 0.25);
-      setTimeout(() => ctx.close().catch(() => {}), 600);
+      const type = config.notificationSoundType || 'ding';
+
+      const osc1 = (freq, startAt, dur, waveType) => {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.type = waveType || 'sine';
+        o.frequency.setValueAtTime(freq, startAt);
+        g.gain.setValueAtTime(volume * 0.3, startAt);
+        g.gain.exponentialRampToValueAtTime(0.0001, startAt + dur);
+        o.start(startAt); o.stop(startAt + dur);
+      };
+
+      switch (type) {
+        case 'double':
+          osc1(800, ctx.currentTime,       0.1);
+          osc1(800, ctx.currentTime + 0.18, 0.1);
+          setTimeout(() => ctx.close().catch(() => {}), 700);
+          break;
+        case 'chime':
+          [523, 659, 784].forEach((f, i) => osc1(f, ctx.currentTime + i * 0.12, 0.35));
+          setTimeout(() => ctx.close().catch(() => {}), 1200);
+          break;
+        case 'rising': {
+          const o = ctx.createOscillator(), g = ctx.createGain();
+          o.connect(g); g.connect(ctx.destination);
+          o.type = 'sine';
+          o.frequency.setValueAtTime(300, ctx.currentTime);
+          o.frequency.exponentialRampToValueAtTime(900, ctx.currentTime + 0.25);
+          g.gain.setValueAtTime(volume * 0.3, ctx.currentTime);
+          g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.3);
+          o.start(ctx.currentTime); o.stop(ctx.currentTime + 0.3);
+          setTimeout(() => ctx.close().catch(() => {}), 600);
+          break;
+        }
+        case 'soft':
+          osc1(600, ctx.currentTime, 0.15, 'triangle');
+          setTimeout(() => ctx.close().catch(() => {}), 400);
+          break;
+        default: { // 'ding'
+          const o = ctx.createOscillator(), g = ctx.createGain();
+          o.connect(g); g.connect(ctx.destination);
+          o.type = 'sine';
+          o.frequency.setValueAtTime(900, ctx.currentTime);
+          o.frequency.exponentialRampToValueAtTime(500, ctx.currentTime + 0.12);
+          g.gain.setValueAtTime(volume * 0.35, ctx.currentTime);
+          g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.25);
+          o.start(ctx.currentTime); o.stop(ctx.currentTime + 0.25);
+          setTimeout(() => ctx.close().catch(() => {}), 600);
+        }
+      }
     } catch (_) {}
   }
 
@@ -145,11 +196,13 @@
     drawerTabText: 'Chat',
     drawerTabBgColor: '#111CA8',
     // Voice & Sound
-    notificationSound:   true,
-    notificationVolume:  0.4,
-    voiceGreeting:       false,
-    voiceGreetingVolume: 0.8,
-    voiceGreetingRate:   1.0,
+    notificationSound:    true,
+    notificationVolume:   0.4,
+    notificationSoundType: 'ding',
+    notificationSoundUrl:  null,
+    voiceGreeting:        false,
+    voiceGreetingVolume:  0.8,
+    voiceGreetingRate:    1.0,
     // Internal — greeting text resolved from chatbot data
     _greetingText: '',
   };
@@ -288,11 +341,13 @@
       }
 
       // Voice & Sound
-      config.notificationSound   = th.notificationSound   ?? config.notificationSound;
-      config.notificationVolume  = th.notificationVolume  ?? config.notificationVolume;
-      config.voiceGreeting       = th.voiceGreeting       ?? config.voiceGreeting;
-      config.voiceGreetingVolume = th.voiceGreetingVolume ?? config.voiceGreetingVolume;
-      config.voiceGreetingRate   = th.voiceGreetingRate   ?? config.voiceGreetingRate;
+      config.notificationSound    = th.notificationSound    ?? config.notificationSound;
+      config.notificationVolume   = th.notificationVolume   ?? config.notificationVolume;
+      config.notificationSoundType = th.notificationSoundType || config.notificationSoundType;
+      config.notificationSoundUrl  = th.notificationSoundUrl  || config.notificationSoundUrl;
+      config.voiceGreeting        = th.voiceGreeting        ?? config.voiceGreeting;
+      config.voiceGreetingVolume  = th.voiceGreetingVolume  ?? config.voiceGreetingVolume;
+      config.voiceGreetingRate    = th.voiceGreetingRate    ?? config.voiceGreetingRate;
 
       // Resolve greeting text for TTS
       try {
