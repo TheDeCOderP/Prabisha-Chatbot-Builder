@@ -212,17 +212,141 @@ function ScrapeProgressPanel({ scrapeProgress }: { scrapeProgress: import('@/hoo
   );
 }
 
-// --- Sub-Component: Knowledge Base Item (Collapsible) ---
-interface SyncResult {
-  summary: { total: number; updated: number; unchanged: number; failed: number };
-  details: {
-    updated: Array<{ url: string; oldWords: number; newWords: number }>;
-    unchanged: string[];
-    failed: Array<{ url: string; error: string }>;
-  };
-  syncedAt: string;
+// --- Sync Progress Types ---
+interface SyncProgressEntry {
+  url: string;
+  result: 'updated' | 'unchanged' | 'failed';
+  oldWords?: number;
+  newWords?: number;
+  error?: string;
 }
 
+interface SyncProgress {
+  phase: 'syncing' | 'saving' | 'done';
+  current: number;
+  total: number;
+  currentUrl: string;
+  updated: number;
+  unchanged: number;
+  failed: number;
+  log: SyncProgressEntry[];
+}
+
+// --- Sync Progress Panel ---
+function SyncProgressPanel({ progress, onDismiss }: { progress: SyncProgress; onDismiss: () => void }) {
+  const isDone = progress.phase === 'done';
+  const isSaving = progress.phase === 'saving';
+  const progressValue = progress.total > 0 ? (progress.current / progress.total) * 100 : 5;
+
+  return (
+    <div className="rounded-xl border border-border bg-muted/20 overflow-hidden animate-in fade-in duration-300">
+      {/* Header */}
+      <div className="flex items-center gap-2.5 px-4 py-3 border-b bg-background">
+        {isDone
+          ? <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />
+          : <Loader2 className="w-4 h-4 animate-spin text-primary shrink-0" />
+        }
+        <span className="text-sm font-semibold text-foreground">
+          {isDone ? 'Sync complete!'
+            : isSaving ? 'Saving changes…'
+            : 'Syncing pages…'}
+        </span>
+        {!isDone && (
+          <span className="ml-auto text-xs text-muted-foreground font-mono">
+            {progress.current} / {progress.total || '?'}
+          </span>
+        )}
+        {isDone && (
+          <button onClick={onDismiss} className="ml-auto text-muted-foreground hover:text-foreground transition-colors">
+            <X className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
+
+      <div className="p-4 space-y-3">
+        {/* Progress bar */}
+        <Progress value={progressValue} className="h-2" />
+
+        {/* Current URL */}
+        {!isDone && progress.currentUrl && (
+          <div className="flex items-center gap-2 bg-muted/50 border border-border/50 rounded-lg px-3 py-2 min-w-0">
+            <Globe className="w-3 h-3 text-muted-foreground shrink-0" />
+            <span className="text-[11px] font-mono text-muted-foreground truncate" title={progress.currentUrl}>
+              {trimUrl(progress.currentUrl)}
+            </span>
+          </div>
+        )}
+
+        {/* Stats chips */}
+        <div className="flex flex-wrap gap-2">
+          {(progress.updated > 0 || isDone) && (
+            <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-green-100 text-green-700 text-[11px] font-semibold border border-green-200">
+              <ArrowUpCircle className="w-3 h-3" />
+              {progress.updated} updated
+            </span>
+          )}
+          {(progress.unchanged > 0 || isDone) && (
+            <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-muted text-muted-foreground text-[11px] font-semibold border border-border">
+              <MinusCircle className="w-3 h-3" />
+              {progress.unchanged} unchanged
+            </span>
+          )}
+          {progress.failed > 0 && (
+            <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-100 text-red-700 text-[11px] font-semibold border border-red-200">
+              <AlertCircle className="w-3 h-3" />
+              {progress.failed} failed
+            </span>
+          )}
+        </div>
+
+        {/* Scrollable log */}
+        {progress.log.length > 0 && (
+          <div className="rounded-lg border border-border/60 overflow-hidden">
+            <div className="px-3 py-1.5 bg-muted/40 border-b border-border/40 flex items-center justify-between">
+              <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Pages Log</span>
+              <span className="text-[10px] text-muted-foreground">{progress.log.length} checked</span>
+            </div>
+            <div className="max-h-44 overflow-y-auto divide-y divide-border/30">
+              {[...progress.log].reverse().map((entry, i) => (
+                <div key={i} className="flex items-center gap-2 px-3 py-1.5 hover:bg-muted/30 transition-colors">
+                  {entry.result === 'updated'   && <ArrowUpCircle className="w-3 h-3 text-green-500 shrink-0" />}
+                  {entry.result === 'unchanged' && <MinusCircle className="w-3 h-3 text-muted-foreground shrink-0" />}
+                  {entry.result === 'failed'    && <AlertCircle className="w-3 h-3 text-red-500 shrink-0" />}
+                  <span className="text-[11px] font-mono text-muted-foreground truncate flex-1 min-w-0" title={entry.url}>
+                    {trimUrl(entry.url, 55)}
+                  </span>
+                  {entry.result === 'updated' && entry.oldWords !== undefined && (
+                    <span className="text-[9px] shrink-0 text-muted-foreground/70 mr-1">
+                      {entry.oldWords}w → {entry.newWords}w
+                    </span>
+                  )}
+                  <span className={cn(
+                    "text-[9px] font-bold uppercase shrink-0 px-1.5 py-0.5 rounded",
+                    entry.result === 'updated'   ? "bg-green-100 text-green-700" :
+                    entry.result === 'unchanged' ? "bg-muted text-muted-foreground" :
+                                                   "bg-red-100 text-red-700"
+                  )}>
+                    {entry.result}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Done summary */}
+        {isDone && (
+          <div className="text-xs text-muted-foreground text-center pt-1">
+            ✅ {progress.updated} updated · {progress.unchanged} unchanged
+            {progress.failed > 0 && ` · ${progress.failed} failed`}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// --- Sub-Component: Knowledge Base Item (Collapsible) ---
 const KnowledgeBaseItem = ({
   kb,
   chatbotId,
@@ -237,8 +361,7 @@ const KnowledgeBaseItem = ({
   const [isOpen, setIsOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
-  const [showSyncResult, setShowSyncResult] = useState(false);
+  const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(kb.name);
   const [savingRename, setSavingRename] = useState(false);
@@ -247,20 +370,78 @@ const KnowledgeBaseItem = ({
   const handleSync = async (e: React.MouseEvent) => {
     e.stopPropagation();
     setSyncing(true);
-    setSyncResult(null);
+    setSyncProgress({ phase: 'syncing', current: 0, total: 0, currentUrl: '', updated: 0, unchanged: 0, failed: 0, log: [] });
+
     try {
-      const res = await fetch(`/api/chatbots/${chatbotId}/knowledge/sync`, {
+      const res = await fetch(`/api/chatbots/${chatbotId}/knowledge/sync/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ knowledgeBaseId: kb.id }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Sync failed');
-      setSyncResult(data);
-      setShowSyncResult(true);
-      toast.success(`Sync complete — ${data.summary.updated} pages updated`);
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Sync failed');
+      }
+
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const data = JSON.parse(line.slice(6));
+
+            if (data.type === 'start') {
+              setSyncProgress(prev => prev ? { ...prev, total: data.total } : prev);
+            } else if (data.type === 'progress' || data.type === 'saving') {
+              setSyncProgress(prev => prev
+                ? { ...prev, phase: data.type === 'saving' ? 'saving' : 'syncing', current: data.current, currentUrl: data.url }
+                : prev
+              );
+            } else if (data.type === 'page') {
+              setSyncProgress(prev => {
+                if (!prev) return prev;
+                return {
+                  ...prev,
+                  current: data.current,
+                  currentUrl: data.url,
+                  updated:   prev.updated   + (data.result === 'updated'   ? 1 : 0),
+                  unchanged: prev.unchanged + (data.result === 'unchanged' ? 1 : 0),
+                  failed:    prev.failed    + (data.result === 'failed'    ? 1 : 0),
+                  log: [...prev.log, {
+                    url: data.url,
+                    result: data.result,
+                    oldWords: data.oldWords,
+                    newWords: data.newWords,
+                    error: data.error,
+                  }],
+                };
+              });
+            } else if (data.type === 'done') {
+              setSyncProgress(prev => prev ? { ...prev, phase: 'done' } : prev);
+              toast.success(`Sync complete — ${data.summary.updated} pages updated`);
+            } else if (data.type === 'error') {
+              throw new Error(data.message);
+            }
+          } catch (parseErr) {
+            if (parseErr instanceof SyntaxError) continue;
+            throw parseErr;
+          }
+        }
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Sync failed');
+      setSyncProgress(null);
     } finally {
       setSyncing(false);
     }
@@ -441,63 +622,13 @@ const KnowledgeBaseItem = ({
         </div>
       </div>
 
-      {/* Sync Result Banner */}
-      {syncResult && showSyncResult && (
-        <div className="border-t bg-muted/30 px-4 py-3 text-sm space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="font-medium text-xs uppercase tracking-wider text-muted-foreground">
-              Sync Result — {new Date(syncResult.syncedAt).toLocaleString()}
-            </span>
-            <button onClick={() => setShowSyncResult(false)} className="text-muted-foreground hover:text-foreground">
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </div>
-
-          {/* Summary chips */}
-          <div className="flex flex-wrap gap-2">
-            <span className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-green-100 text-green-700 text-xs font-medium">
-              <ArrowUpCircle className="w-3 h-3" />
-              {syncResult.summary.updated} updated
-            </span>
-            <span className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-muted text-muted-foreground text-xs font-medium">
-              <MinusCircle className="w-3 h-3" />
-              {syncResult.summary.unchanged} unchanged
-            </span>
-            {syncResult.summary.failed > 0 && (
-              <span className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-red-100 text-red-600 text-xs font-medium">
-                <AlertCircle className="w-3 h-3" />
-                {syncResult.summary.failed} failed
-              </span>
-            )}
-          </div>
-
-          {/* Updated pages detail */}
-          {syncResult.details.updated.length > 0 && (
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-green-700">Changed pages:</p>
-              {syncResult.details.updated.map((u) => (
-                <div key={u.url} className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <ArrowUpCircle className="w-3 h-3 text-green-500 shrink-0" />
-                  <span className="truncate flex-1">{u.url}</span>
-                  <span className="shrink-0 text-muted-foreground/70">{u.oldWords}w → {u.newWords}w</span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Failed pages */}
-          {syncResult.details.failed.length > 0 && (
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-red-600">Failed:</p>
-              {syncResult.details.failed.map((f) => (
-                <div key={f.url} className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <AlertCircle className="w-3 h-3 text-red-400 shrink-0" />
-                  <span className="truncate flex-1">{f.url}</span>
-                  <span className="shrink-0 text-red-400">{f.error}</span>
-                </div>
-              ))}
-            </div>
-          )}
+      {/* Sync Progress Panel */}
+      {syncProgress && (
+        <div className="border-t p-4">
+          <SyncProgressPanel
+            progress={syncProgress}
+            onDismiss={() => setSyncProgress(null)}
+          />
         </div>
       )}
 

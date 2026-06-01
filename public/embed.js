@@ -254,22 +254,7 @@
       config.windowHeight       = th.windowHeight       || 600;
       config.windowBorderRadius = th.windowBorderRadius ?? 16;
 
-      // Embed mode — if DB says a different mode, teardown current UI and rebuild
-      const newMode = (th.embedMode || config.embedMode || 'FLOATING_BUTTON').toUpperCase().replace(/-/g, '_');
-      if (newMode !== config.embedMode) {
-        config.embedMode = newMode;
-        teardown();
-        switch (newMode) {
-          case 'INLINE':        await buildInline();       break;
-          case 'STICKY_BAR':   await buildStickyBar();    break;
-          case 'SLIDE_DRAWER': await buildSlideDrawer();  break;
-          case 'TEASER_BUBBLE':await buildTeaserBubble(); break;
-          default:             await buildFloating();      break;
-        }
-        return; // Button update below not needed — rebuild already applied full theme
-      }
-
-      // Mode-specific settings
+      // Mode-specific settings — applied BEFORE mode check so rebuild uses correct config
       config.teaserEnabled   = th.teaserEnabled   ?? config.teaserEnabled;
       config.teaserMessage   = th.teaserMessage   || config.teaserMessage;
       config.teaserDelay     = th.teaserDelay     ?? config.teaserDelay;
@@ -286,6 +271,21 @@
       config.drawerWidth      = th.drawerWidth     || config.drawerWidth;
       config.drawerTabText    = th.drawerTabText   || config.drawerTabText;
       config.drawerTabBgColor = th.drawerTabBgColor|| config.drawerTabBgColor;
+
+      // Embed mode — if DB says a different mode, teardown current UI and rebuild with correct config
+      const newMode = (th.embedMode || config.embedMode || 'FLOATING_BUTTON').toUpperCase().replace(/-/g, '_');
+      if (newMode !== config.embedMode) {
+        config.embedMode = newMode;
+        teardown();
+        switch (newMode) {
+          case 'INLINE':        await buildInline();       break;
+          case 'STICKY_BAR':   await buildStickyBar();    break;
+          case 'SLIDE_DRAWER': await buildSlideDrawer();  break;
+          case 'TEASER_BUBBLE':await buildTeaserBubble(); break;
+          default:             await buildFloating();      break;
+        }
+        return; // DOM patch below not needed — rebuild already applied full theme
+      }
 
       // Voice & Sound
       config.notificationSound   = th.notificationSound   ?? config.notificationSound;
