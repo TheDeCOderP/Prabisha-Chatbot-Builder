@@ -253,6 +253,7 @@
     voiceGreetingRate:    1.0,
     // Internal — greeting text resolved from chatbot data
     _greetingText: '',
+    _greetingSpoken: false,
   };
 
   let config = { ...defaults };
@@ -790,8 +791,9 @@
     iframe.style.animation = '__cb_fadeInUp 0.35s cubic-bezier(0.34,1.2,0.64,1) forwards';
     if (closeBtn) { closeBtn.style.display = 'flex'; requestAnimationFrame(positionCloseBtn); }
     if (button && window.innerWidth <= 480) button.style.display = 'none';
-    // Voice greeting after chat is visible
-    if (config.voiceGreeting && config._greetingText) {
+    // Voice greeting — only once per session
+    if (config.voiceGreeting && config._greetingText && !config._greetingSpoken) {
+      config._greetingSpoken = true;
       setTimeout(() => speakGreeting(config._greetingText, config.voiceGreetingVolume, config.voiceGreetingRate), 600);
     }
   }
@@ -997,7 +999,8 @@
     iframe.style.display = 'block';
     iframe.style.animation = '__cb_fadeInUp 0.35s cubic-bezier(0.34,1.2,0.64,1) forwards';
     stickyBarEl._chatOpen = true;
-    if (config.voiceGreeting && config._greetingText) {
+    if (config.voiceGreeting && config._greetingText && !config._greetingSpoken) {
+      config._greetingSpoken = true;
       setTimeout(() => speakGreeting(config._greetingText, config.voiceGreetingVolume, config.voiceGreetingRate), 600);
     }
   }
@@ -1106,7 +1109,8 @@
     overlay.style.opacity    = '1';
     overlay.style.pointerEvents = 'auto';
     drawerTab.style[config.drawerSide] = (config.drawerWidth || 380) + 'px';
-    if (config.voiceGreeting && config._greetingText) {
+    if (config.voiceGreeting && config._greetingText && !config._greetingSpoken) {
+      config._greetingSpoken = true;
       setTimeout(() => speakGreeting(config._greetingText, config.voiceGreetingVolume, config.voiceGreetingRate), 600);
     }
   }
