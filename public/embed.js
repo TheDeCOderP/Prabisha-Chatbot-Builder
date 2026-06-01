@@ -385,9 +385,18 @@
       // Non-fatal — widget already rendered with defaults above
     } finally {
       // Reveal widget after correct config applied — prevents flash of default blue styling
-      if (button)      button.style.opacity      = '1';
+      if (button) {
+        button.style.visibility = 'visible';
+        button.style.animation  = '__cb_popIn 0.5s cubic-bezier(0.34,1.56,0.64,1) forwards';
+      }
       if (drawerTab)   drawerTab.style.opacity   = '1';
-      if (stickyBarEl) stickyBarEl.style.opacity = '1';
+      if (stickyBarEl) {
+        stickyBarEl.style.visibility = 'visible';
+        const pos = config.stickyBarPosition || 'bottom';
+        stickyBarEl.style.animation = pos === 'bottom'
+          ? '__cb_fadeInUp 0.4s ease forwards'
+          : '__cb_fadeInDown 0.4s ease forwards';
+      }
     }
   }
 
@@ -625,10 +634,9 @@
       border: `3px solid ${config.buttonBorderColor || config.buttonColor}`,
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       cursor: 'pointer',
-      transition: 'all 0.3s cubic-bezier(0.34,1.56,0.64,1), opacity 0.25s ease',
+      transition: 'all 0.3s cubic-bezier(0.34,1.56,0.64,1)',
       overflow: 'hidden', padding: '0',
-      animation: '__cb_popIn 0.5s cubic-bezier(0.34,1.56,0.64,1) forwards',
-      opacity: '0',
+      visibility: 'hidden',
     });
 
     applyBtnPosition(button);
@@ -806,12 +814,8 @@
       boxShadow:       barPos === 'bottom'
         ? '0 -4px 20px rgba(0,0,0,0.12)'
         : '0 4px 20px rgba(0,0,0,0.12)',
-      animation:       barPos === 'bottom'
-        ? '__cb_fadeInUp 0.4s ease forwards'
-        : '__cb_fadeInDown 0.4s ease forwards',
       fontFamily:      'inherit',
-      opacity:         '0',
-      transition:      'opacity 0.25s ease',
+      visibility:      'hidden',
     });
 
     // Icon — use chatbot's configured icon (emoji / image) or default SVG
