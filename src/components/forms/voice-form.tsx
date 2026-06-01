@@ -1,11 +1,12 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
-import { ChevronLeft, Save, Loader2, Volume2, Mic2, Bell, Play, VolumeX } from "lucide-react"
+import { ChevronLeft, Save, Loader2, Volume2, Mic2, Bell, Play, VolumeX, Link } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Slider } from "@/components/ui/slider"
+import { Input } from "@/components/ui/input"
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -35,23 +36,73 @@ function ToggleRow({ label, description, checked, onChange }: {
   )
 }
 
-// ─── Web Audio tone preview (no file needed) ──────────────────────────────────
+// ─── Sound presets ────────────────────────────────────────────────────────────
 
-function playPopSound(volume: number) {
+const SOUND_PRESETS = [
+  { value: 'ding',   label: 'Ding',    desc: 'Falling tone' },
+  { value: 'double', label: 'Double',  desc: 'Two quick beeps' },
+  { value: 'chime',  label: 'Chime',   desc: 'Soft melodic' },
+  { value: 'rising', label: 'Rising',  desc: 'Upward sweep' },
+  { value: 'soft',   label: 'Soft',    desc: 'Subtle pop' },
+] as const
+
+type SoundType = typeof SOUND_PRESETS[number]['value']
+
+function playPreviewSound(type: SoundType, volume: number) {
   try {
-    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-    const osc  = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(900, ctx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(500, ctx.currentTime + 0.12);
-    gain.gain.setValueAtTime(volume * 0.35, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.25);
-    osc.start(ctx.currentTime);
-    osc.stop(ctx.currentTime + 0.25);
-    setTimeout(() => ctx.close(), 500);
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext
+    if (!AudioCtx) return
+    const ctx = new AudioCtx()
+
+    const osc1 = (freq: number, startAt: number, dur: number, wave: OscillatorType = 'sine') => {
+      const o = ctx.createOscillator()
+      const g = ctx.createGain()
+      o.connect(g); g.connect(ctx.destination)
+      o.type = wave
+      o.frequency.setValueAtTime(freq, startAt)
+      g.gain.setValueAtTime(volume * 0.3, startAt)
+      g.gain.exponentialRampToValueAtTime(0.0001, startAt + dur)
+      o.start(startAt); o.stop(startAt + dur)
+    }
+
+    switch (type) {
+      case 'double':
+        osc1(800, ctx.currentTime, 0.1)
+        osc1(800, ctx.currentTime + 0.18, 0.1)
+        setTimeout(() => ctx.close(), 700)
+        break
+      case 'chime':
+        ;[523, 659, 784].forEach((f, i) => osc1(f, ctx.currentTime + i * 0.12, 0.35))
+        setTimeout(() => ctx.close(), 1200)
+        break
+      case 'rising': {
+        const o = ctx.createOscillator(), g = ctx.createGain()
+        o.connect(g); g.connect(ctx.destination)
+        o.type = 'sine'
+        o.frequency.setValueAtTime(300, ctx.currentTime)
+        o.frequency.exponentialRampToValueAtTime(900, ctx.currentTime + 0.25)
+        g.gain.setValueAtTime(volume * 0.3, ctx.currentTime)
+        g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.3)
+        o.start(ctx.currentTime); o.stop(ctx.currentTime + 0.3)
+        setTimeout(() => ctx.close(), 600)
+        break
+      }
+      case 'soft':
+        osc1(600, ctx.currentTime, 0.15, 'triangle')
+        setTimeout(() => ctx.close(), 400)
+        break
+      default: { // ding
+        const o = ctx.createOscillator(), g = ctx.createGain()
+        o.connect(g); g.connect(ctx.destination)
+        o.type = 'sine'
+        o.frequency.setValueAtTime(900, ctx.currentTime)
+        o.frequency.exponentialRampToValueAtTime(500, ctx.currentTime + 0.12)
+        g.gain.setValueAtTime(volume * 0.35, ctx.currentTime)
+        g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.25)
+        o.start(ctx.currentTime); o.stop(ctx.currentTime + 0.25)
+        setTimeout(() => ctx.close(), 600)
+      }
+    }
   } catch { /* browser may not support */ }
 }
 
@@ -70,11 +121,13 @@ interface VoiceFormProps {
 
 export function VoiceForm({ onBack, onSave, isLoading, initial, onLiveUpdate, chatbotData }: VoiceFormProps) {
   const [settings, setSettings] = useState({
-    notificationSound:   true,
-    notificationVolume:  0.4,
-    voiceGreeting:       false,
-    voiceGreetingVolume: 0.8,
-    voiceGreetingRate:   1.0,
+    notificationSound:     true,
+    notificationVolume:    0.4,
+    notificationSoundType: 'ding' as SoundType,
+    notificationSoundUrl:  '',
+    voiceGreeting:         false,
+    voiceGreetingVolume:   0.8,
+    voiceGreetingRate:     1.0,
   })
 
   const updateTimeoutRef  = useRef<NodeJS.Timeout | null>(null)
@@ -85,11 +138,13 @@ export function VoiceForm({ onBack, onSave, isLoading, initial, onLiveUpdate, ch
     if (initial && !isInitializedRef.current) {
       isInitializedRef.current = true
       setSettings({
-        notificationSound:   initial.notificationSound   ?? true,
-        notificationVolume:  initial.notificationVolume  ?? 0.4,
-        voiceGreeting:       initial.voiceGreeting       ?? false,
-        voiceGreetingVolume: initial.voiceGreetingVolume ?? 0.8,
-        voiceGreetingRate:   initial.voiceGreetingRate   ?? 1.0,
+        notificationSound:     initial.notificationSound     ?? true,
+        notificationVolume:    initial.notificationVolume    ?? 0.4,
+        notificationSoundType: initial.notificationSoundType ?? 'ding',
+        notificationSoundUrl:  initial.notificationSoundUrl  ?? '',
+        voiceGreeting:         initial.voiceGreeting         ?? false,
+        voiceGreetingVolume:   initial.voiceGreetingVolume   ?? 0.8,
+        voiceGreetingRate:     initial.voiceGreetingRate     ?? 1.0,
       })
     }
   }, [initial])
@@ -103,17 +158,22 @@ export function VoiceForm({ onBack, onSave, isLoading, initial, onLiveUpdate, ch
     }
   }
 
-  // ── Test notification sound ───────────────────────────────────────────────
   const handleTestSound = () => {
-    playPopSound(settings.notificationVolume)
+    if (settings.notificationSoundUrl) {
+      try {
+        const audio = new Audio(settings.notificationSoundUrl)
+        audio.volume = Math.min(Math.max(settings.notificationVolume, 0), 1)
+        audio.play().catch(() => {})
+      } catch { /* ignore */ }
+    } else {
+      playPreviewSound(settings.notificationSoundType, settings.notificationVolume)
+    }
   }
 
-  // ── Test voice greeting ───────────────────────────────────────────────────
   const handleTestVoice = () => {
     if (!window.speechSynthesis) return
     setTestingSpeech(true)
 
-    // Resolve greeting text from chatbot data
     let greetingText = "Hi! How can I help you today?"
     try {
       const greetingArr = chatbotData?.greeting
@@ -123,7 +183,6 @@ export function VoiceForm({ onBack, onSave, isLoading, initial, onLiveUpdate, ch
       }
     } catch { /* use default */ }
 
-    // Detect language
     const browserLang = navigator.language?.split('-')[0] || 'en'
     const langMap: Record<string, string> = {
       en: 'en-US', hi: 'hi-IN', ar: 'ar-SA', fr: 'fr-FR',
@@ -167,7 +226,7 @@ export function VoiceForm({ onBack, onSave, isLoading, initial, onLiveUpdate, ch
         <SectionCard title="Notification Sound" icon={<Bell className="w-3.5 h-3.5" />}>
           <ToggleRow
             label="Enable notification sound"
-            description="Play a soft 'pop' when the chat button is clicked"
+            description="Play a sound when the chat button is clicked"
             checked={settings.notificationSound}
             onChange={(v) => update({ notificationSound: v })}
           />
@@ -186,7 +245,47 @@ export function VoiceForm({ onBack, onSave, isLoading, initial, onLiveUpdate, ch
                 />
               </div>
 
-              {/* Test button */}
+              {/* Sound type presets */}
+              <div className="space-y-2">
+                <Label className="text-xs font-medium">Sound Type</Label>
+                <div className="grid grid-cols-5 gap-1.5">
+                  {SOUND_PRESETS.map((p) => (
+                    <button
+                      key={p.value}
+                      type="button"
+                      onClick={() => update({ notificationSoundType: p.value, notificationSoundUrl: '' })}
+                      className={`flex flex-col items-center gap-0.5 rounded-lg border p-2 text-center transition-colors cursor-pointer
+                        ${settings.notificationSoundType === p.value && !settings.notificationSoundUrl
+                          ? 'border-primary bg-primary/8 text-primary'
+                          : 'border-border bg-muted/30 text-muted-foreground hover:border-primary/40 hover:text-foreground'
+                        }`}
+                    >
+                      <span className="text-[11px] font-semibold leading-tight">{p.label}</span>
+                      <span className="text-[9px] leading-tight opacity-70">{p.desc}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Custom audio URL */}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium flex items-center gap-1.5">
+                  <Link className="w-3 h-3" />
+                  Custom Sound URL
+                  <span className="text-[10px] font-normal text-muted-foreground">(optional — overrides preset)</span>
+                </Label>
+                <Input
+                  type="url"
+                  placeholder="https://example.com/notification.mp3"
+                  value={settings.notificationSoundUrl}
+                  onChange={(e) => update({ notificationSoundUrl: e.target.value })}
+                  className="text-xs h-8"
+                />
+                {settings.notificationSoundUrl && (
+                  <p className="text-[10px] text-blue-600">Custom URL active — preset is ignored</p>
+                )}
+              </div>
+
               <Button
                 variant="outline"
                 size="sm"
@@ -200,7 +299,6 @@ export function VoiceForm({ onBack, onSave, isLoading, initial, onLiveUpdate, ch
             </>
           )}
 
-          {/* Browser note */}
           <div className="rounded-lg bg-muted/50 border border-border/50 p-3">
             <p className="text-[10px] text-muted-foreground leading-relaxed">
               <span className="font-semibold text-foreground">Note:</span> Sound plays only after the user clicks the chat button — browsers block auto-play. Silent mode on mobile will mute sounds.
@@ -248,7 +346,6 @@ export function VoiceForm({ onBack, onSave, isLoading, initial, onLiveUpdate, ch
                 </div>
               </div>
 
-              {/* Test voice */}
               {testingSpeech ? (
                 <Button
                   variant="outline"
@@ -273,7 +370,6 @@ export function VoiceForm({ onBack, onSave, isLoading, initial, onLiveUpdate, ch
                 </Button>
               )}
 
-              {/* Language note */}
               <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 space-y-1">
                 <p className="text-[10px] text-blue-700 leading-relaxed font-medium">How voice language works:</p>
                 <ul className="space-y-0.5">
