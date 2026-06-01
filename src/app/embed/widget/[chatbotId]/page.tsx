@@ -14,7 +14,7 @@ export default async function WidgetPage({ params }: PageProps) {
   try {
     const response = await fetch(
       `${process.env.NEXT_PUBLIC_APP_URL}/api/chatbots/${chatbotId}`,
-      { next: { tags: [`chatbot-config-${chatbotId}`], revalidate: 600 } }
+      { next: { tags: [`chatbot-config-${chatbotId}`] } }
     );
 
     if (!response.ok) {

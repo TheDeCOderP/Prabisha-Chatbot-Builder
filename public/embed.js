@@ -325,12 +325,35 @@
         if (iframe) applyWinPosition(iframe, sz);
       }
 
+      // Patch drawer elements — fixes position/text/color not updating on external sites
+      if (drawerEl && drawerTab) {
+        const side = config.drawerSide;
+        drawerEl.style.removeProperty('left');
+        drawerEl.style.removeProperty('right');
+        drawerEl.style[side]     = '0';
+        drawerEl.style.width     = Math.min(config.drawerWidth || 380, window.innerWidth - 40) + 'px';
+        drawerEl.style.transform = side === 'left' ? 'translateX(-100%)' : 'translateX(100%)';
+        drawerEl.style.boxShadow = side === 'left' ? '8px 0 32px rgba(0,0,0,0.15)' : '-8px 0 32px rgba(0,0,0,0.15)';
+        drawerTab.style.removeProperty('left');
+        drawerTab.style.removeProperty('right');
+        drawerTab.style[side]           = '0';
+        drawerTab.style.transition      = `${side} 0.35s cubic-bezier(0.32,0.72,0,1), opacity 0.25s ease`;
+        drawerTab.style.backgroundColor = config.drawerTabBgColor;
+        drawerTab.style.borderRadius    = side === 'right' ? '10px 0 0 10px' : '0 10px 10px 0';
+        const labelSpan = drawerTab.lastElementChild;
+        if (labelSpan && labelSpan.nodeName === 'SPAN') labelSpan.textContent = config.drawerTabText;
+      }
+
       // Auto-open after theme loaded (popup_onload)
       if (config.autoOpen && iframe && iframe.style.display === 'none') {
         setTimeout(openChat, config.delay || 1000);
       }
     } catch (e) {
       // Non-fatal — widget already rendered with defaults above
+    } finally {
+      // Reveal widget after correct config applied — prevents flash of default blue styling
+      if (button)    button.style.opacity    = '1';
+      if (drawerTab) drawerTab.style.opacity = '1';
     }
   }
 
@@ -568,9 +591,10 @@
       border: `3px solid ${config.buttonBorderColor || config.buttonColor}`,
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       cursor: 'pointer',
-      transition: 'all 0.3s cubic-bezier(0.34,1.56,0.64,1)',
+      transition: 'all 0.3s cubic-bezier(0.34,1.56,0.64,1), opacity 0.25s ease',
       overflow: 'hidden', padding: '0',
       animation: '__cb_popIn 0.5s cubic-bezier(0.34,1.56,0.64,1) forwards',
+      opacity: '0',
     });
 
     applyBtnPosition(button);
@@ -889,7 +913,7 @@
       [side]:    '0',
       transform: 'translateY(-50%)',
       zIndex:    '999997',
-      transition:`${side} 0.35s cubic-bezier(0.32,0.72,0,1)`,
+      transition:`${side} 0.35s cubic-bezier(0.32,0.72,0,1), opacity 0.25s ease`,
       display:   'flex', alignItems: 'center',
       padding:   '12px 6px',
       backgroundColor: config.drawerTabBgColor,
@@ -900,6 +924,7 @@
       fontSize:  '13px', fontWeight: '700', letterSpacing: '0.5px',
       fontFamily: 'inherit',
       gap: '6px',
+      opacity:   '0',
     });
 
     // Drawer tab icon — respect iconType same as launcher button
