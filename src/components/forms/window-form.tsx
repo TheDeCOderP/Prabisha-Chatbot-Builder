@@ -36,17 +36,17 @@ function ColorInput({ label, value, onChange }: { label: string; value: string; 
   return (
     <div className="space-y-1.5">
       <Label className="text-xs font-medium">{label}</Label>
-      <div className="flex items-center gap-2 border border-border rounded-lg px-2 py-1.5 bg-background h-9 cursor-pointer">
-        <label className="flex items-center gap-2 cursor-pointer w-full">
-          <div className="w-5 h-5 rounded border border-border/60 shrink-0" style={{ backgroundColor: value }} />
+      <div className="flex items-center gap-2 border border-border rounded-lg px-2 py-1.5 bg-background h-9">
+        <div className="relative w-5 h-5 shrink-0 cursor-pointer">
+          <div className="w-5 h-5 rounded border border-border/60" style={{ backgroundColor: value }} />
           <input
             type="color"
             value={value}
             onChange={(e) => onChange(e.target.value)}
-            style={{ opacity: 0, position: 'absolute', width: 0, height: 0, border: 'none', padding: 0 }}
+            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
           />
-          <span className="text-xs font-mono text-muted-foreground truncate">{value}</span>
-        </label>
+        </div>
+        <span className="text-xs font-mono text-muted-foreground truncate">{value}</span>
       </div>
     </div>
   )

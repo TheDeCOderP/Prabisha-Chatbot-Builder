@@ -114,6 +114,9 @@ export async function PUT(
       showTTS: body.showTTS,
       showNewChat: body.showNewChat,
       showLanguageSwitcher: body.showLanguageSwitcher,
+      // Language settings
+      ...(body.defaultLanguage     !== undefined && { defaultLanguage:     body.defaultLanguage }),
+      ...(body.restrictedLanguages !== undefined && { restrictedLanguages: body.restrictedLanguages ?? [] }),
       // Lead card
       leadCardMessage: body.leadCardMessage,
       // Window theme colors

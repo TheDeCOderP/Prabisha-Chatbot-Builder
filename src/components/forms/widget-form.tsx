@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react"
 import {
   Loader2, Save, ChevronLeft, Palette, MousePointer2,
-  ImageIcon, LayoutGrid, Sliders, ToggleLeft, Zap,
+  ImageIcon, LayoutGrid, Sliders, ToggleLeft, Zap, Globe,
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -36,17 +36,17 @@ function ColorInput({ label, value, onChange }: { label: string; value: string; 
   return (
     <div className="space-y-1.5">
       <Label className="text-xs font-medium">{label}</Label>
-      <div className="flex items-center gap-2 border border-border rounded-lg px-2 py-1.5 bg-background h-9 cursor-pointer">
-        <label className="flex items-center gap-2 cursor-pointer w-full">
-          <div className="w-5 h-5 rounded border border-border/60 shrink-0" style={{ backgroundColor: value }} />
+      <div className="flex items-center gap-2 border border-border rounded-lg px-2 py-1.5 bg-background h-9">
+        <div className="relative w-5 h-5 shrink-0 cursor-pointer">
+          <div className="w-5 h-5 rounded border border-border/60" style={{ backgroundColor: value }} />
           <input
             type="color"
             value={value}
             onChange={(e) => onChange(e.target.value)}
-            style={{ opacity: 0, position: 'absolute', width: 0, height: 0, border: 'none', padding: 0 }}
+            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
           />
-          <span className="text-xs font-mono text-muted-foreground truncate">{value}</span>
-        </label>
+        </div>
+        <span className="text-xs font-mono text-muted-foreground truncate">{value}</span>
       </div>
     </div>
   )
@@ -105,6 +105,8 @@ export function WidgetThemeForm({ onBack, onSave, isLoading, initial, onLiveUpda
     showEmoji: true,
     showNewChat: true,
     showLanguageSwitcher: true,
+    defaultLanguage: 'auto',
+    restrictedLanguages: [] as string[],
   })
 
   const [iconData, setIconData] = useState({
@@ -155,6 +157,8 @@ export function WidgetThemeForm({ onBack, onSave, isLoading, initial, onLiveUpda
         showEmoji: initial.showEmoji ?? true,
         showNewChat: initial.showNewChat ?? true,
         showLanguageSwitcher: initial.showLanguageSwitcher ?? true,
+        defaultLanguage: initial.defaultLanguage ?? 'auto',
+        restrictedLanguages: initial.restrictedLanguages ?? [],
       })
       if (correctedIconType === 'IMAGE') {
         setIconData({ type: "IMAGE", value: correctedIconValue, emojiValue: "💬", svgValue: "" })
@@ -466,6 +470,94 @@ export function WidgetThemeForm({ onBack, onSave, isLoading, initial, onLiveUpda
             checked={formData.popup_onload}
             onChange={(v) => update({ popup_onload: v })}
           />
+        </SectionCard>
+
+        {/* Language Settings */}
+        <SectionCard title="Language Settings" icon={<Globe className="w-3.5 h-3.5" />}>
+          <div className="space-y-1.5">
+            <Label className="text-xs font-medium">Default Language</Label>
+            <p className="text-[10px] text-muted-foreground">
+              Language shown to all visitors by default. <span className="font-medium text-foreground">Auto</span> = detect from visitor's IP location.
+            </p>
+            <Select value={formData.defaultLanguage} onValueChange={(v) => update({ defaultLanguage: v })}>
+              <SelectTrigger className="text-sm"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="auto">🌐 Auto (detect from IP)</SelectItem>
+                <SelectItem value="en">🇬🇧 English</SelectItem>
+                <SelectItem value="hi">🇮🇳 हिन्दी (Hindi)</SelectItem>
+                <SelectItem value="pa">🇮🇳 ਪੰਜਾਬੀ (Punjabi)</SelectItem>
+                <SelectItem value="kn">🇮🇳 ಕನ್ನಡ (Kannada)</SelectItem>
+                <SelectItem value="te">🇮🇳 తెలుగు (Telugu)</SelectItem>
+                <SelectItem value="bn">🇮🇳 বাংলা (Bengali)</SelectItem>
+                <SelectItem value="gu">🇮🇳 ગુજરાતી (Gujarati)</SelectItem>
+                <SelectItem value="fr">🇫🇷 Français</SelectItem>
+                <SelectItem value="es">🇪🇸 Español</SelectItem>
+                <SelectItem value="ar">🇸🇦 العربية</SelectItem>
+                <SelectItem value="zh">🇨🇳 中文</SelectItem>
+                <SelectItem value="ja">🇯🇵 日本語</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {formData.showLanguageSwitcher && (
+            <div className="space-y-2">
+              <Label className="text-xs font-medium">Show Only These Languages</Label>
+              <p className="text-[10px] text-muted-foreground">
+                Restrict the language picker. Empty = show all languages.
+              </p>
+              <div className="grid grid-cols-2 gap-1.5">
+                {[
+                  { code: 'en', label: 'English' },
+                  { code: 'hi', label: 'हिन्दी' },
+                  { code: 'pa', label: 'ਪੰਜਾਬੀ' },
+                  { code: 'kn', label: 'ಕನ್ನಡ' },
+                  { code: 'te', label: 'తెలుగు' },
+                  { code: 'bn', label: 'বাংলা' },
+                  { code: 'gu', label: 'ગુજરાતી' },
+                  { code: 'fr', label: 'Français' },
+                  { code: 'es', label: 'Español' },
+                  { code: 'ar', label: 'العربية' },
+                  { code: 'zh', label: '中文' },
+                  { code: 'ja', label: '日本語' },
+                ].map(({ code, label }) => {
+                  const isSelected = formData.restrictedLanguages.includes(code)
+                  return (
+                    <button
+                      key={code}
+                      type="button"
+                      onClick={() => {
+                        const current = formData.restrictedLanguages
+                        update({
+                          restrictedLanguages: isSelected
+                            ? current.filter(c => c !== code)
+                            : [...current, code]
+                        })
+                      }}
+                      className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer ${
+                        isSelected
+                          ? 'border-primary bg-primary/8 text-primary'
+                          : 'border-border bg-muted/30 text-muted-foreground hover:border-primary/40'
+                      }`}
+                    >
+                      <span className={`w-3.5 h-3.5 rounded-sm border-2 flex items-center justify-center shrink-0 ${isSelected ? 'border-primary bg-primary' : 'border-muted-foreground/40'}`}>
+                        {isSelected && <span className="text-white text-[8px] leading-none">✓</span>}
+                      </span>
+                      {label}
+                    </button>
+                  )
+                })}
+              </div>
+              {formData.restrictedLanguages.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => update({ restrictedLanguages: [] })}
+                  className="text-[10px] text-muted-foreground underline underline-offset-2 hover:text-foreground transition-colors"
+                >
+                  Clear all — show all languages
+                </button>
+              )}
+            </div>
+          )}
         </SectionCard>
 
       </div>

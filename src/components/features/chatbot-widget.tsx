@@ -344,58 +344,41 @@ interface ChatbotWidgetProps {
   onLanguageChange?: (languageCode: string) => void;
 }
 
-// Indian regional languages
-const INDIAN_LANGUAGES = [
-  { name: 'हिन्दी', code: 'hi', img: '/flags/hi.svg', dir: 'ltr' },
-  { name: 'ਪੰਜਾਬੀ', code: 'pa', img: '/flags/hi.svg', dir: 'ltr' },
-  { name: 'ಕನ್ನಡ', code: 'kn', img: '/flags/hi.svg', dir: 'ltr' },
-  { name: 'తెలుగు', code: 'te', img: '/flags/hi.svg', dir: 'ltr' },
-  { name: 'বাংলা', code: 'bn', img: '/flags/hi.svg', dir: 'ltr' },
-  { name: 'ગુજરાતી', code: 'gu', img: '/flags/hi.svg', dir: 'ltr' },
-  { name: 'English', code: 'en', img: '/flags/en.png', dir: 'ltr' },
+// All supported languages (combined pool)
+const ALL_LANGUAGES = [
+  { name: 'English',    code: 'en', img: '/flags/en.png', dir: 'ltr' },
+  { name: 'हिन्दी',     code: 'hi', img: '/flags/hi.svg', dir: 'ltr' },
+  { name: 'ਪੰਜਾਬੀ',    code: 'pa', img: '/flags/hi.svg', dir: 'ltr' },
+  { name: 'ಕನ್ನಡ',     code: 'kn', img: '/flags/hi.svg', dir: 'ltr' },
+  { name: 'తెలుగు',    code: 'te', img: '/flags/hi.svg', dir: 'ltr' },
+  { name: 'বাংলা',     code: 'bn', img: '/flags/hi.svg', dir: 'ltr' },
+  { name: 'ગુજરાતી',   code: 'gu', img: '/flags/hi.svg', dir: 'ltr' },
+  { name: '日本語',     code: 'ja', img: '/flags/ja.png', dir: 'ltr' },
+  { name: 'Français',  code: 'fr', img: '/flags/fr.png', dir: 'ltr' },
+  { name: 'Español',   code: 'es', img: '/flags/es.png', dir: 'ltr' },
+  { name: 'العربية',   code: 'ar', img: '/flags/ar.png', dir: 'rtl' },
+  { name: '中文',       code: 'zh', img: '/flags/zh.svg', dir: 'ltr' },
 ];
 
-// Global languages (excluding Indian languages when in India)
-const GLOBAL_LANGUAGES = [
-  { name: 'English', code: 'en', img: '/flags/en.png', dir: 'ltr' },
-  { name: '日本語',  code: 'ja', img: '/flags/ja.png', dir: 'ltr' },
-  { name: 'Français', code: 'fr', img: '/flags/fr.png', dir: 'ltr' },
-  { name: 'Español', code: 'es', img: '/flags/es.png', dir: 'ltr' },
-  { name: 'العربية', code: 'ar', img: '/flags/ar.png', dir: 'rtl' },
-  { name: '中文', code: 'zh', img: '/flags/zh.svg', dir: 'ltr' },
-];
+// Keep backward compat references
+const INDIAN_LANGUAGES = ALL_LANGUAGES.filter(l => ['hi','pa','kn','te','bn','gu','en'].includes(l.code));
+const GLOBAL_LANGUAGES = ALL_LANGUAGES.filter(l => ['en','ja','fr','es','ar','zh'].includes(l.code));
 
-// Helper function to get user's location and determine available languages
+// Helper function to get location-based languages (used when defaultLanguage = 'auto')
 const getLocationBasedLanguages = async (): Promise<{
-  languages: typeof GLOBAL_LANGUAGES;
+  languages: typeof ALL_LANGUAGES;
   defaultLang: string;
 }> => {
   try {
-    // Try to get country from IP (you can replace this with your own IP geolocation service)
     const response = await fetch('https://ipapi.co/json/');
     const data = await response.json();
     const countryCode = data.country_code;
-    
-    // If user is in India, return Indian regional languages
     if (countryCode === 'IN') {
-      return {
-        languages: INDIAN_LANGUAGES,
-        defaultLang: 'hi', // Default to Hindi for India
-      };
+      return { languages: INDIAN_LANGUAGES, defaultLang: 'hi' };
     }
-    
-    // For other countries, return global languages
-    return {
-      languages: GLOBAL_LANGUAGES,
-      defaultLang: 'en',
-    };
-  } catch (error) {
-    console.error('Failed to detect location:', error);
-    // Fallback to English with global languages
-    return {
-      languages: GLOBAL_LANGUAGES,
-      defaultLang: 'en',
-    };
+    return { languages: GLOBAL_LANGUAGES, defaultLang: 'en' };
+  } catch {
+    return { languages: GLOBAL_LANGUAGES, defaultLang: 'en' };
   }
 };
 
@@ -693,19 +676,35 @@ export default function ChatbotWidget({
   const [liveTheme, setLiveTheme] = useState<any>(null);
   const [selectedLang, setSelectedLang] = useState<LanguageCode>('en');
   const [availableLanguages, setAvailableLanguages] = useState(GLOBAL_LANGUAGES);
-  
-  // Detect location and set languages on mount
+
+  // Resolve language list and default from theme settings, falling back to IP detection
   useEffect(() => {
-    const detectLocationAndSetLanguages = async () => {
-      const { languages, defaultLang } = await getLocationBasedLanguages();
-      setAvailableLanguages(languages);
-      setSelectedLang(defaultLang);
-      chatbotI18n.changeLanguage(defaultLang);
-      onLanguageChange?.(defaultLang);
+    const theme = initialChatbotData?.theme;
+    const configuredDefault   = theme?.defaultLanguage;       // 'auto' | 'en' | 'hi' | ...
+    const configuredRestricted: string[] = theme?.restrictedLanguages ?? [];
+
+    const applyLanguages = (langs: typeof ALL_LANGUAGES, lang: string) => {
+      // If admin restricted languages, filter to only those (always keep the default in the list)
+      const filtered = configuredRestricted.length > 0
+        ? ALL_LANGUAGES.filter(l => configuredRestricted.includes(l.code) || l.code === lang)
+        : langs;
+      setAvailableLanguages(filtered.length > 0 ? filtered : langs);
+      setSelectedLang(lang);
+      chatbotI18n.changeLanguage(lang);
+      onLanguageChange?.(lang);
     };
-    
-    detectLocationAndSetLanguages();
-  }, [onLanguageChange]);
+
+    if (!configuredDefault || configuredDefault === 'auto') {
+      // Auto-detect via IP (original behavior)
+      getLocationBasedLanguages().then(({ languages, defaultLang }) => {
+        applyLanguages(languages, defaultLang);
+      });
+    } else {
+      // Admin set a specific default language — no IP call needed
+      applyLanguages(ALL_LANGUAGES, configuredDefault);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialChatbotData?.theme?.defaultLanguage, initialChatbotData?.theme?.restrictedLanguages]);
  
   const handleLanguageChange = (code: LanguageCode) => {
     setSelectedLang(code);

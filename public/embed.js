@@ -140,12 +140,44 @@
     if (!text || !window.speechSynthesis) return;
     try {
       const browserLang = (navigator.language || 'en').split('-')[0];
-      window.speechSynthesis.cancel();
-      const utt   = new SpeechSynthesisUtterance(text);
-      utt.lang    = VOICE_LANG_MAP[browserLang] || 'en-US';
-      utt.volume  = Math.min(Math.max(volume || 0.8, 0), 1);
-      utt.rate    = Math.min(Math.max(rate   || 1.0, 0.5), 2);
-      window.speechSynthesis.speak(utt);
+      const targetLang  = VOICE_LANG_MAP[browserLang] || 'en-US';
+
+      const doSpeak = (voices) => {
+        try {
+          window.speechSynthesis.cancel();
+          const utt  = new SpeechSynthesisUtterance(text);
+          utt.lang   = targetLang;
+          utt.volume = Math.min(Math.max(volume || 0.8, 0), 1);
+          utt.rate   = Math.min(Math.max(rate   || 1.0, 0.5), 2);
+          if (voices && voices.length > 0) {
+            const v = voices.find(v => v.lang === targetLang)
+              || voices.find(v => v.lang.startsWith(browserLang))
+              || voices.find(v => v.lang.startsWith('en'))
+              || voices[0];
+            if (v) utt.voice = v;
+          }
+          window.speechSynthesis.speak(utt);
+        } catch (_) {}
+      };
+
+      const voices = window.speechSynthesis.getVoices();
+      if (voices && voices.length > 0) {
+        doSpeak(voices);
+      } else {
+        // Chrome loads voices async — wait for onvoiceschanged
+        const onReady = () => {
+          window.speechSynthesis.onvoiceschanged = null;
+          doSpeak(window.speechSynthesis.getVoices());
+        };
+        window.speechSynthesis.onvoiceschanged = onReady;
+        // Fallback timeout if event doesn't fire
+        setTimeout(() => {
+          if (window.speechSynthesis.onvoiceschanged === onReady) {
+            window.speechSynthesis.onvoiceschanged = null;
+            doSpeak(window.speechSynthesis.getVoices());
+          }
+        }, 300);
+      }
     } catch (_) {}
   }
 

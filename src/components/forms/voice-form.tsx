@@ -188,16 +188,46 @@ export function VoiceForm({ onBack, onSave, isLoading, initial, onLiveUpdate, ch
       en: 'en-US', hi: 'hi-IN', ar: 'ar-SA', fr: 'fr-FR',
       es: 'es-ES', de: 'de-DE', ja: 'ja-JP', zh: 'zh-CN',
       pa: 'pa-IN', kn: 'kn-IN', te: 'te-IN', bn: 'bn-IN', gu: 'gu-IN',
+      pt: 'pt-BR', it: 'it-IT', nl: 'nl-NL', ru: 'ru-RU', ko: 'ko-KR',
+    }
+    const targetLang = langMap[browserLang] || 'en-US'
+
+    const doSpeak = (voices: SpeechSynthesisVoice[]) => {
+      try {
+        window.speechSynthesis.cancel()
+        const utterance = new SpeechSynthesisUtterance(greetingText)
+        utterance.lang   = targetLang
+        utterance.volume = settings.voiceGreetingVolume
+        utterance.rate   = settings.voiceGreetingRate
+        utterance.onend  = () => setTestingSpeech(false)
+        utterance.onerror = () => setTestingSpeech(false)
+        if (voices.length > 0) {
+          const v = voices.find(v => v.lang === targetLang)
+            || voices.find(v => v.lang.startsWith(browserLang))
+            || voices.find(v => v.lang.startsWith('en'))
+            || voices[0]
+          if (v) utterance.voice = v
+        }
+        window.speechSynthesis.speak(utterance)
+      } catch { setTestingSpeech(false) }
     }
 
-    window.speechSynthesis.cancel()
-    const utterance = new SpeechSynthesisUtterance(greetingText)
-    utterance.lang   = langMap[browserLang] || 'en-US'
-    utterance.volume = settings.voiceGreetingVolume
-    utterance.rate   = settings.voiceGreetingRate
-    utterance.onend  = () => setTestingSpeech(false)
-    utterance.onerror = () => setTestingSpeech(false)
-    window.speechSynthesis.speak(utterance)
+    const voices = window.speechSynthesis.getVoices()
+    if (voices.length > 0) {
+      doSpeak(voices)
+    } else {
+      const onReady = () => {
+        window.speechSynthesis.onvoiceschanged = null
+        doSpeak(window.speechSynthesis.getVoices())
+      }
+      window.speechSynthesis.onvoiceschanged = onReady
+      setTimeout(() => {
+        if ((window.speechSynthesis.onvoiceschanged as any) === onReady) {
+          window.speechSynthesis.onvoiceschanged = null
+          doSpeak(window.speechSynthesis.getVoices())
+        }
+      }, 300)
+    }
   }
 
   const handleStopVoice = () => {

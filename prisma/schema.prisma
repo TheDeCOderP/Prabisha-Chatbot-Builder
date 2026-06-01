@@ -225,6 +225,10 @@ model ChatbotTheme {
   drawerTabText        String?   @default("Chat")
   drawerTabBgColor     String?   @default("#111CA8")
 
+  // Language settings
+  defaultLanguage      String?   @default("auto")
+  restrictedLanguages  String[]  @default([])
+
   // Voice & Sound settings
   notificationSound    Boolean   @default(true)
   notificationVolume   Float     @default(0.4)
