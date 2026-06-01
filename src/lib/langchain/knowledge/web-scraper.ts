@@ -143,7 +143,7 @@ async function processSitemapDirectly(
     if (urls.length === 0) {
       if (childSitemaps && childSitemaps.length > 0) {
         const allUrls: string[] = [];
-        for (const childUrl of childSitemaps.slice(0, 3)) {
+        for (const childUrl of childSitemaps.slice(0, 20)) {
           try {
             const childInfo = await extractSitemapInfo(childUrl);
             allUrls.push(...childInfo.urls);
@@ -191,7 +191,7 @@ async function scrapeUrlsFromList(
 
       if (result.status === 'fulfilled') {
         const page = result.value;
-        if (page.metadata.wordCount > 80) {
+        if (page.metadata.wordCount > 50) {
           pages.push(page);
           totalBytes += page.content.length;
           pageStatus = 'ok';
@@ -279,7 +279,7 @@ async function extractSitemapInfo(sitemapUrl: string): Promise<SitemapInfo> {
       if (u) childSitemaps.push(u);
     });
 
-    const childPromises = childSitemaps.slice(0, 5).map(async (childUrl) => {
+    const childPromises = childSitemaps.slice(0, 20).map(async (childUrl) => {
       try {
         const info = await extractSitemapInfo(childUrl);
         urls.push(...info.urls);
@@ -311,11 +311,11 @@ export async function scrapePage(url: string): Promise<ScrapedPage & { wordCount
   const page = await browser.newPage();
 
   try {
-    // Block images, fonts, media to speed up loading
+    // Block only heavy binary resources — keep stylesheets so CSS visibility (display:none) works correctly
     await page.setRequestInterception(true);
     page.on('request', (req) => {
       const type = req.resourceType();
-      if (['image', 'media', 'font', 'stylesheet'].includes(type)) {
+      if (['image', 'media', 'font'].includes(type)) {
         req.abort();
       } else {
         req.continue();
@@ -323,18 +323,34 @@ export async function scrapePage(url: string): Promise<ScrapedPage & { wordCount
     });
 
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-    await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
 
-    // Wait for JS-rendered content — try to find main content selector
+    // Try networkidle2 first (best for SPAs); fall back to domcontentloaded for sites with persistent connections
+    let usedFallbackLoad = false;
     try {
-      await page.waitForSelector('main, article, [role="main"], .content, #content', { timeout: 5000 });
+      await page.goto(url, { waitUntil: 'networkidle2', timeout: 20000 });
+    } catch {
+      try {
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 40000 });
+        usedFallbackLoad = true;
+      } catch (err) {
+        throw new Error(`Failed to load page: ${err}`);
+      }
+    }
+
+    // Wait for main content — include CSR framework root elements
+    try {
+      await page.waitForSelector(
+        'main, article, [role="main"], .content, #content, #app, #root, #__next, #__nuxt, [data-content]',
+        { timeout: 8000 }
+      );
     } catch { /* page may not have these selectors — continue anyway */ }
 
-    await delay(1200);
+    // Give JS frameworks more time when networkidle2 wasn't available
+    await delay(usedFallbackLoad ? 3000 : 1500);
 
     // Scroll to trigger lazy-loaded content
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-    await delay(400);
+    await delay(800);
 
     const result = await page.evaluate(() => {
       // Remove noise elements
@@ -346,16 +362,22 @@ export async function scrapePage(url: string): Promise<ScrapedPage & { wordCount
       const keywords = (document.querySelector('meta[name="keywords"]') as HTMLMetaElement)?.content || '';
       const author = (document.querySelector('meta[name="author"]') as HTMLMetaElement)?.content || '';
 
-      // Find main content area
-      const mainSelectors = ['main', 'article', '[role="main"]', '.main-content', '#main-content', '.content', '#content', '.entry-content', '.post-content'];
+      // Find main content area — includes common CSR framework roots
+      const mainSelectors = [
+        'main', 'article', '[role="main"]',
+        '.main-content', '#main-content',
+        '.content', '#content',
+        '.entry-content', '.post-content', '.page-content', '.article-body',
+        '#app', '#root', '#__next', '#__nuxt',
+      ];
       let mainEl: Element | null = null;
       for (const sel of mainSelectors) {
-        mainEl = document.querySelector(sel);
-        if (mainEl) break;
+        const el = document.querySelector(sel);
+        if (el) { mainEl = el; break; }
       }
       if (!mainEl) mainEl = document.body;
 
-      // Extract text from meaningful elements
+      // Extract text from semantic elements
       let content = '';
       mainEl.querySelectorAll('h1, h2, h3, h4, h5, h6, p, li, td, th, blockquote, figcaption').forEach(el => {
         const text = el.textContent?.trim();
@@ -363,6 +385,17 @@ export async function scrapePage(url: string): Promise<ScrapedPage & { wordCount
       });
 
       content = content.replace(/\n{3,}/g, '\n\n').replace(/\s{2,}/g, ' ').trim();
+      const semWordCount = content.split(/\s+/).filter(w => w.length > 0).length;
+
+      // CSR fallback: if semantic extraction is sparse, use innerText which respects CSS visibility
+      // This captures content rendered by React/Vue/Angular into generic divs
+      if (semWordCount < 50) {
+        const innerTextContent = ((mainEl as HTMLElement).innerText || '').trim();
+        const innerTextWords = innerTextContent.split(/\s+/).filter(w => w.length > 0).length;
+        if (innerTextWords > semWordCount) {
+          content = innerTextContent.replace(/\n{3,}/g, '\n\n').trim();
+        }
+      }
 
       const links = mainEl.querySelectorAll('a[href]').length;
       const images = mainEl.querySelectorAll('img').length;
@@ -370,7 +403,7 @@ export async function scrapePage(url: string): Promise<ScrapedPage & { wordCount
       return { title, description, keywords, author, content, links, images };
     });
 
-    // Detect JS-loaded empty pages — content is just error/login messages
+    // Detect JS-loaded empty/useless pages
     const USELESS_PATTERNS = [
       /no destinations found/i,
       /sign in to manage your account/i,
@@ -379,7 +412,7 @@ export async function scrapePage(url: string): Promise<ScrapedPage & { wordCount
       /no posts found/i,
       /check back soon/i,
       /page not found/i,
-      /404/i,
+      /\b404 not found\b|\berror 404\b|\b404 error\b/i,  // narrowed: was /404/i which matched valid content
     ];
     const isUseless = USELESS_PATTERNS.some(p => p.test(result.content));
     const finalContent = isUseless ? '' : result.content;
@@ -433,7 +466,7 @@ async function crawlWebsite(startUrl: string, maxPages: number, onProgress?: Scr
 
       if (result.status === 'fulfilled') {
         const page = result.value;
-        if (page.metadata.wordCount > 80) {
+        if (page.metadata.wordCount > 50) {
           pages.push(page);
           totalBytes += page.content.length;
           pageStatus = 'ok';

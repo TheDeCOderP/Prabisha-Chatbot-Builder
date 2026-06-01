@@ -325,6 +325,12 @@
         if (iframe) applyWinPosition(iframe, sz);
       }
 
+      // Patch close button colors
+      if (closeBtn) {
+        closeBtn.style.backgroundColor = config.closeBtnBgColor;
+        closeBtn.style.color           = config.closeBtnColor;
+      }
+
       // Patch drawer elements — fixes position/text/color not updating on external sites
       if (drawerEl && drawerTab) {
         const side = config.drawerSide;
@@ -344,6 +350,33 @@
         if (labelSpan && labelSpan.nodeName === 'SPAN') labelSpan.textContent = config.drawerTabText;
       }
 
+      // Patch sticky bar elements — fixes text/color/position not updating on external sites
+      if (stickyBarEl) {
+        const newBarPos = config.stickyBarPosition || 'bottom';
+        stickyBarEl.style.backgroundColor = config.stickyBarBgColor;
+        stickyBarEl.style.removeProperty('top');
+        stickyBarEl.style.removeProperty('bottom');
+        stickyBarEl.style[newBarPos] = '0';
+        stickyBarEl.style.boxShadow = newBarPos === 'bottom'
+          ? '0 -4px 20px rgba(0,0,0,0.12)'
+          : '0 4px 20px rgba(0,0,0,0.12)';
+        if (iframe) {
+          iframe.style.removeProperty('top');
+          iframe.style.removeProperty('bottom');
+          if (newBarPos === 'bottom') iframe.style.bottom = '64px';
+          else                        iframe.style.top    = '64px';
+        }
+        const spans = stickyBarEl.querySelectorAll('span');
+        if (spans[0]) {
+          spans[0].textContent = (config.stickyBarText || '').replace(/^[\p{Emoji}\s]+/u, '');
+          spans[0].style.color = config.stickyBarTextColor;
+        }
+        if (spans[1]) {
+          spans[1].textContent = config.stickyBarCtaText;
+          spans[1].style.color = config.stickyBarTextColor;
+        }
+      }
+
       // Auto-open after theme loaded (popup_onload)
       if (config.autoOpen && iframe && iframe.style.display === 'none') {
         setTimeout(openChat, config.delay || 1000);
@@ -352,8 +385,9 @@
       // Non-fatal — widget already rendered with defaults above
     } finally {
       // Reveal widget after correct config applied — prevents flash of default blue styling
-      if (button)    button.style.opacity    = '1';
-      if (drawerTab) drawerTab.style.opacity = '1';
+      if (button)      button.style.opacity      = '1';
+      if (drawerTab)   drawerTab.style.opacity   = '1';
+      if (stickyBarEl) stickyBarEl.style.opacity = '1';
     }
   }
 
@@ -776,6 +810,8 @@
         ? '__cb_fadeInUp 0.4s ease forwards'
         : '__cb_fadeInDown 0.4s ease forwards',
       fontFamily:      'inherit',
+      opacity:         '0',
+      transition:      'opacity 0.25s ease',
     });
 
     // Icon — use chatbot's configured icon (emoji / image) or default SVG

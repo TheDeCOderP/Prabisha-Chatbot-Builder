@@ -78,7 +78,7 @@ export async function POST(request: NextRequest, context: RouterParams) {
           },
         );
 
-        const usefulPages = (pages ?? []).filter(p => p.metadata.wordCount >= 80);
+        const usefulPages = (pages ?? []).filter(p => p.metadata.wordCount >= 50);
         const skipped = (pages?.length ?? 0) - usefulPages.length;
 
         send({ type: 'storing', current: 0, total: usefulPages.length });

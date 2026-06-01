@@ -86,7 +86,7 @@ export async function POST(request: NextRequest, context: RouterParams) {
         const scraped = await scrapePage(docUrl);
 
         // Skip if too thin
-        if (scraped.wordCount < 80) {
+        if (scraped.wordCount < 50) {
           results.failed.push({ url: docUrl, error: `Too thin (${scraped.wordCount} words)` });
           continue;
         }

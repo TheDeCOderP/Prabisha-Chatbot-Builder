@@ -128,7 +128,7 @@ export async function POST(
 
         if (pages && pages.length > 0) {
           // Filter out thin/useless pages before storing
-          const usefulPages = pages.filter(p => p.metadata.wordCount >= 80);
+          const usefulPages = pages.filter(p => p.metadata.wordCount >= 50);
           console.log(`📄 Useful pages: ${usefulPages.length}/${pages.length} (filtered ${pages.length - usefulPages.length} thin pages)`);
 
           // Store each page as a separate document
