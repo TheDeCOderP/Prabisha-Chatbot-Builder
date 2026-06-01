@@ -125,6 +125,7 @@ export function VoiceForm({ onBack, onSave, isLoading, initial, onLiveUpdate, ch
     notificationVolume:    0.4,
     notificationSoundType: 'ding' as SoundType,
     notificationSoundUrl:  '',
+    voiceGender:           'female' as 'female' | 'male' | 'neutral',
     voiceGreeting:         false,
     voiceGreetingVolume:   0.8,
     voiceGreetingRate:     1.0,
@@ -142,6 +143,7 @@ export function VoiceForm({ onBack, onSave, isLoading, initial, onLiveUpdate, ch
         notificationVolume:    initial.notificationVolume    ?? 0.4,
         notificationSoundType: initial.notificationSoundType ?? 'ding',
         notificationSoundUrl:  initial.notificationSoundUrl  ?? '',
+        voiceGender:           initial.voiceGender           ?? 'female',
         voiceGreeting:         initial.voiceGreeting         ?? false,
         voiceGreetingVolume:   initial.voiceGreetingVolume   ?? 0.8,
         voiceGreetingRate:     initial.voiceGreetingRate     ?? 1.0,
@@ -192,6 +194,16 @@ export function VoiceForm({ onBack, onSave, isLoading, initial, onLiveUpdate, ch
     }
     const targetLang = langMap[browserLang] || 'en-US'
 
+    const gender = settings.voiceGender || 'female'
+    const femaleRe = /female|woman|zira|samantha|karen|moira|tessa|fiona|vicki|victoria|lisa|sarah|susan|allison|ava|nicky|siri/i
+    const maleRe   = /male|man|david|mark|daniel|alex|fred|ralph|albert|bruce|jorge|diego|pablo|thomas|rishi|lekha/i
+    const matchesGender = (v: SpeechSynthesisVoice) => {
+      if (gender === 'neutral') return true
+      if (gender === 'female')  return femaleRe.test(v.name)
+      if (gender === 'male')    return maleRe.test(v.name)
+      return true
+    }
+
     const doSpeak = (voices: SpeechSynthesisVoice[]) => {
       try {
         window.speechSynthesis.cancel()
@@ -202,10 +214,11 @@ export function VoiceForm({ onBack, onSave, isLoading, initial, onLiveUpdate, ch
         utterance.onend  = () => setTestingSpeech(false)
         utterance.onerror = () => setTestingSpeech(false)
         if (voices.length > 0) {
-          const v = voices.find(v => v.lang === targetLang)
-            || voices.find(v => v.lang.startsWith(browserLang))
-            || voices.find(v => v.lang.startsWith('en'))
-            || voices[0]
+          const langExact  = voices.filter(v => v.lang === targetLang)
+          const langPrefix = voices.filter(v => v.lang.startsWith(browserLang))
+          const fallbackEn = voices.filter(v => v.lang.startsWith('en'))
+          const pick = (pool: SpeechSynthesisVoice[]) => pool.find(matchesGender) || pool[0]
+          const v = pick(langExact) || pick(langPrefix) || pick(fallbackEn) || voices[0]
           if (v) utterance.voice = v
         }
         window.speechSynthesis.speak(utterance)

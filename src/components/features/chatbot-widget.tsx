@@ -1528,20 +1528,15 @@ function ChatMessages({
               <p className="text-sm font-medium">{label}</p>
             </>
           ) : (
-            <>
-              <div className="flex space-x-1.5">
-                {[0, 150, 300].map(delay => (
-                  <div
-                    key={delay}
-                    className="w-2.5 h-2.5 rounded-full bg-primary animate-bounce"
-                    style={{ animationDelay: `${delay}ms`, animationDuration: '1s' }}
-                  />
-                ))}
-              </div>
-              <p className="text-sm font-medium bg-gradient-to-r from-primary/80 to-primary bg-clip-text text-transparent animate-pulse">
-                {label}
-              </p>
-            </>
+            <div className="flex space-x-1.5">
+              {[0, 150, 300].map(delay => (
+                <div
+                  key={delay}
+                  className="w-2.5 h-2.5 rounded-full bg-primary animate-bounce"
+                  style={{ animationDelay: `${delay}ms`, animationDuration: '1s' }}
+                />
+              ))}
+            </div>
           )}
         </div>
       </div>

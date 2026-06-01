@@ -136,11 +136,23 @@
     pt: 'pt-BR', it: 'it-IT', nl: 'nl-NL', ru: 'ru-RU', ko: 'ko-KR',
   };
 
+  // Heuristic: detect voice gender from its name string
+  function voiceMatchesGender(voice, gender) {
+    if (!gender || gender === 'neutral') return true;
+    const n = voice.name.toLowerCase();
+    const femaleKeywords = /female|woman|zira|samantha|karen|moira|tessa|fiona|vicki|victoria|lisa|sarah|susan|allison|ava|nicky|siri/;
+    const maleKeywords   = /male|man|david|mark|daniel|alex|fred|ralph|albert|bruce|jorge|diego|pablo|thomas|rishi|lekha/;
+    if (gender === 'female') return femaleKeywords.test(n);
+    if (gender === 'male')   return maleKeywords.test(n);
+    return true;
+  }
+
   function speakGreeting(text, volume, rate) {
     if (!text || !window.speechSynthesis) return;
     try {
       const browserLang = (navigator.language || 'en').split('-')[0];
       const targetLang  = VOICE_LANG_MAP[browserLang] || 'en-US';
+      const gender      = config.voiceGender || 'female';
 
       const doSpeak = (voices) => {
         try {
@@ -150,10 +162,13 @@
           utt.volume = Math.min(Math.max(volume || 0.8, 0), 1);
           utt.rate   = Math.min(Math.max(rate   || 1.0, 0.5), 2);
           if (voices && voices.length > 0) {
-            const v = voices.find(v => v.lang === targetLang)
-              || voices.find(v => v.lang.startsWith(browserLang))
-              || voices.find(v => v.lang.startsWith('en'))
-              || voices[0];
+            // Try: exact lang + gender → same lang + gender → exact lang → lang prefix → english → first
+            const langExact  = voices.filter(v => v.lang === targetLang);
+            const langPrefix = voices.filter(v => v.lang.startsWith(browserLang));
+            const fallbackEn = voices.filter(v => v.lang.startsWith('en'));
+
+            const pick = (pool) => pool.find(v => voiceMatchesGender(v, gender)) || pool[0];
+            const v = pick(langExact) || pick(langPrefix) || pick(fallbackEn) || voices[0];
             if (v) utt.voice = v;
           }
           window.speechSynthesis.speak(utt);
@@ -232,6 +247,7 @@
     notificationVolume:   0.4,
     notificationSoundType: 'ding',
     notificationSoundUrl:  null,
+    voiceGender:          'female',
     voiceGreeting:        false,
     voiceGreetingVolume:  0.8,
     voiceGreetingRate:    1.0,
@@ -377,6 +393,7 @@
       config.notificationVolume   = th.notificationVolume   ?? config.notificationVolume;
       config.notificationSoundType = th.notificationSoundType || config.notificationSoundType;
       config.notificationSoundUrl  = th.notificationSoundUrl  || config.notificationSoundUrl;
+      config.voiceGender          = th.voiceGender          || config.voiceGender;
       config.voiceGreeting        = th.voiceGreeting        ?? config.voiceGreeting;
       config.voiceGreetingVolume  = th.voiceGreetingVolume  ?? config.voiceGreetingVolume;
       config.voiceGreetingRate    = th.voiceGreetingRate    ?? config.voiceGreetingRate;

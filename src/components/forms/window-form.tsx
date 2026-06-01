@@ -122,6 +122,7 @@ export function WindowThemeForm({
     showPoweredBy: true,
     showTTS: true,
     leadCardMessage: "Before we continue, mind sharing a few quick details? Totally optional.",
+    voiceGender: 'female',
   })
 
   const [avatarData, setAvatarData] = useState({
@@ -158,6 +159,7 @@ export function WindowThemeForm({
         showPoweredBy: initial.showPoweredBy ?? true,
         showTTS: initial.showTTS ?? true,
         leadCardMessage: initial.leadCardMessage || "Before we continue, mind sharing a few quick details? Totally optional.",
+        voiceGender: initial.voiceGender || 'female',
       })
       if (chatbotData?.avatar) {
         setAvatarData({ type: "URL", value: chatbotData.avatar, emojiValue: "🤖", svgValue: "" })
@@ -267,6 +269,35 @@ export function WindowThemeForm({
             </div>
           )}
           <p className="text-[11px] text-muted-foreground">Appears in the chat header and next to bot messages.</p>
+
+          {/* Bot Voice Gender */}
+          <div className="space-y-2 pt-1 border-t border-border/50">
+            <div>
+              <Label className="text-xs font-medium">Bot Voice Gender</Label>
+              <p className="text-[10px] text-muted-foreground mt-0.5">Affects voice greeting tone (if enabled in Voice & Sound)</p>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {([
+                { value: 'female',  label: 'Female',  emoji: '👩' },
+                { value: 'male',    label: 'Male',    emoji: '👨' },
+                { value: 'neutral', label: 'Neutral', emoji: '🤖' },
+              ] as const).map(({ value, label, emoji }) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => update({ voiceGender: value })}
+                  className={`flex flex-col items-center gap-1 py-2.5 px-2 border-2 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+                    formData.voiceGender === value
+                      ? 'border-primary bg-primary/5 text-primary'
+                      : 'border-border hover:border-primary/40 text-muted-foreground'
+                  }`}
+                >
+                  <span className="text-base">{emoji}</span>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
         </SectionCard>
 
         {/* Header */}

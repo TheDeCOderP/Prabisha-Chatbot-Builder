@@ -114,6 +114,8 @@ export async function PUT(
       showTTS: body.showTTS,
       showNewChat: body.showNewChat,
       showLanguageSwitcher: body.showLanguageSwitcher,
+      // Voice gender
+      ...(body.voiceGender !== undefined && { voiceGender: body.voiceGender }),
       // Language settings
       ...(body.defaultLanguage     !== undefined && { defaultLanguage:     body.defaultLanguage }),
       ...(body.restrictedLanguages !== undefined && { restrictedLanguages: body.restrictedLanguages ?? [] }),

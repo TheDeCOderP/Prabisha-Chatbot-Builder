@@ -225,6 +225,9 @@ model ChatbotTheme {
   drawerTabText        String?   @default("Chat")
   drawerTabBgColor     String?   @default("#111CA8")
 
+  // Bot voice gender (for voice greeting)
+  voiceGender          String?   @default("female")
+
   // Language settings
   defaultLanguage      String?   @default("auto")
   restrictedLanguages  String[]  @default([])
