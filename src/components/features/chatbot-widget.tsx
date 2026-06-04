@@ -1,7 +1,7 @@
 'use client';
 import Image from 'next/image';
 import DOMPurify from 'dompurify';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, startTransition } from 'react';
 import { createPortal } from 'react-dom';
 import i18n from 'i18next';
 import { initReactI18next, useTranslation } from 'react-i18next';
@@ -588,24 +588,27 @@ function LanguageSelector({
   languages: typeof GLOBAL_LANGUAGES;
 }) {
   const [open, setOpen] = useState(false);
-  const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
+  const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({
+    position: 'fixed', top: 0, left: 0, zIndex: 99999,
+  });
   const triggerRef = useRef<HTMLButtonElement>(null);
   const current = languages.find(l => l.code === currentLang) ?? languages[0];
 
-  useEffect(() => {
-    if (!open || !triggerRef.current) return;
-    const rect = triggerRef.current.getBoundingClientRect();
-    const DROPDOWN_HEIGHT = languages.length * 44;
-    const spaceAbove = rect.top;
-    const spaceBelow = window.innerHeight - rect.bottom;
-    const openUpward = spaceAbove > DROPDOWN_HEIGHT || spaceAbove > spaceBelow;
-
-    setDropdownStyle(
-      openUpward
-        ? { position: 'fixed', bottom: window.innerHeight - rect.top + 4, left: rect.left, zIndex: 99999 }
-        : { position: 'fixed', top: rect.bottom + 4, left: rect.left, zIndex: 99999 }
-    );
-  }, [open, languages.length]);
+  // Position is computed inside the click handler (event handler, not an effect)
+  // so there are no cascading-render or ref-during-render linter issues.
+  const handleOpen = () => {
+    if (!open && triggerRef.current) {
+      const rect = triggerRef.current.getBoundingClientRect();
+      const DROPDOWN_HEIGHT = languages.length * 44;
+      const openUpward = rect.top > DROPDOWN_HEIGHT || rect.top > window.innerHeight - rect.bottom;
+      setDropdownStyle(
+        openUpward
+          ? { position: 'fixed', bottom: window.innerHeight - rect.top + 4, left: rect.left, zIndex: 99999 }
+          : { position: 'fixed', top: rect.bottom + 4, left: rect.left, zIndex: 99999 },
+      );
+    }
+    setOpen(o => !o);
+  };
 
   const dropdownEl = open ? (
     <>
@@ -642,7 +645,7 @@ function LanguageSelector({
       <button
         ref={triggerRef}
         type="button"
-        onClick={() => setOpen(o => !o)}
+        onClick={handleOpen}
         className="h-4 w-4 flex items-center justify-center aspect-square rounded-full text-xs font-medium text-muted-foreground hover:text-foreground cursor-pointer"
         aria-label="Select language"
       >
@@ -977,7 +980,19 @@ function ChatBot({
   const [parentPolicyInfo, setParentPolicyInfo] = useState<{
     blocked: boolean;
     permission?: string;
-  } | null>(null);
+  } | null>(() => {
+    // Read URL params once at mount — lazy initializer runs outside render so no effect needed.
+    if (typeof window === 'undefined') return null;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const blocked = params.get('parent_policy_blocked');
+      const permission = params.get('parent_permission');
+      if (blocked === 'true' || permission === 'denied') {
+        return { blocked: blocked === 'true', permission: permission || undefined };
+      }
+    } catch { /* ignore */ }
+    return null;
+  });
 
   const micAllowed =
     browserSupportsSpeechRecognition &&
@@ -986,17 +1001,7 @@ function ChatBot({
       ? true
       : (!parentPolicyInfo?.blocked && parentPolicyInfo?.permission !== 'denied'));
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    try {
-      const params = new URLSearchParams(window.location.search);
-      const blocked = params.get('parent_policy_blocked');
-      const permission = params.get('parent_permission');
-      if (blocked === 'true' || permission === 'denied') {
-        setParentPolicyInfo({ blocked: blocked === 'true', permission: permission || undefined });
-      }
-    } catch { /* ignore */ }
-  }, []);
+  
 
   useEffect(() => {
     if (!isEmbedded) return;
@@ -1040,7 +1045,7 @@ function ChatBot({
 
     if (autoSendTimerRef.current) clearTimeout(autoSendTimerRef.current);
 
-    setIsAutoSendPending(true);
+    startTransition(() => setIsAutoSendPending(true));
     autoSendTimerRef.current = setTimeout(() => {
       setIsAutoSendPending(false);
       setIsMicrophoneOn(false);
@@ -1063,7 +1068,7 @@ function ChatBot({
       if (autoSendTimerRef.current) {
         clearTimeout(autoSendTimerRef.current);
         autoSendTimerRef.current = null;
-        setIsAutoSendPending(false);
+        startTransition(() => setIsAutoSendPending(false));
       }
     }
   }, [isMicrophoneOn, startListening, stopListening, resetTranscript]);
@@ -1252,8 +1257,12 @@ function ChatHeader({
   const closeBtnBg    = th.closeButtonBgColor || '#DF6A2E';
   const closeBtnColor = th.closeButtonColor   || '#ffffff';
 
-  // Icon image: prefer avatar (chatbot.avatar), fall back to icon (chatbot.icon)
-  const iconSrc = chatbot.avatar || chatbot.icon || '/icons/logo.png';
+  // Icon image: prefer theme widgetIcon (if IMAGE type), then avatar, then icon
+  const th_icon = chatbot?.theme || {};
+  const iconType_h = th_icon.widgetIconType || 'EMOJI';
+  const iconSrc = (iconType_h === 'IMAGE' && th_icon.widgetIcon)
+    ? th_icon.widgetIcon
+    : (chatbot.avatar || chatbot.icon || '/icons/logo.png');
 
   return (
     <div
@@ -1328,25 +1337,41 @@ function ChatToggleButton({
 }) {
   const size = getWidgetSize(chatbot.theme, isMobile);
   const shapeClass = getWidgetShapeClass(chatbot.theme);
-  const imageSrc = chatbot.avatar || chatbot.icon || '/character1.png';
+  const th = chatbot.theme || {};
+  const iconType = th.widgetIconType || 'EMOJI';
+  const widgetIcon = th.widgetIcon || null;
+
+  // Determine what to render as the icon
+  const resolvedIconUrl = iconType !== 'EMOJI' ? (widgetIcon || chatbot.avatar || chatbot.icon || null) : null;
+  const resolvedEmoji   = iconType === 'EMOJI'  ? (widgetIcon || null) : null;
 
   return (
     <button
       onClick={onClick}
-      className={`fixed bottom-6 right-6 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-110 active:scale-95 cursor-pointer ${shapeClass}`}
+      className={`fixed bottom-6 right-6 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-110 active:scale-95 cursor-pointer overflow-hidden flex items-center justify-center ${shapeClass}`}
       aria-label={openLabel}
       style={{
         width: `${size}px`, height: `${size}px`,
-        backgroundColor: chatbot.theme?.widgetBgColor || '#FFFFFF',
-        border: `3px solid ${chatbot.theme?.widgetColor || '#111CA8'}`,
+        backgroundColor: th.widgetBgColor || '#FFFFFF',
+        border: `3px solid ${th.widgetColor || '#111CA8'}`,
       }}
     >
-      <Image
-        src={imageSrc}
-        height={size} width={size}
-        alt={chatbot.name || 'Chat'}
-        className={`w-full h-full object-contain ${shapeClass}`}
-      />
+      {resolvedEmoji ? (
+        <span style={{ fontSize: `${Math.round(size * 0.4)}px`, lineHeight: 1, userSelect: 'none' }}>{resolvedEmoji}</span>
+      ) : resolvedIconUrl ? (
+        <Image
+          src={resolvedIconUrl}
+          height={size} width={size}
+          alt={chatbot.name || 'Chat'}
+          className={`w-full h-full object-contain ${shapeClass}`}
+          unoptimized
+        />
+      ) : (
+        /* Default chat bubble SVG */
+        <svg width={size * 0.45} height={size * 0.45} viewBox="0 0 24 24" fill={th.widgetColor || '#111CA8'} xmlns="http://www.w3.org/2000/svg">
+          <path d="M20 2H4C2.9 2 2 2.9 2 4V22L6 18H20C21.1 18 22 17.1 22 16V4C22 2.9 21.1 2 20 2Z"/>
+        </svg>
+      )}
       <span className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-green-500 border-2 border-white" />
     </button>
   );
@@ -1394,8 +1419,12 @@ function ChatMessages({
   const fontSize = th.fontSize             || 14;
   const showTTS  = th.showTTS              ?? true;
 
-  // Icon src: avatar preferred, fall back to icon
-  const chatIconSrc = chatbot.icon || chatbot.avatar || '/icons/logo1.png';
+  // Icon src: prefer theme widgetIcon (IMAGE type), then avatar, then icon
+  const thIcon = th;
+  const iconType_m = thIcon.widgetIconType || 'EMOJI';
+  const chatIconSrc = (iconType_m === 'IMAGE' && thIcon.widgetIcon)
+    ? thIcon.widgetIcon
+    : (chatbot.avatar || chatbot.icon || '/icons/logo1.png');
   const iconShapeClass = getIconShapeClass(th);
 
   const hasUserMessages     = messages.some(m => m.senderType === 'USER');

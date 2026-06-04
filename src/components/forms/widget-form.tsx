@@ -511,7 +511,7 @@ export function WidgetThemeForm({ onBack, onSave, isLoading, initial, onLiveUpda
           <div className="space-y-1.5">
             <Label className="text-xs font-medium">Default Language</Label>
             <p className="text-[10px] text-muted-foreground">
-              Language shown to all visitors by default. <span className="font-medium text-foreground">Auto</span> = detect from visitor's IP location.
+              Language shown to all visitors by default. <span className="font-medium text-foreground">Auto</span> = detect from visitor&apos;s IP location.
             </p>
             <Select value={formData.defaultLanguage} onValueChange={(v) => update({ defaultLanguage: v })}>
               <SelectTrigger className="text-sm"><SelectValue /></SelectTrigger>

@@ -457,7 +457,10 @@ export function VoiceForm({ onBack, onSave, isLoading, initial, onLiveUpdate, ch
       {/* Footer */}
       <div className="shrink-0 bg-background border-t pt-4 mt-2 flex gap-2">
         <Button variant="outline" onClick={onBack} className="flex-1">Cancel</Button>
-        <Button onClick={() => onSave(settings)} disabled={isLoading} className="flex-1">
+        <Button onClick={() => onSave({
+        ...settings,
+        notificationSoundUrl: settings.notificationSoundUrl?.trim() || null,
+      })} disabled={isLoading} className="flex-1">
           {isLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
           Save Voice Settings
         </Button>

@@ -345,7 +345,7 @@
       if (th.widgetColor)    config.buttonBorderColor = th.widgetColor;
       config.closeBtnBgColor = th.closeButtonBgColor || config.closeBtnBgColor;
       config.closeBtnColor   = th.closeButtonColor   || config.closeBtnColor;
-      if (th.widgetPosition) config.position = th.widgetPosition.toLowerCase().replace(/([A-Z])/g, '-$1').toLowerCase();
+      if (th.widgetPosition) config.position = th.widgetPosition.split(/(?=[A-Z])/).join('-').toLowerCase();
       config.widgetCustomPosition = th.widgetCustomPosition || false;
       config.widgetTop    = th.widgetTop    ?? null;
       config.widgetBottom = th.widgetBottom ?? null;
@@ -1166,7 +1166,7 @@
       if (d.type === 'chatbot-theme' && d.theme) {
         const th = d.theme;
         // Apply position/size updates from widget
-        if (th.widgetPosition) config.position = th.widgetPosition.toLowerCase().replace(/([A-Z])/g, '-$1').toLowerCase();
+        if (th.widgetPosition) config.position = th.widgetPosition.split(/(?=[A-Z])/).join('-').toLowerCase();
         if (th.widgetCustomPosition !== undefined) config.widgetCustomPosition = th.widgetCustomPosition;
         ['widgetTop','widgetBottom','widgetLeft','widgetRight','widgetMargin'].forEach(k => {
           if (th[k] !== undefined) config[k] = th[k];
@@ -1187,7 +1187,7 @@
           if (th.widgetSize)     { config.widgetSize = th.widgetSize; if (window.innerWidth >= 768) { button.style.width = button.style.height = th.widgetSize + 'px'; } }
           if (th.widgetSizeMobile) { config.widgetSizeMobile = th.widgetSizeMobile; if (window.innerWidth < 768) { button.style.width = button.style.height = th.widgetSizeMobile + 'px'; } }
           if (th.widgetShape)    { config.widgetShape = th.widgetShape; button.style.borderRadius = getBtnRadius(); }
-          if (th.widgetPosition) { config.position = th.widgetPosition.toLowerCase().replace(/([A-Z])/g, '-$1').toLowerCase(); applyBtnPosition(button); }
+          if (th.widgetPosition) { config.position = th.widgetPosition.split(/(?=[A-Z])/).join('-').toLowerCase(); applyBtnPosition(button); }
         }
         if (closeBtn) {
           if (th.closeButtonBgColor) closeBtn.style.backgroundColor = th.closeButtonBgColor;
