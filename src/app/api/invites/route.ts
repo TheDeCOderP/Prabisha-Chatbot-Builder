@@ -204,20 +204,20 @@ class InvitesRoute extends BaseApiRoute {
     }
 
     // Check for existing pending invitation
+    // Only match by invitedToId when the user actually exists — otherwise
+    // `invitedToId: null` would match every invitation sent to a non-user.
+    const existingInvitationWhere: any = {
+      workspaceId: workspaceId,
+      status: 'PENDING',
+      expiresAt: { gt: new Date() },
+      OR: [{ email: email }],
+    };
+    if (userToInvite) {
+      existingInvitationWhere.OR.push({ invitedToId: userToInvite.id });
+    }
+
     const existingInvitation = await this.dbOperation(() =>
-      prisma.workspaceInvitation.findFirst({
-        where: {
-          workspaceId: workspaceId,
-          OR: [
-            { email: email },
-            { invitedToId: userToInvite?.id || null }
-          ],
-          status: 'PENDING',
-          expiresAt: {
-            gt: new Date()
-          }
-        }
-      })
+      prisma.workspaceInvitation.findFirst({ where: existingInvitationWhere })
     );
 
     if (existingInvitation) {

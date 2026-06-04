@@ -68,7 +68,7 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
     if (status === "unauthenticated") {
       const queryString = searchParams.toString();
       const callbackUrl = queryString ? `${pathname}?${queryString}` : pathname;
-      router.push(`/login?callbackUrl=${encodeURIComponent(callbackUrl)}`);
+      router.push(`/?callbackUrl=${encodeURIComponent(callbackUrl)}`);
     }
   }, [status, pathname, searchParams, router]);
 
