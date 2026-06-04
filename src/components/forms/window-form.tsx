@@ -33,20 +33,54 @@ function SectionCard({ title, icon, children }: { title: string; icon: React.Rea
 }
 
 function ColorInput({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  const [textValue, setTextValue] = useState(value)
+
+  useEffect(() => {
+    setTextValue(value)
+  }, [value])
+
+  const handleTextChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value
+    setTextValue(raw)
+    // Accept if valid hex (#rgb or #rrggbb)
+    if (/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(raw)) {
+      onChange(raw)
+    }
+  }
+
+  const handleTextBlur = () => {
+    // On blur, normalize or revert to last valid value
+    if (/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(textValue)) {
+      onChange(textValue)
+    } else {
+      setTextValue(value)
+    }
+  }
+
   return (
     <div className="space-y-1.5">
       <Label className="text-xs font-medium">{label}</Label>
-      <div className="flex items-center gap-2 border border-border rounded-lg px-2 py-1.5 bg-background h-9">
+      <div className="flex items-center gap-2 border border-border rounded-lg px-2 py-1.5 bg-background h-9 focus-within:ring-1 focus-within:ring-ring">
         <div className="relative w-5 h-5 shrink-0 cursor-pointer">
           <div className="w-5 h-5 rounded border border-border/60" style={{ backgroundColor: value }} />
           <input
             type="color"
             value={value}
             onChange={(e) => onChange(e.target.value)}
+            aria-label={`${label} color picker`}
             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
           />
         </div>
-        <span className="text-xs font-mono text-muted-foreground truncate">{value}</span>
+        <input
+          type="text"
+          value={textValue}
+          onChange={handleTextChange}
+          onBlur={handleTextBlur}
+          spellCheck={false}
+          className="flex-1 min-w-0 text-xs font-mono bg-transparent outline-none text-foreground placeholder:text-muted-foreground"
+          placeholder="#000000"
+          maxLength={7}
+        />
       </div>
     </div>
   )
