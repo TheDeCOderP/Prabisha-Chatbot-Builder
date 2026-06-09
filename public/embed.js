@@ -254,6 +254,8 @@
     // Internal — greeting text resolved from chatbot data
     _greetingText: '',
     _greetingSpoken: false,
+    // Set to true if chat was opened before config loaded — greeting fires once config arrives
+    _greetingPending: false,
   };
 
   let config = { ...defaults };
@@ -485,6 +487,13 @@
       // Auto-open after theme loaded (popup_onload)
       if (config.autoOpen && iframe && iframe.style.display === 'none') {
         setTimeout(openChat, config.delay || 1000);
+      }
+
+      // Fire pending voice greeting — if chat was opened before config loaded, speak now
+      if (config.voiceGreeting && config._greetingText && config._greetingPending && !config._greetingSpoken) {
+        config._greetingSpoken  = true;
+        config._greetingPending = false;
+        setTimeout(() => speakGreeting(config._greetingText, config.voiceGreetingVolume, config.voiceGreetingRate), 600);
       }
     } catch (e) {
       // Non-fatal — widget already rendered with defaults above
@@ -795,6 +804,9 @@
     if (config.voiceGreeting && config._greetingText && !config._greetingSpoken) {
       config._greetingSpoken = true;
       setTimeout(() => speakGreeting(config._greetingText, config.voiceGreetingVolume, config.voiceGreetingRate), 600);
+    } else if (!config._greetingSpoken && !config._greetingText) {
+      // Config hasn't loaded yet — mark as pending so greeting fires once config arrives
+      config._greetingPending = true;
     }
   }
 
@@ -1002,6 +1014,8 @@
     if (config.voiceGreeting && config._greetingText && !config._greetingSpoken) {
       config._greetingSpoken = true;
       setTimeout(() => speakGreeting(config._greetingText, config.voiceGreetingVolume, config.voiceGreetingRate), 600);
+    } else if (!config._greetingSpoken && !config._greetingText) {
+      config._greetingPending = true;
     }
   }
 
@@ -1112,6 +1126,8 @@
     if (config.voiceGreeting && config._greetingText && !config._greetingSpoken) {
       config._greetingSpoken = true;
       setTimeout(() => speakGreeting(config._greetingText, config.voiceGreetingVolume, config.voiceGreetingRate), 600);
+    } else if (!config._greetingSpoken && !config._greetingText) {
+      config._greetingPending = true;
     }
   }
 

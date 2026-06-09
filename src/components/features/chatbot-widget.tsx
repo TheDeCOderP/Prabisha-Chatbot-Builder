@@ -786,9 +786,7 @@ export default function ChatbotWidget({
     localStorage.setItem(`chatbot_session_${chatbotId}`, sid);
     setIsInitialized(true);
     window.parent.postMessage({ type: 'chatbot-loaded', chatbotId }, '*');
-  }, [chatbotId]);
-
-  // Once chatbot data is loaded, send theme sizing/position to parent embed script
+  }, [chatbotId]);  // Once chatbot data is loaded, send theme sizing/position to parent embed script
   useEffect(() => {
     if (!chatbot || !chatbotId) return;
     const th = chatbot.theme || {};
@@ -814,6 +812,91 @@ export default function ChatbotWidget({
         popup_onload:   th.popup_onload   ?? false,
       },
     }, '*');
+  }, [chatbot, chatbotId]);
+
+  // Voice greeting inside the widget — fires once when the greeting message is shown.
+  // This covers dashboard preview and any direct /embed/widget/[id] usage where embed.js
+  // is NOT present to handle speakGreeting(). The embed.js script handles this for external
+  // embeds, but we guard with _widget_greeting_spoken in sessionStorage to prevent double-play.
+  useEffect(() => {
+    if (!chatbot || !chatbotId) return;
+    const th = chatbot.theme || {};
+    if (!th.voiceGreeting) return;
+    if (!window.speechSynthesis) return;
+
+    // Only play if this is NOT embedded in an iframe (embed.js handles the iframe case)
+    if (window.self !== window.top) return;
+
+    const sessionKey = `chatbot_${chatbotId}_greeting_spoken`;
+    if (sessionStorage.getItem(sessionKey)) return;
+
+    // Wait until greeting message is rendered
+    const timer = setTimeout(() => {
+      try {
+        const greetingArr = chatbot.greeting;
+        let greetingText = '';
+        if (Array.isArray(greetingArr) && greetingArr.length > 0) {
+          const g = greetingArr[0];
+          const browserLang = (navigator.language || 'en').split('-')[0];
+          greetingText = (typeof g === 'string' ? g : (g[browserLang] || g['en'] || Object.values(g as Record<string, string>)[0])) || '';
+        }
+        if (!greetingText) return;
+
+        const VOICE_LANG_MAP: Record<string, string> = {
+          en: 'en-US', hi: 'hi-IN', ar: 'ar-SA', fr: 'fr-FR',
+          es: 'es-ES', de: 'de-DE', ja: 'ja-JP', zh: 'zh-CN',
+          pa: 'pa-IN', kn: 'kn-IN', te: 'te-IN', bn: 'bn-IN', gu: 'gu-IN',
+          pt: 'pt-BR', it: 'it-IT', nl: 'nl-NL', ru: 'ru-RU', ko: 'ko-KR',
+        };
+        const browserLang = (navigator.language || 'en').split('-')[0];
+        const targetLang = VOICE_LANG_MAP[browserLang] || 'en-US';
+        const gender = th.voiceGender || 'female';
+
+        const doSpeak = (voices: SpeechSynthesisVoice[]) => {
+          window.speechSynthesis.cancel();
+          const utt = new SpeechSynthesisUtterance(greetingText);
+          utt.lang   = targetLang;
+          utt.volume = Math.min(Math.max(th.voiceGreetingVolume ?? 0.8, 0), 1);
+          utt.rate   = Math.min(Math.max(th.voiceGreetingRate ?? 1.0, 0.5), 2);
+          if (voices.length > 0) {
+            const femaleRe = /female|woman|zira|samantha|karen|moira|tessa|fiona|vicki|victoria|lisa|sarah|susan|allison|ava|nicky|siri/i;
+            const maleRe   = /male|man|david|mark|daniel|alex|fred|ralph|albert|bruce|jorge|diego|pablo|thomas/i;
+            const matchGender = (v: SpeechSynthesisVoice) => {
+              if (gender === 'neutral') return true;
+              if (gender === 'female')  return femaleRe.test(v.name);
+              return maleRe.test(v.name);
+            };
+            const langExact  = voices.filter(v => v.lang === targetLang);
+            const langPrefix = voices.filter(v => v.lang.startsWith(browserLang));
+            const fallbackEn = voices.filter(v => v.lang.startsWith('en'));
+            const pick = (pool: SpeechSynthesisVoice[]) => pool.find(matchGender) || pool[0];
+            const chosen = pick(langExact) || pick(langPrefix) || pick(fallbackEn) || voices[0];
+            if (chosen) utt.voice = chosen;
+          }
+          window.speechSynthesis.speak(utt);
+          sessionStorage.setItem(sessionKey, '1');
+        };
+
+        const voices = window.speechSynthesis.getVoices();
+        if (voices.length > 0) {
+          doSpeak(voices);
+        } else {
+          const onReady = () => {
+            window.speechSynthesis.onvoiceschanged = null;
+            doSpeak(window.speechSynthesis.getVoices());
+          };
+          window.speechSynthesis.onvoiceschanged = onReady;
+          setTimeout(() => {
+            if ((window.speechSynthesis.onvoiceschanged as any) === onReady) {
+              window.speechSynthesis.onvoiceschanged = null;
+              doSpeak(window.speechSynthesis.getVoices());
+            }
+          }, 300);
+        }
+      } catch (_) { /* non-fatal */ }
+    }, 800);
+
+    return () => clearTimeout(timer);
   }, [chatbot, chatbotId]);
  
   useEffect(() => {
@@ -968,11 +1051,18 @@ function ChatBot({
     typeof window !== 'undefined' &&
     window.location.pathname.includes('/chatbots/');
 
+  const SPEECH_LANG_MAP: Record<string, string> = {
+    en: 'en-US', hi: 'hi-IN', pa: 'pa-IN', kn: 'kn-IN', te: 'te-IN',
+    bn: 'bn-IN', gu: 'gu-IN', ja: 'ja-JP', fr: 'fr-FR', es: 'es-ES',
+    ar: 'ar-SA', zh: 'zh-CN', de: 'de-DE', pt: 'pt-BR', it: 'it-IT',
+    nl: 'nl-NL', ru: 'ru-RU', ko: 'ko-KR',
+  };
+
   const {
     transcript, startListening, stopListening,
     resetTranscript, browserSupportsSpeechRecognition,
     policyBlocked, policyMessage,
-  } = useSpeechToText({ continuous: true, lang: selectedLang === 'zh' ? 'zh-CN' : selectedLang === 'hi' ? 'hi-IN' : selectedLang === 'pa' ? 'pa-IN' : selectedLang === 'kn' ? 'kn-IN' : selectedLang === 'te' ? 'te-IN' : selectedLang === 'bn' ? 'bn-IN' : selectedLang === 'gu' ? 'gu-IN' : 'en-US' });
+  } = useSpeechToText({ continuous: true, lang: SPEECH_LANG_MAP[selectedLang] || 'en-US' });
   const [isMicrophoneOn, setIsMicrophoneOn] = useState(false);
   const [isAutoSendPending, setIsAutoSendPending] = useState(false);
   const autoSendTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1037,12 +1127,13 @@ function ChatBot({
   useEffect(() => {
     if (!transcript) return;
 
-    // Save transcript in a ref so the timer callback always gets the latest text,
-    // even after React re-renders update the closure (stale-closure fix).
+    // Accumulate the transcript into the input field so the user can see it growing.
+    // Do NOT call resetTranscript() here — that would wipe the accumulated text before
+    // the next recognition result arrives, causing only the last chunk to be sent.
     pendingVoiceTextRef.current = transcript;
     setText(transcript);
-    resetTranscript();
 
+    // Reset the auto-send countdown every time new speech arrives.
     if (autoSendTimerRef.current) clearTimeout(autoSendTimerRef.current);
 
     startTransition(() => setIsAutoSendPending(true));
@@ -1051,6 +1142,8 @@ function ChatBot({
       setIsMicrophoneOn(false);
       const toSend = pendingVoiceTextRef.current;
       pendingVoiceTextRef.current = '';
+      // Reset transcript AFTER we've captured the final text, not before.
+      resetTranscript();
       if (toSend.trim()) {
         // overrideText bypasses the stale `text` state inside handleSubmit's closure
         handleSubmit(undefined, toSend);
@@ -1060,10 +1153,13 @@ function ChatBot({
 
   useEffect(() => {
     if (isMicrophoneOn) {
+      // Clear any leftover text from a previous session before starting fresh
+      pendingVoiceTextRef.current = '';
       startListening();
     } else {
       stopListening();
       resetTranscript();
+      pendingVoiceTextRef.current = '';
       // Cancel pending auto-send if user manually turned off mic
       if (autoSendTimerRef.current) {
         clearTimeout(autoSendTimerRef.current);
@@ -1437,7 +1533,12 @@ function ChatMessages({
 
   const handleSpeak = async (id: string, content: string) => {
     if (activeSpeakingId === id && isPlaying) { stop(); setActiveSpeakingId(null); }
-    else { setActiveSpeakingId(id); await speak(content); }
+    else {
+      setActiveSpeakingId(id);
+      // Strip HTML tags before sending to TTS so it reads clean text
+      const plainText = content.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+      await speak(plainText);
+    }
   };
 
   // Avatar uses chatbot.avatar or chatbot.icon; size from theme

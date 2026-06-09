@@ -82,6 +82,7 @@ export const useSpeechToText = (options?: UseSpeechToTextOptions) => {
     recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
       console.error("Speech recognition error", event.error)
       setIsListening(false)
+      recognitionRef.current = null
     }
 
     recognition.start()
