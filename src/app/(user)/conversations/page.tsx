@@ -329,7 +329,7 @@ export default function ConversationsPage() {
   return (
     <div className="flex h-full w-full bg-background overflow-hidden">
       {/* ── Left sidebar: Conversation list ── */}
-      <div className="w-[360px] shrink-0 border-r flex flex-col bg-muted/5">
+      <div className="w-[360px] min-w-0 shrink-0 border-r flex flex-col bg-muted/5 overflow-hidden">
         {/* Header + filters */}
         <div className="p-4 border-b space-y-3">
           <div className="flex items-center justify-between">
@@ -479,20 +479,21 @@ export default function ConversationsPage() {
                   key={conv.id}
                   type="button"
                   onClick={() => handleSelectConversation(conv.id)}
-                  className={`w-full text-left p-3 rounded-lg transition-all duration-150 flex flex-col gap-1.5 border ${
+                  className={`w-full text-left p-3 rounded-lg transition-all duration-150 flex flex-col gap-1.5 border min-w-0 ${
                     selectedId === conv.id
                       ? "bg-primary text-primary-foreground border-primary shadow-sm"
                       : "border-transparent hover:bg-muted/60 hover:border-border"
                   }`}
                 >
-                  <div className="flex justify-between items-start gap-2">
-                    <span className="font-medium truncate text-sm leading-tight flex-1">
+                  {/* Row 1: title + date */}
+                  <div className="flex items-start gap-2 min-w-0">
+                    <span className="font-medium truncate text-sm leading-tight flex-1 min-w-0">
                       {conv.title ||
                         conv.firstMessage?.substring(0, 35) ||
                         `Conversation #${conv.id.slice(-6)}`}
                     </span>
                     <span
-                      className={`text-[11px] shrink-0 ${
+                      className={`text-[11px] shrink-0 whitespace-nowrap ${
                         selectedId === conv.id
                           ? "text-primary-foreground/70"
                           : "text-muted-foreground"
@@ -502,8 +503,9 @@ export default function ConversationsPage() {
                     </span>
                   </div>
 
+                  {/* Row 2: chatbot · workspace */}
                   <div
-                    className={`text-xs truncate ${
+                    className={`text-xs truncate min-w-0 ${
                       selectedId === conv.id
                         ? "text-primary-foreground/80"
                         : "text-muted-foreground"
@@ -512,10 +514,11 @@ export default function ConversationsPage() {
                     {conv.chatbot.name} · {conv.workspace.name}
                   </div>
 
-                  <div className="flex items-center gap-1.5 mt-0.5">
+                  {/* Row 3: badges + msg count */}
+                  <div className="flex items-center gap-1.5 mt-0.5 min-w-0">
                     <Badge
                       variant="outline"
-                      className={`text-[10px] h-4 px-1.5 border-0 ${
+                      className={`text-[10px] h-4 px-1.5 border-0 shrink-0 ${
                         selectedId === conv.id
                           ? conv.isActive
                             ? "bg-green-500/20 text-green-200"
@@ -530,7 +533,7 @@ export default function ConversationsPage() {
                     {conv.lead && (
                       <Badge
                         variant="outline"
-                        className={`text-[10px] h-4 px-1.5 border-0 ${
+                        className={`text-[10px] h-4 px-1.5 border-0 shrink-0 ${
                           selectedId === conv.id
                             ? "bg-blue-500/20 text-blue-200"
                             : "bg-blue-500/10 text-blue-600"
@@ -540,7 +543,7 @@ export default function ConversationsPage() {
                       </Badge>
                     )}
                     <span
-                      className={`ml-auto text-[10px] ${
+                      className={`ml-auto text-[10px] shrink-0 whitespace-nowrap ${
                         selectedId === conv.id
                           ? "text-primary-foreground/60"
                           : "text-muted-foreground"
@@ -618,9 +621,9 @@ export default function ConversationsPage() {
                     {selectedConversation.chatbot.name.charAt(0).toUpperCase()}
                   </AvatarFallback>
                 </Avatar>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-semibold text-sm truncate">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="font-semibold text-sm truncate min-w-0 flex-1">
                       {selectedConversation.title ||
                         selectedConversation.firstMessage?.substring(0, 40) ||
                         "Untitled Conversation"}
@@ -632,20 +635,20 @@ export default function ConversationsPage() {
                       {selectedConversation.isActive ? "Active" : "Closed"}
                     </Badge>
                   </div>
-                  <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
-                    <span className="flex items-center gap-1">
-                      <Building className="w-3 h-3" />
-                      {selectedConversation.workspace.name}
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5 flex-wrap">
+                    <span className="flex items-center gap-1 shrink-0">
+                      <Building className="w-3 h-3 shrink-0" />
+                      <span className="truncate max-w-[100px]">{selectedConversation.workspace.name}</span>
                     </span>
-                    <span className="flex items-center gap-1">
-                      <MessageSquare className="w-3 h-3" />
-                      {selectedConversation.chatbot.name}
+                    <span className="flex items-center gap-1 shrink-0">
+                      <MessageSquare className="w-3 h-3 shrink-0" />
+                      <span className="truncate max-w-[100px]">{selectedConversation.chatbot.name}</span>
                     </span>
-                    <span className="flex items-center gap-1">
-                      <Calendar className="w-3 h-3" />
+                    <span className="flex items-center gap-1 shrink-0 whitespace-nowrap">
+                      <Calendar className="w-3 h-3 shrink-0" />
                       {format(new Date(selectedConversation.createdAt), "MMM d, yyyy")}
                     </span>
-                    <span className="text-muted-foreground">
+                    <span className="text-muted-foreground shrink-0 whitespace-nowrap">
                       {selectedConversation.messageCount} messages
                     </span>
                   </div>
