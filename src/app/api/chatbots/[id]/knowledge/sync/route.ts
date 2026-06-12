@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { scrapePage } from '@/lib/langchain/knowledge/web-scraper';
+import { scrapePage, closeBrowser } from '@/lib/langchain/knowledge/web-scraper';
 import { embedAndStore, deleteDocument } from '@/lib/langchain/vector-store';
 import { createHash } from 'crypto';
 
@@ -78,6 +78,7 @@ export async function POST(request: NextRequest, context: RouterParams) {
       totalDocs: urlDocs.length,
     };
 
+    try {
     for (const doc of urlDocs) {
       const meta = doc.metadata as Record<string, any> || {};
       const docUrl = doc.source?.startsWith('http') ? doc.source : (meta?.url || meta?.source || doc.source);
@@ -140,6 +141,10 @@ export async function POST(request: NextRequest, context: RouterParams) {
           error: err instanceof Error ? err.message : 'Unknown error',
         });
       }
+    }
+
+    } finally {
+      await closeBrowser();
     }
 
     // Clear question cache so stale responses don't get served

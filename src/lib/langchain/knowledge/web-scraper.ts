@@ -15,7 +15,7 @@ export type ScrapeProgressCallback = (
   pageStatus: PageScrapeStatus,
 ) => void;
 
-const BATCH_SIZE = 8;
+const BATCH_SIZE = 3;
 
 interface ScrapedPage {
   url: string;
@@ -53,12 +53,15 @@ async function getBrowser(): Promise<Browser> {
       '--disable-gpu',
       '--no-first-run',
       '--no-zygote',
+      '--single-process',
+      '--memory-pressure-off',
+      '--js-flags=--max-old-space-size=256',
     ],
   });
   return browserInstance;
 }
 
-async function closeBrowser(): Promise<void> {
+export async function closeBrowser(): Promise<void> {
   if (browserInstance) {
     await browserInstance.close().catch(() => {});
     browserInstance = null;
@@ -304,136 +307,148 @@ async function extractSitemapInfo(sitemapUrl: string): Promise<SitemapInfo> {
   return { urls: [...new Set(urls)], totalPages: urls.length, isSitemapIndex, childSitemaps: childSitemaps.length > 0 ? [...new Set(childSitemaps)] : undefined };
 }
 
-// ─── Page scraping (Puppeteer) ────────────────────────────────────────────────
+// ─── Static scraping (fetch + cheerio) — no browser needed ──────────────────
+
+const USELESS_PATTERNS = [
+  /no destinations found/i,
+  /sign in to manage your account/i,
+  /welcome back.*sign in/i,
+  /0 destinations/i,
+  /no posts found/i,
+  /check back soon/i,
+  /page not found/i,
+  /\b404 not found\b|\berror 404\b|\b404 error\b/i,
+];
+
+function extractFromCheerio($: cheerio.CheerioAPI): { title: string; description: string; keywords: string; author: string; content: string; links: number; images: number } {
+  ['script', 'style', 'nav', 'footer', 'header', 'iframe', 'noscript', '[class*="cookie"]', '[id*="cookie"]', '[class*="banner"]', '[class*="popup"]'].forEach(sel => $(sel).remove());
+
+  const title = $('title').text().trim() || $('h1').first().text().trim() || 'Untitled';
+  const description = $('meta[name="description"]').attr('content') || $('meta[property="og:description"]').attr('content') || '';
+  const keywords = $('meta[name="keywords"]').attr('content') || '';
+  const author = $('meta[name="author"]').attr('content') || '';
+
+  const mainSelectors = ['main', 'article', '[role="main"]', '.main-content', '#main-content', '.content', '#content', '.entry-content', '.post-content', '.page-content', '.article-body'];
+  let mainEl = $('body');
+  for (const sel of mainSelectors) {
+    if ($(sel).length) { mainEl = $(sel).first() as any; break; }
+  }
+
+  let content = '';
+  mainEl.find('h1, h2, h3, h4, h5, h6, p, li, td, th, blockquote, figcaption').each((_, el) => {
+    const text = $(el).text().trim();
+    if (text && text.length > 10) content += text + '\n\n';
+  });
+  content = content.replace(/\n{3,}/g, '\n\n').replace(/\s{2,}/g, ' ').trim();
+
+  return { title, description, keywords, author, content, links: mainEl.find('a[href]').length, images: mainEl.find('img').length };
+}
+
+async function scrapePageStatic(url: string): Promise<{ result: ReturnType<typeof extractFromCheerio>; isJS: boolean }> {
+  const res = await fetch(url, {
+    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const html = await res.text();
+  const $ = cheerio.load(html);
+  const result = extractFromCheerio($);
+  // Heuristic: if very little content but page has JS framework roots, Puppeteer needed
+  const wordCount = countWords(result.content);
+  const hasJSRoot = html.includes('id="__next"') || html.includes('id="__nuxt"') || html.includes('id="root"') || html.includes('id="app"');
+  const isJS = wordCount < 80 && hasJSRoot;
+  return { result, isJS };
+}
+
+// ─── Page scraping (fetch first, Puppeteer fallback for JS-rendered pages) ───
 
 export async function scrapePage(url: string): Promise<ScrapedPage & { wordCount: number }> {
-  const browser = await getBrowser();
-  const page = await browser.newPage();
+  let result: ReturnType<typeof extractFromCheerio> | null = null;
 
+  // Try lightweight fetch+cheerio first — avoids launching Chromium for static pages
   try {
-    // Block only heavy binary resources — keep stylesheets so CSS visibility (display:none) works correctly
-    await page.setRequestInterception(true);
-    page.on('request', (req) => {
-      const type = req.resourceType();
-      if (['image', 'media', 'font'].includes(type)) {
-        req.abort();
-      } else {
-        req.continue();
-      }
-    });
-
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-
-    // Try networkidle2 first (best for SPAs); fall back to domcontentloaded for sites with persistent connections
-    let usedFallbackLoad = false;
-    try {
-      await page.goto(url, { waitUntil: 'networkidle2', timeout: 20000 });
-    } catch {
-      try {
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 40000 });
-        usedFallbackLoad = true;
-      } catch (err) {
-        throw new Error(`Failed to load page: ${err}`);
-      }
+    const { result: staticResult, isJS } = await scrapePageStatic(url);
+    if (!isJS && countWords(staticResult.content) >= 80) {
+      result = staticResult;
     }
+  } catch { /* fall through to Puppeteer */ }
 
-    // Wait for main content — include CSR framework root elements
+  // Puppeteer fallback for JS-rendered pages
+  if (!result) {
+    const browser = await getBrowser();
+    const page = await browser.newPage();
     try {
-      await page.waitForSelector(
-        'main, article, [role="main"], .content, #content, #app, #root, #__next, #__nuxt, [data-content]',
-        { timeout: 8000 }
-      );
-    } catch { /* page may not have these selectors — continue anyway */ }
-
-    // Give JS frameworks more time when networkidle2 wasn't available
-    await delay(usedFallbackLoad ? 3000 : 1500);
-
-    // Scroll to trigger lazy-loaded content
-    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-    await delay(800);
-
-    const result = await page.evaluate(() => {
-      // Remove noise elements
-      const remove = ['script', 'style', 'nav', 'footer', 'header', 'iframe', 'noscript', '[class*="cookie"]', '[id*="cookie"]', '[class*="banner"]', '[class*="popup"]'];
-      remove.forEach(sel => document.querySelectorAll(sel).forEach(el => el.remove()));
-
-      const title = document.title?.trim() || document.querySelector('h1')?.textContent?.trim() || 'Untitled';
-      const description = (document.querySelector('meta[name="description"]') as HTMLMetaElement)?.content || (document.querySelector('meta[property="og:description"]') as HTMLMetaElement)?.content || '';
-      const keywords = (document.querySelector('meta[name="keywords"]') as HTMLMetaElement)?.content || '';
-      const author = (document.querySelector('meta[name="author"]') as HTMLMetaElement)?.content || '';
-
-      // Find main content area — includes common CSR framework roots
-      const mainSelectors = [
-        'main', 'article', '[role="main"]',
-        '.main-content', '#main-content',
-        '.content', '#content',
-        '.entry-content', '.post-content', '.page-content', '.article-body',
-        '#app', '#root', '#__next', '#__nuxt',
-      ];
-      let mainEl: Element | null = null;
-      for (const sel of mainSelectors) {
-        const el = document.querySelector(sel);
-        if (el) { mainEl = el; break; }
-      }
-      if (!mainEl) mainEl = document.body;
-
-      // Extract text from semantic elements
-      let content = '';
-      mainEl.querySelectorAll('h1, h2, h3, h4, h5, h6, p, li, td, th, blockquote, figcaption').forEach(el => {
-        const text = el.textContent?.trim();
-        if (text && text.length > 10) content += text + '\n\n';
+      await page.setRequestInterception(true);
+      page.on('request', (req) => {
+        if (['image', 'media', 'font', 'stylesheet'].includes(req.resourceType())) req.abort();
+        else req.continue();
       });
+      await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
 
-      content = content.replace(/\n{3,}/g, '\n\n').replace(/\s{2,}/g, ' ').trim();
-      const semWordCount = content.split(/\s+/).filter(w => w.length > 0).length;
-
-      // CSR fallback: if semantic extraction is sparse, use innerText which respects CSS visibility
-      // This captures content rendered by React/Vue/Angular into generic divs
-      if (semWordCount < 50) {
-        const innerTextContent = ((mainEl as HTMLElement).innerText || '').trim();
-        const innerTextWords = innerTextContent.split(/\s+/).filter(w => w.length > 0).length;
-        if (innerTextWords > semWordCount) {
-          content = innerTextContent.replace(/\n{3,}/g, '\n\n').trim();
+      let usedFallbackLoad = false;
+      try {
+        await page.goto(url, { waitUntil: 'networkidle2', timeout: 20000 });
+      } catch {
+        try {
+          await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+          usedFallbackLoad = true;
+        } catch (err) {
+          throw new Error(`Failed to load page: ${err}`);
         }
       }
 
-      const links = mainEl.querySelectorAll('a[href]').length;
-      const images = mainEl.querySelectorAll('img').length;
+      try {
+        await page.waitForSelector('main, article, [role="main"], .content, #content, #app, #root, #__next, #__nuxt', { timeout: 6000 });
+      } catch { /* continue anyway */ }
 
-      return { title, description, keywords, author, content, links, images };
-    });
+      await delay(usedFallbackLoad ? 2000 : 1000);
 
-    // Detect JS-loaded empty/useless pages
-    const USELESS_PATTERNS = [
-      /no destinations found/i,
-      /sign in to manage your account/i,
-      /welcome back.*sign in/i,
-      /0 destinations/i,
-      /no posts found/i,
-      /check back soon/i,
-      /page not found/i,
-      /\b404 not found\b|\berror 404\b|\b404 error\b/i,  // narrowed: was /404/i which matched valid content
-    ];
-    const isUseless = USELESS_PATTERNS.some(p => p.test(result.content));
-    const finalContent = isUseless ? '' : result.content;
-
-    return {
-      url,
-      content: finalContent,
-      title: result.title,
-      wordCount: countWords(finalContent),
-      metadata: {
-        description: result.description,
-        keywords: result.keywords,
-        author: result.author,
-        wordCount: countWords(finalContent),
-        links: result.links,
-        images: result.images,
-      },
-    };
-  } finally {
-    await page.close();
+      const puppeteerResult = await page.evaluate(() => {
+        ['script', 'style', 'nav', 'footer', 'header', 'iframe', 'noscript'].forEach(sel =>
+          document.querySelectorAll(sel).forEach(el => el.remove())
+        );
+        const title = document.title?.trim() || document.querySelector('h1')?.textContent?.trim() || 'Untitled';
+        const description = (document.querySelector('meta[name="description"]') as HTMLMetaElement)?.content || '';
+        const keywords = (document.querySelector('meta[name="keywords"]') as HTMLMetaElement)?.content || '';
+        const author = (document.querySelector('meta[name="author"]') as HTMLMetaElement)?.content || '';
+        const mainSelectors = ['main', 'article', '[role="main"]', '.content', '#content', '#app', '#root', '#__next', '#__nuxt'];
+        let mainEl: Element = document.body;
+        for (const sel of mainSelectors) { const el = document.querySelector(sel); if (el) { mainEl = el; break; } }
+        let content = '';
+        mainEl.querySelectorAll('h1, h2, h3, h4, h5, h6, p, li, td, th, blockquote').forEach(el => {
+          const text = el.textContent?.trim();
+          if (text && text.length > 10) content += text + '\n\n';
+        });
+        content = content.replace(/\n{3,}/g, '\n\n').replace(/\s{2,}/g, ' ').trim();
+        if (content.split(/\s+/).length < 50) {
+          const inner = ((mainEl as HTMLElement).innerText || '').trim();
+          if (inner.split(/\s+/).length > content.split(/\s+/).length) content = inner;
+        }
+        return { title, description, keywords, author, content, links: mainEl.querySelectorAll('a[href]').length, images: mainEl.querySelectorAll('img').length };
+      });
+      result = puppeteerResult;
+    } finally {
+      await page.close();
+    }
   }
+
+  const isUseless = USELESS_PATTERNS.some(p => p.test(result!.content));
+  const finalContent = isUseless ? '' : result!.content;
+
+  return {
+    url,
+    content: finalContent,
+    title: result!.title,
+    wordCount: countWords(finalContent),
+    metadata: {
+      description: result!.description,
+      keywords: result!.keywords,
+      author: result!.author,
+      wordCount: countWords(finalContent),
+      links: result!.links,
+      images: result!.images,
+    },
+  };
 }
 
 // ─── Crawl website ────────────────────────────────────────────────────────────
