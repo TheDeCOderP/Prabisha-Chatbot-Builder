@@ -41,30 +41,95 @@ interface SitemapInfo {
 
 // ─── Browser singleton ────────────────────────────────────────────────────────
 let browserInstance: Browser | null = null;
+let browserLaunchPromise: Promise<Browser> | null = null;
+
+// Auto-close browser after 60s of inactivity to free RAM on VPS
+let browserIdleTimer: ReturnType<typeof setTimeout> | null = null;
+const BROWSER_IDLE_TIMEOUT_MS = 60_000;
+
+function resetIdleTimer() {
+  if (browserIdleTimer) clearTimeout(browserIdleTimer);
+  browserIdleTimer = setTimeout(() => {
+    closeBrowser().catch(() => {});
+  }, BROWSER_IDLE_TIMEOUT_MS);
+}
 
 async function getBrowser(): Promise<Browser> {
-  if (browserInstance && browserInstance.connected) return browserInstance;
-  browserInstance = await puppeteer.launch({
-    headless: true,
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-gpu',
-      '--no-first-run',
-      '--no-zygote',
-      '--single-process',
-      '--memory-pressure-off',
-      '--js-flags=--max-old-space-size=256',
-    ],
-  });
-  return browserInstance;
+  // Reuse existing healthy instance
+  if (browserInstance && browserInstance.connected) {
+    resetIdleTimer();
+    return browserInstance;
+  }
+
+  // Prevent race condition: if a launch is already in progress, wait for it
+  if (browserLaunchPromise) {
+    return browserLaunchPromise;
+  }
+
+  browserLaunchPromise = puppeteer
+    .launch({
+      headless: true,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--no-first-run',
+        '--no-zygote',
+        '--disable-extensions',
+        '--disable-background-networking',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-breakpad',
+        '--disable-client-side-phishing-detection',
+        '--disable-component-update',
+        '--disable-default-apps',
+        '--disable-hang-monitor',
+        '--disable-ipc-flooding-protection',
+        '--disable-popup-blocking',
+        '--disable-prompt-on-repost',
+        '--disable-renderer-backgrounding',
+        '--disable-sync',
+        '--disable-translate',
+        '--metrics-recording-only',
+        '--mute-audio',
+        '--safebrowsing-disable-auto-update',
+        '--js-flags=--max-old-space-size=256',
+      ],
+    })
+    .then((browser) => {
+      browserInstance = browser;
+      browserLaunchPromise = null;
+
+      // Clean up if browser crashes/disconnects unexpectedly
+      browser.on('disconnected', () => {
+        browserInstance = null;
+        browserLaunchPromise = null;
+        if (browserIdleTimer) clearTimeout(browserIdleTimer);
+        browserIdleTimer = null;
+      });
+
+      resetIdleTimer();
+      return browser;
+    })
+    .catch((err) => {
+      browserLaunchPromise = null;
+      throw err;
+    });
+
+  return browserLaunchPromise;
 }
 
 export async function closeBrowser(): Promise<void> {
+  if (browserIdleTimer) {
+    clearTimeout(browserIdleTimer);
+    browserIdleTimer = null;
+  }
   if (browserInstance) {
-    await browserInstance.close().catch(() => {});
+    const b = browserInstance;
     browserInstance = null;
+    browserLaunchPromise = null;
+    await b.close().catch(() => {});
   }
 }
 
