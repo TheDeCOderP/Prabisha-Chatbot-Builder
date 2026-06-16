@@ -376,32 +376,21 @@
       config.drawerTabText    = th.drawerTabText   || config.drawerTabText;
       config.drawerTabBgColor = th.drawerTabBgColor|| config.drawerTabBgColor;
 
-      // Embed mode — if DB says a different mode, teardown current UI and rebuild with correct config
-      const newMode = (th.embedMode || config.embedMode || 'FLOATING_BUTTON').toUpperCase().replace(/-/g, '_');
-      if (newMode !== config.embedMode) {
-        config.embedMode = newMode;
-        teardown();
-        switch (newMode) {
-          case 'INLINE':        await buildInline();       break;
-          case 'STICKY_BAR':   await buildStickyBar();    break;
-          case 'SLIDE_DRAWER': await buildSlideDrawer();  break;
-          case 'TEASER_BUBBLE':await buildTeaserBubble(); break;
-          default:             await buildFloating();      break;
-        }
-        return; // DOM patch below not needed — rebuild already applied full theme
-      }
-
-      // Voice & Sound
+      // Voice & Sound — patched BEFORE mode check so rebuild also uses correct values
       config.notificationSound    = th.notificationSound    ?? config.notificationSound;
       config.notificationVolume   = th.notificationVolume   ?? config.notificationVolume;
       config.notificationSoundType = th.notificationSoundType || config.notificationSoundType;
-      config.notificationSoundUrl  = th.notificationSoundUrl  || config.notificationSoundUrl;
+      // Resolve relative sound URLs so they work on external sites
+      const rawSoundUrl = th.notificationSoundUrl || null;
+      config.notificationSoundUrl = rawSoundUrl && !/^(https?:\/\/|\/\/|data:)/.test(rawSoundUrl)
+        ? config.baseUrl + (rawSoundUrl.startsWith('/') ? rawSoundUrl : '/' + rawSoundUrl)
+        : rawSoundUrl;
       config.voiceGender          = th.voiceGender          || config.voiceGender;
       config.voiceGreeting        = th.voiceGreeting        ?? config.voiceGreeting;
       config.voiceGreetingVolume  = th.voiceGreetingVolume  ?? config.voiceGreetingVolume;
       config.voiceGreetingRate    = th.voiceGreetingRate    ?? config.voiceGreetingRate;
 
-      // Resolve greeting text for TTS
+      // Resolve greeting text for TTS — also BEFORE mode check
       try {
         const greetingArr = db.greeting;
         if (Array.isArray(greetingArr) && greetingArr.length > 0) {
@@ -414,6 +403,33 @@
 
       if (userConfig.autoOpen === undefined) {
         config.autoOpen = th.popup_onload ?? db.popup_onload ?? false;
+      }
+
+      // Embed mode — if DB says a different mode, teardown current UI and rebuild with correct config
+      const newMode = (th.embedMode || config.embedMode || 'FLOATING_BUTTON').toUpperCase().replace(/-/g, '_');
+      if (newMode !== config.embedMode) {
+        config.embedMode = newMode;
+        teardown();
+        switch (newMode) {
+          case 'INLINE':        await buildInline();       break;
+          case 'STICKY_BAR':   await buildStickyBar();    break;
+          case 'SLIDE_DRAWER': await buildSlideDrawer();  break;
+          case 'TEASER_BUBBLE':await buildTeaserBubble(); break;
+          default:             await buildFloating();      break;
+        }
+        // Auto-open + pending greeting also needed after rebuild
+        if (config.autoOpen) {
+          const delay = config.delay || 1000;
+          if (newMode === 'SLIDE_DRAWER') setTimeout(openDrawer, delay);
+          else if (newMode === 'STICKY_BAR') setTimeout(openStickyChat, delay);
+          else if (newMode !== 'INLINE') setTimeout(openChat, delay);
+        }
+        if (config.voiceGreeting && config._greetingText && config._greetingPending && !config._greetingSpoken) {
+          config._greetingSpoken  = true;
+          config._greetingPending = false;
+          setTimeout(() => speakGreeting(config._greetingText, config.voiceGreetingVolume, config.voiceGreetingRate), 600);
+        }
+        return; // DOM patch below not needed — rebuild already applied full theme
       }
 
       // Silently re-apply button position/size/color if they changed from defaults
@@ -457,6 +473,50 @@
         if (labelSpan && labelSpan.nodeName === 'SPAN') labelSpan.textContent = config.drawerTabText;
       }
 
+      // Patch teaser bubble — rebuild with correct DB config if it hasn't appeared yet
+      // (teaserEl is null before the teaserDelay fires, so we patch config in place;
+      //  if it somehow already rendered with defaults, remove and re-schedule it)
+      if (config.embedMode === 'TEASER_BUBBLE') {
+        if (teaserEl) {
+          // Already rendered with stale defaults — remove and show fresh version
+          teaserEl.remove();
+          teaserEl = null;
+          if (!_isTeaserDismissed() && config.teaserEnabled) {
+            const isMob   = window.innerWidth < 768;
+            const btnSize = isMob ? config.widgetSizeMobile : config.widgetSize;
+            const margin  = config.widgetMargin ?? 20;
+            const pos     = config.position || 'bottom-right';
+            const onLeft  = pos.includes('left');
+            teaserEl = document.createElement('div');
+            Object.assign(teaserEl.style, {
+              position: 'fixed', zIndex: '999998', maxWidth: '240px',
+              backgroundColor: config.teaserBgColor,
+              color:           config.teaserTextColor,
+              padding: '12px 16px',
+              borderRadius: onLeft ? '12px 12px 12px 0' : '12px 12px 0 12px',
+              boxShadow: '0 6px 24px rgba(0,0,0,0.15)',
+              fontSize: '13px', fontWeight: '500', lineHeight: '1.5',
+              cursor: 'pointer', fontFamily: 'inherit',
+              animation: '__cb_fadeInUp 0.4s ease forwards',
+              bottom: (margin + btnSize + 14) + 'px',
+              [onLeft ? 'left' : 'right']: margin + 'px',
+            });
+            teaserEl.innerHTML = `
+              <p style="margin:0 0 10px;">${config.teaserMessage}</p>
+              <div style="display:flex;gap:8px;">
+                <button id="__cb_teaser_yes__" style="flex:1;padding:5px 12px;border-radius:20px;background:rgba(255,255,255,0.2);color:inherit;font-size:12px;font-weight:600;border:1px solid rgba(255,255,255,0.3);cursor:pointer;font-family:inherit;">${config.teaserCtaYes}</button>
+                <button id="__cb_teaser_no__"  style="padding:5px 12px;border-radius:20px;background:transparent;color:inherit;font-size:12px;border:1px solid rgba(255,255,255,0.2);cursor:pointer;font-family:inherit;">${config.teaserCtaNo}</button>
+              </div>`;
+            teaserEl.querySelector('#__cb_teaser_yes__').onclick = (e) => { e.stopPropagation(); dismissTeaser(false); openChat(); };
+            teaserEl.querySelector('#__cb_teaser_no__').onclick  = (e) => { e.stopPropagation(); dismissTeaser(true); };
+            teaserEl.onclick = () => { dismissTeaser(false); openChat(); };
+            document.body.appendChild(teaserEl);
+          }
+        }
+        // If teaserEl is null, the setTimeout hasn't fired yet — config is already patched above
+        // so when it fires it will use the correct values. Nothing extra needed.
+      }
+
       // Patch sticky bar elements — fixes text/color/position not updating on external sites
       if (stickyBarEl) {
         const newBarPos = config.stickyBarPosition || 'bottom';
@@ -481,15 +541,25 @@
         if (spans[1]) {
           spans[1].textContent = config.stickyBarCtaText;
           spans[1].style.color = config.stickyBarTextColor;
+          // Re-apply pill border so it matches new text color
+          spans[1].style.border = '1px solid rgba(255,255,255,0.25)';
         }
       }
 
-      // Auto-open after theme loaded (popup_onload)
+      // Auto-open after theme loaded (popup_onload) — use correct open function per mode
       if (config.autoOpen && iframe && iframe.style.display === 'none') {
-        setTimeout(openChat, config.delay || 1000);
+        const delay = config.delay || 1000;
+        if (config.embedMode === 'SLIDE_DRAWER') {
+          setTimeout(openDrawer, delay);
+        } else if (config.embedMode === 'STICKY_BAR') {
+          setTimeout(openStickyChat, delay);
+        } else {
+          setTimeout(openChat, delay);
+        }
       }
 
       // Fire pending voice greeting — if chat was opened before config loaded, speak now
+      // _greetingPending is set by openChat / openStickyChat / openDrawer when greeting text wasn't ready yet
       if (config.voiceGreeting && config._greetingText && config._greetingPending && !config._greetingSpoken) {
         config._greetingSpoken  = true;
         config._greetingPending = false;
@@ -804,7 +874,7 @@
     if (config.voiceGreeting && config._greetingText && !config._greetingSpoken) {
       config._greetingSpoken = true;
       setTimeout(() => speakGreeting(config._greetingText, config.voiceGreetingVolume, config.voiceGreetingRate), 600);
-    } else if (!config._greetingSpoken && !config._greetingText) {
+    } else if (config.voiceGreeting && !config._greetingSpoken && !config._greetingText) {
       // Config hasn't loaded yet — mark as pending so greeting fires once config arrives
       config._greetingPending = true;
     }
@@ -848,15 +918,37 @@
 
   // ─── 2. TEASER BUBBLE ──────────────────────────────────────────────────────
 
+  // ─── Teaser dismiss storage helpers ─────────────────────────────────────────
+  // Key is per-chatbot so multiple widgets on the same site don't interfere.
+  function _teaserDismissKey() {
+    return '__cb_teaser_dismissed_' + (config.chatbotId || 'default') + '__';
+  }
+  function _isTeaserDismissed() {
+    try {
+      const val = localStorage.getItem(_teaserDismissKey());
+      if (!val) return false;
+      // val = timestamp (ms) when dismissed — hide for 30 minutes
+      return (Date.now() - parseInt(val, 10)) < 30 * 60 * 1000;
+    } catch (_) { return false; }
+  }
+  function _markTeaserDismissed() {
+    try { localStorage.setItem(_teaserDismissKey(), String(Date.now())); } catch (_) {}
+  }
+
   async function buildTeaserBubble() {
     await buildFloating(); // reuse floating infrastructure
 
     if (!config.teaserEnabled) return;
 
+    // Don't show teaser if user dismissed it within the last 30 minutes
+    if (_isTeaserDismissed()) return;
+
     setTimeout(() => {
       if (!button || !document.body.contains(button)) return;
       // Don't show teaser if chat is already open
       if (iframe && iframe.style.display !== 'none') return;
+      // Re-check after delay (user may have dismissed a prior teaser on same page visit)
+      if (_isTeaserDismissed()) return;
 
       teaserEl = document.createElement('div');
       const isMob   = window.innerWidth < 768;
@@ -891,15 +983,18 @@
           <button id="__cb_teaser_no__"  style="padding:5px 12px;border-radius:20px;background:transparent;color:inherit;font-size:12px;border:1px solid rgba(255,255,255,0.2);cursor:pointer;font-family:inherit;">${config.teaserCtaNo}</button>
         </div>`;
 
-      teaserEl.querySelector('#__cb_teaser_yes__').onclick = (e) => { e.stopPropagation(); dismissTeaser(); openChat(); };
-      teaserEl.querySelector('#__cb_teaser_no__').onclick  = (e) => { e.stopPropagation(); dismissTeaser(); };
-      teaserEl.onclick = () => { dismissTeaser(); openChat(); };
+      teaserEl.querySelector('#__cb_teaser_yes__').onclick = (e) => { e.stopPropagation(); dismissTeaser(false); openChat(); };
+      teaserEl.querySelector('#__cb_teaser_no__').onclick  = (e) => { e.stopPropagation(); dismissTeaser(true); };
+      teaserEl.onclick = () => { dismissTeaser(false); openChat(); };
 
       document.body.appendChild(teaserEl);
     }, (config.teaserDelay ?? 3) * 1000);
   }
 
-  function dismissTeaser() {
+  // dismissed=true  → user clicked "Not now" — save timestamp, hide for 30 min
+  // dismissed=false → user clicked "Yes" or the bubble itself — no penalty
+  function dismissTeaser(dismissed) {
+    if (dismissed) _markTeaserDismissed();
     if (!teaserEl) return;
     teaserEl.style.animation = 'none';
     teaserEl.style.opacity   = '0';
@@ -1014,7 +1109,8 @@
     if (config.voiceGreeting && config._greetingText && !config._greetingSpoken) {
       config._greetingSpoken = true;
       setTimeout(() => speakGreeting(config._greetingText, config.voiceGreetingVolume, config.voiceGreetingRate), 600);
-    } else if (!config._greetingSpoken && !config._greetingText) {
+    } else if (config.voiceGreeting && !config._greetingSpoken && !config._greetingText) {
+      // Config not loaded yet — mark pending so greeting fires once config arrives
       config._greetingPending = true;
     }
   }
@@ -1126,7 +1222,8 @@
     if (config.voiceGreeting && config._greetingText && !config._greetingSpoken) {
       config._greetingSpoken = true;
       setTimeout(() => speakGreeting(config._greetingText, config.voiceGreetingVolume, config.voiceGreetingRate), 600);
-    } else if (!config._greetingSpoken && !config._greetingText) {
+    } else if (config.voiceGreeting && !config._greetingSpoken && !config._greetingText) {
+      // Config not loaded yet — mark pending so greeting fires once config arrives
       config._greetingPending = true;
     }
   }
