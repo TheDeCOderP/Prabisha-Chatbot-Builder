@@ -153,7 +153,8 @@
 | Method | Route | Action |
 |---|---|---|
 | GET | `/api/dashboard` | Analytics data |
-| GET | `/api/embed` | Embedded widget configuration |
+| GET | `/api/embed` | **Deprecated** — 308-redirects to `/embed.js` (canonical loader) |
+| GET | `/embed.js` | Canonical embed loader (multi-mode, fetches live DB config) |
 | POST | `/api/ai/tts` | Text-to-speech synthesis |
 
 ---

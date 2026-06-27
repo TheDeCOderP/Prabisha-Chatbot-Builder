@@ -259,7 +259,9 @@ export function useChatbot({
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [hasLoadedInitialMessages, setHasLoadedInitialMessages] = useState<boolean>(false);
   const [quickQuestions, setQuickQuestions] = useState<MultilingualSuggestion[]>([]);
-  const [mode, setMode] = useState<'streaming' | 'standard'>('standard');
+  // Default to real-time streaming so replies type out token-by-token via /api/chat/stream
+  // instead of arriving all at once. (Previously 'standard' which left streaming dead code.)
+  const [mode, setMode] = useState<'streaming' | 'standard'>('streaming');
   const [pendingMessage, setPendingMessage] = useState<string | null>(null);
 
   const languageRef = useRef(language);
@@ -359,8 +361,11 @@ export function useChatbot({
     setIsLoadingChatbot(true);
     setChatbotError(null);
     try {
+      // Relative URL — the widget is always same-origin with this API. Using an absolute
+      // NEXT_PUBLIC_APP_URL would break refetch if that env was built with a localhost/wrong
+      // value (see EMBED_VOICE_AUDIT CP-2).
       const response = await fetchWithRetry(
-        `${process.env.NEXT_PUBLIC_APP_URL || ''}/api/chatbots/${chatbotId}`,
+        `/api/chatbots/${chatbotId}`,
         { cache: 'no-store' },
         retryConfig
       );
@@ -409,12 +414,15 @@ export function useChatbot({
       fetchChatbotData();
     } else if (initialChatbotData) {
       setChatbot(initialChatbotData);
-      if (initialChatbotData.suggestions) {
-        const normalized = (initialChatbotData.suggestions as any[]).map((s: any) =>
-          typeof s === 'string' ? { en: s } : s
-        );
-        setQuickQuestions(normalized);
+      // suggestions can arrive as an array OR a JSON string — handle both, same as fetchChatbotData.
+      const raw = initialChatbotData.suggestions as unknown;
+      let arr: any[] = [];
+      if (typeof raw === 'string') {
+        try { const p = JSON.parse(raw); arr = Array.isArray(p) ? p : []; } catch { arr = []; }
+      } else if (Array.isArray(raw)) {
+        arr = raw;
       }
+      setQuickQuestions(arr.map((s: any) => (typeof s === 'string' ? { en: s } : s)));
       setIsLoadingChatbot(false);
     }
   }, [chatbotId, initialChatbotData, fetchChatbotData]);

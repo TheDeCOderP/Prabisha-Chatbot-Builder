@@ -196,6 +196,41 @@
     } catch (_) {}
   }
 
+  // Browsers block speechSynthesis until the user has interacted with the page at
+  // least once. On auto-open (popup_onload) the greeting therefore stays silent.
+  // Arm a one-time gesture listener so the greeting fires on the very first user
+  // interaction if it hasn't already been spoken. Safe no-op once spoken.
+  let _greetingArmed = false;
+  function armVoiceGreeting() {
+    if (_greetingArmed) return;
+    _greetingArmed = true;
+    const fire = () => {
+      cleanup();
+      if (!config.voiceGreeting || config._greetingSpoken || !config._greetingText) return;
+      config._greetingSpoken = true;
+      speakGreeting(config._greetingText, config.voiceGreetingVolume, config.voiceGreetingRate);
+    };
+    const cleanup = () => {
+      ['pointerdown', 'keydown', 'touchstart'].forEach(ev =>
+        window.removeEventListener(ev, fire, true)
+      );
+    };
+    ['pointerdown', 'keydown', 'touchstart'].forEach(ev =>
+      window.addEventListener(ev, fire, { capture: true, once: false })
+    );
+  }
+
+  // Auto-open guard — multiple code paths (build*, rebuild, post-API patch) could each
+  // schedule an open. Run it at most once, picking the correct opener for the mode.
+  function autoOpenOnce() {
+    if (config._autoOpened) return;
+    config._autoOpened = true;
+    const delay = config.delay || 1000;
+    if (config.embedMode === 'SLIDE_DRAWER')      setTimeout(openDrawer, delay);
+    else if (config.embedMode === 'STICKY_BAR')   setTimeout(openStickyChat, delay);
+    else if (config.embedMode !== 'INLINE')       setTimeout(openChat, delay);
+  }
+
   // ─── Defaults ──────────────────────────────────────────────────────────────
 
   const defaults = {
@@ -256,6 +291,8 @@
     _greetingSpoken: false,
     // Set to true if chat was opened before config loaded — greeting fires once config arrives
     _greetingPending: false,
+    // Guards auto-open so multiple code paths can't double-open the widget
+    _autoOpened: false,
   };
 
   let config = { ...defaults };
@@ -401,6 +438,10 @@
         }
       } catch (_) {}
 
+      // Arm the gesture-based greeting fallback now that voiceGreeting + greeting text
+      // are known — guarantees the greeting plays on first interaction even on auto-open.
+      if (config.voiceGreeting && config._greetingText) armVoiceGreeting();
+
       if (userConfig.autoOpen === undefined) {
         config.autoOpen = th.popup_onload ?? db.popup_onload ?? false;
       }
@@ -418,12 +459,7 @@
           default:             await buildFloating();      break;
         }
         // Auto-open + pending greeting also needed after rebuild
-        if (config.autoOpen) {
-          const delay = config.delay || 1000;
-          if (newMode === 'SLIDE_DRAWER') setTimeout(openDrawer, delay);
-          else if (newMode === 'STICKY_BAR') setTimeout(openStickyChat, delay);
-          else if (newMode !== 'INLINE') setTimeout(openChat, delay);
-        }
+        if (config.autoOpen) autoOpenOnce();
         if (config.voiceGreeting && config._greetingText && config._greetingPending && !config._greetingSpoken) {
           config._greetingSpoken  = true;
           config._greetingPending = false;
@@ -548,14 +584,7 @@
 
       // Auto-open after theme loaded (popup_onload) — use correct open function per mode
       if (config.autoOpen && iframe && iframe.style.display === 'none') {
-        const delay = config.delay || 1000;
-        if (config.embedMode === 'SLIDE_DRAWER') {
-          setTimeout(openDrawer, delay);
-        } else if (config.embedMode === 'STICKY_BAR') {
-          setTimeout(openStickyChat, delay);
-        } else {
-          setTimeout(openChat, delay);
-        }
+        autoOpenOnce();
       }
 
       // Fire pending voice greeting — if chat was opened before config loaded, speak now
@@ -665,7 +694,9 @@
 
   async function createIframe(extraStyle = {}) {
     iframe = document.createElement('iframe');
-    iframe.setAttribute('allow', 'microphone *; camera *; speaker-selection *');
+    // Delegate only what the widget actually uses: microphone (voice command),
+    // autoplay (notification sound / TTS greeting) and speaker-selection.
+    iframe.setAttribute('allow', 'microphone *; autoplay *; speaker-selection *');
     iframe.title = 'Chatbot';
 
     const qp = new URLSearchParams();
@@ -777,7 +808,7 @@
     // Launcher button
     if (config.showButton) buildLauncherBtn(btnSize);
 
-    if (config.autoOpen) setTimeout(openChat, config.delay);
+    if (config.autoOpen) autoOpenOnce();
 
     // Debounce resize: mobile Safari fires on every scroll pixel as browser
     // chrome shows/hides — without this it runs 30-60×/s during normal scroll.
@@ -1098,7 +1129,7 @@
     document.body.appendChild(iframe);
     document.body.appendChild(stickyBarEl);
 
-    if (config.autoOpen) setTimeout(openStickyChat, config.delay);
+    if (config.autoOpen) autoOpenOnce();
   }
 
   function openStickyChat() {
@@ -1210,7 +1241,7 @@
     drawerTab.addEventListener('click', toggleDrawer);
     document.body.appendChild(drawerTab);
 
-    if (config.autoOpen) setTimeout(openDrawer, config.delay);
+    if (config.autoOpen) autoOpenOnce();
   }
 
   function openDrawer() {

@@ -1084,12 +1084,15 @@ function ChatBot({
     return null;
   });
 
+  // NOTE: `parentPolicyInfo.permission` reflects the PARENT page's origin, not this
+  // cross-origin iframe — so a parent 'denied' must NOT hard-disable the mic here.
+  // We only hard-block on an explicit Permissions-Policy block (`parent_policy_blocked`)
+  // or once our own getUserMedia/recognition attempt fails (policyBlocked). Otherwise we
+  // let the user try and surface the real reason via the hook.
   const micAllowed =
     browserSupportsSpeechRecognition &&
     !policyBlocked &&
-    (isDashboardPreview
-      ? true
-      : (!parentPolicyInfo?.blocked && parentPolicyInfo?.permission !== 'denied'));
+    (isDashboardPreview ? true : !parentPolicyInfo?.blocked);
 
   
 
@@ -1295,6 +1298,14 @@ function ChatBot({
             isMicrophoneOn={isMicrophoneOn}
             isAutoSendPending={isAutoSendPending}
             browserSupportsSpeechRecognition={micAllowed}
+            voiceBlockedMessage={
+              !micAllowed && browserSupportsSpeechRecognition
+                ? (policyMessage ||
+                    (parentPolicyInfo?.permission === 'denied' || parentPolicyInfo?.blocked
+                      ? 'Microphone is blocked for this site. Allow it in your browser settings to use voice.'
+                      : null))
+                : null
+            }
             onSubmit={handleSubmit}
             onNewChat={handleNewChat}
             status={status}
@@ -1497,6 +1508,191 @@ interface ChatMessagesProps {
   selectedLang: LanguageCode;
 }
 
+// ── Hoisted message-list subcomponents ──────────────────────────────────────
+// Defined at module scope (NOT inside ChatMessages' render) so React keeps the same
+// component identity across renders — prevents full remount of every bubble on each
+// render, which was causing flicker, lost local state (e.g. "copied"), and image reloads.
+
+function ChatbotAvatar({ src, name, shapeClass, small = false }: {
+  src: string; name?: string; shapeClass: string; small?: boolean;
+}) {
+  const size = small ? 24 : 36;
+  return (
+    <div className="shrink-0 flex flex-col items-center" style={{ width: size }}>
+      <Image
+        src={src}
+        height={size} width={size}
+        alt={name || 'Assistant'}
+        className={`${small ? 'p-0' : 'p-0.5'} rounded-full bg-primary/10 object-cover ${shapeClass}`}
+      />
+    </div>
+  );
+}
+
+function LoadingDots({ label, small = false, avatarSrc, avatarName, avatarShape }: {
+  label: string; small?: boolean; avatarSrc: string; avatarName?: string; avatarShape: string;
+}) {
+  return (
+    <div className="flex items-center gap-3 animate-in fade-in">
+      <ChatbotAvatar small={small} src={avatarSrc} name={avatarName} shapeClass={avatarShape} />
+      <div className="bg-card border rounded-2xl rounded-tl-none p-4">
+        <div className="flex items-center gap-2 text-muted-foreground">
+          {small ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin text-primary" />
+              <p className="text-sm font-medium">{label}</p>
+            </>
+          ) : (
+            <div className="flex space-x-1.5">
+              {[0, 150, 300].map(delay => (
+                <div
+                  key={delay}
+                  className="w-2.5 h-2.5 rounded-full bg-primary animate-bounce"
+                  style={{ animationDelay: `${delay}ms`, animationDuration: '1s' }}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MessageBubble({
+  message, isUser, isLastBot, lastBotMessageRef,
+  userBg, userText, botBg, botText, formatTime, showTTS,
+  isSpeaking, onSpeak, avatarSrc, avatarName, avatarShape,
+}: {
+  message: Message; isUser: boolean; isLastBot: boolean;
+  lastBotMessageRef: React.RefObject<HTMLDivElement | null>;
+  userBg: string; userText: string; botBg: string; botText: string;
+  formatTime: (date?: Date) => string; showTTS: boolean;
+  isSpeaking: boolean; onSpeak: () => void;
+  avatarSrc: string; avatarName?: string; avatarShape: string;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    const plain = message.content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    navigator.clipboard.writeText(plain).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    }).catch(() => {});
+  };
+
+  return (
+    <div
+      ref={isLastBot ? lastBotMessageRef : undefined}
+      className={`flex gap-3 ${isUser ? 'flex-row-reverse' : ''}`}
+    >
+      {!isUser && <ChatbotAvatar src={avatarSrc} name={avatarName} shapeClass={avatarShape} />}
+      <div className={`relative group min-w-0 ${isUser ? 'ml-auto max-w-[85%]' : 'max-w-[85%]'}`}>
+        <div
+          className={[
+            'rounded-2xl px-5 py-3.5 text-[14.5px] leading-relaxed',
+            'transition-all duration-200 hover:shadow-[0_8px_24px_rgba(0,0,0,0.08)]',
+            isUser
+              ? 'rounded-tr-md shadow-[0_4px_16px_rgba(0,0,0,0.15)]'
+              : 'border border-black/5 rounded-tl-md shadow-[0_4px_16px_rgba(0,0,0,0.05)]',
+          ].join(' ')}
+          style={{
+            backgroundColor: isUser ? userBg : botBg,
+            color: isUser ? userText : botText,
+          }}
+        >
+          <div
+            className="prose prose-sm max-w-none text-[13px] overflow-hidden min-w-0 [&_*]:max-w-full [&_pre]:whitespace-pre-wrap [&_pre]:break-words [&_a]:break-words [&_img]:h-auto [&_img]:block [&_table]:block [&_table]:overflow-x-auto [&_div]:box-border"
+            style={{ color: isUser ? userText : botText }}
+            dangerouslySetInnerHTML={{ __html: sanitizeHtml(message.content) }}
+          />
+          <div className="flex items-center justify-between mt-2 gap-4">
+            {message.createdAt && (
+              <div className="text-[10px] opacity-70">{formatTime(message.createdAt)}</div>
+            )}
+            {!isUser && (
+              <div className="flex items-center gap-0.5">
+                {/* Copy button */}
+                <button
+                  onClick={handleCopy}
+                  className={[
+                    'p-1.5 rounded-full transition-all duration-200 cursor-pointer',
+                    copied
+                      ? 'text-emerald-500'
+                      : 'hover:bg-primary/10 text-muted-foreground opacity-0 group-hover:opacity-100',
+                  ].join(' ')}
+                  title={copied ? 'Copied!' : 'Copy message'}
+                >
+                  {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                </button>
+                {/* TTS button */}
+                {showTTS && (
+                  <button
+                    onClick={onSpeak}
+                    className={[
+                      'p-1.5 rounded-full transition-all duration-200 cursor-pointer',
+                      isSpeaking
+                        ? 'bg-primary/20 text-primary scale-110'
+                        : 'hover:bg-primary/10 text-muted-foreground opacity-0 group-hover:opacity-100',
+                    ].join(' ')}
+                    title={isSpeaking ? 'Stop reading' : 'Read aloud'}
+                  >
+                    {isSpeaking ? <VolumeX className="h-3.5 w-3.5" /> : <Volume2 className="h-3.5 w-3.5" />}
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LeadCard({
+  leadCollectionStatus, hasSubmittedLead, botBg, botText, accentColor,
+  message, onLeadAction, onSkipLead, avatarSrc, avatarName, avatarShape,
+}: {
+  leadCollectionStatus: 'idle' | 'collecting' | 'submitting' | 'done' | 'error';
+  hasSubmittedLead: boolean; botBg: string; botText: string; accentColor: string;
+  message: string; onLeadAction?: () => void; onSkipLead?: () => void;
+  avatarSrc: string; avatarName?: string; avatarShape: string;
+}) {
+  if (leadCollectionStatus === 'done' || hasSubmittedLead) return null;
+  const isCollecting = leadCollectionStatus === 'collecting' || leadCollectionStatus === 'submitting';
+  if (isCollecting) return null; // conversational lead hook handles the chat messages
+
+  return (
+    <div className="flex gap-3 animate-in fade-in">
+      <ChatbotAvatar src={avatarSrc} name={avatarName} shapeClass={avatarShape} />
+      <div className="max-w-[85%]">
+        <div
+          className="rounded-2xl rounded-tl-none px-4 py-3 border border-black/5 shadow-[0_4px_16px_rgba(0,0,0,0.05)] text-[13.5px] leading-relaxed"
+          style={{ backgroundColor: botBg, color: botText }}
+        >
+          <p className="mb-3">{message}</p>
+          <div className="flex gap-2">
+            <button
+              onClick={onLeadAction}
+              className="flex-1 py-1.5 px-3 rounded-lg text-xs font-medium transition-opacity hover:opacity-90 cursor-pointer"
+              style={{ backgroundColor: accentColor, color: '#fff' }}
+            >
+              Sure, go ahead
+            </button>
+            <button
+              onClick={() => onSkipLead?.()}
+              className="py-1.5 px-3 rounded-lg text-xs font-medium border transition-colors hover:bg-muted cursor-pointer"
+              style={{ borderColor: botText + '30', color: botText }}
+            >
+              Skip
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ChatMessages({
   messages, loading, status, quickQuestions, onQuickQuestion,
   chatContainerRef, messagesEndRef, lastBotMessageRef, formatTime, chatbot,
@@ -1504,6 +1700,8 @@ function ChatMessages({
 }: ChatMessagesProps) {
   const { speak, stop, isPlaying } = useTextToSpeech();
   const [activeSpeakingId, setActiveSpeakingId] = useState<string | null>(null);
+  // Note: the "speaking" icon derives from `activeSpeakingId === id && isPlaying`, so it
+  // resets automatically when playback ends — no effect needed to clear activeSpeakingId.
 
   const th = chatbot.theme || {};
   const botBg    = th.botMessageBgColor    || '#FFFFFF';
@@ -1541,173 +1739,8 @@ function ChatMessages({
     }
   };
 
-  // Avatar uses chatbot.avatar or chatbot.icon; size from theme
-  const ChatbotAvatar = ({ small = false }: { small?: boolean }) => {
-    const size = small ? 24 : 36;
-    return (
-      <div className="shrink-0 flex flex-col items-center" style={{ width: size }}>
-        <Image
-          src={chatIconSrc}
-          height={size} width={size}
-          alt={chatbot.name || 'Assistant'}
-          className={`${small ? 'p-0' : 'p-0.5'} rounded-full bg-primary/10 object-cover ${iconShapeClass}`}
-        />
-      </div>
-    );
-  };
-
-  const MessageBubble = ({
-    message,
-    isUser,
-    index,
-    isLastBot,
-  }: {
-    message: Message;
-    isUser: boolean;
-    index: number;
-    isLastBot: boolean;
-  }) => {
-    const id = `msg-${index}`;
-    const isSpeaking = activeSpeakingId === id && isPlaying;
-    const [copied, setCopied] = useState(false);
-
-    const handleCopy = () => {
-      const plain = message.content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-      navigator.clipboard.writeText(plain).then(() => {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1500);
-      }).catch(() => {});
-    };
-
-    return (
-      <div
-        ref={isLastBot ? lastBotMessageRef : undefined}
-        className={`flex gap-3 ${isUser ? 'flex-row-reverse' : ''}`}
-      >
-        {!isUser && <ChatbotAvatar />}
-        <div className={`relative group min-w-0 ${isUser ? 'ml-auto max-w-[85%]' : 'max-w-[85%]'}`}>
-          <div
-            className={[
-              'rounded-2xl px-5 py-3.5 text-[14.5px] leading-relaxed',
-              'transition-all duration-200 hover:shadow-[0_8px_24px_rgba(0,0,0,0.08)]',
-              isUser
-                ? 'rounded-tr-md shadow-[0_4px_16px_rgba(0,0,0,0.15)]'
-                : 'border border-black/5 rounded-tl-md shadow-[0_4px_16px_rgba(0,0,0,0.05)]',
-            ].join(' ')}
-            style={{
-              backgroundColor: isUser ? userBg : botBg,
-              color: isUser ? userText : botText,
-            }}
-          >
-            <div
-              className="prose prose-sm max-w-none text-[13px] overflow-hidden min-w-0 [&_*]:max-w-full [&_pre]:whitespace-pre-wrap [&_pre]:break-words [&_a]:break-words [&_img]:h-auto [&_img]:block [&_table]:block [&_table]:overflow-x-auto [&_div]:box-border"
-              style={{ color: isUser ? userText : botText }}
-              dangerouslySetInnerHTML={{ __html: sanitizeHtml(message.content) }}
-            />
-            <div className="flex items-center justify-between mt-2 gap-4">
-              {message.createdAt && (
-                <div className="text-[10px] opacity-70">{formatTime(message.createdAt)}</div>
-              )}
-              {!isUser && (
-                <div className="flex items-center gap-0.5">
-                  {/* Copy button */}
-                  <button
-                    onClick={handleCopy}
-                    className={[
-                      'p-1.5 rounded-full transition-all duration-200 cursor-pointer',
-                      copied
-                        ? 'text-emerald-500'
-                        : 'hover:bg-primary/10 text-muted-foreground opacity-0 group-hover:opacity-100',
-                    ].join(' ')}
-                    title={copied ? 'Copied!' : 'Copy message'}
-                  >
-                    {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                  </button>
-                  {/* TTS button */}
-                  {showTTS && (
-                    <button
-                      onClick={() => handleSpeak(id, message.content)}
-                      className={[
-                        'p-1.5 rounded-full transition-all duration-200 cursor-pointer',
-                        isSpeaking
-                          ? 'bg-primary/20 text-primary scale-110'
-                          : 'hover:bg-primary/10 text-muted-foreground opacity-0 group-hover:opacity-100',
-                      ].join(' ')}
-                      title={isSpeaking ? 'Stop reading' : 'Read aloud'}
-                    >
-                      {isSpeaking ? <VolumeX className="h-3.5 w-3.5" /> : <Volume2 className="h-3.5 w-3.5" />}
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const LoadingDots = ({ text: label, small }: { text: string; small?: boolean }) => (
-    <div className="flex items-center gap-3 animate-in fade-in">
-      <ChatbotAvatar small={small} />
-      <div className="bg-card border rounded-2xl rounded-tl-none p-4">
-        <div className="flex items-center gap-2 text-muted-foreground">
-          {small ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin text-primary" />
-              <p className="text-sm font-medium">{label}</p>
-            </>
-          ) : (
-            <div className="flex space-x-1.5">
-              {[0, 150, 300].map(delay => (
-                <div
-                  key={delay}
-                  className="w-2.5 h-2.5 rounded-full bg-primary animate-bounce"
-                  style={{ animationDelay: `${delay}ms`, animationDuration: '1s' }}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-
-  const LeadCard = () => {
-    if (leadCollectionStatus === 'done' || hasSubmittedLead) return null;
-    const isCollecting = leadCollectionStatus === 'collecting' || leadCollectionStatus === 'submitting';
-    if (isCollecting) return null; // conversational lead hook handles the chat messages
-
-    return (
-      <div className="flex gap-3 animate-in fade-in">
-        <ChatbotAvatar />
-        <div className="max-w-[85%]">
-          <div
-            className="rounded-2xl rounded-tl-none px-4 py-3 border border-black/5 shadow-[0_4px_16px_rgba(0,0,0,0.05)] text-[13.5px] leading-relaxed"
-            style={{ backgroundColor: botBg, color: botText }}
-          >
-            <p className="mb-3">{chatbot.theme?.leadCardMessage || "Before we continue, mind sharing a few quick details? Totally optional."}</p>
-            <div className="flex gap-2">
-              <button
-                onClick={onLeadAction}
-                className="flex-1 py-1.5 px-3 rounded-lg text-xs font-medium transition-opacity hover:opacity-90 cursor-pointer"
-                style={{ backgroundColor: accentColor, color: '#fff' }}
-              >
-                Sure, go ahead
-              </button>
-              <button
-                onClick={() => onSkipLead?.()}
-                className="py-1.5 px-3 rounded-lg text-xs font-medium border transition-colors hover:bg-muted cursor-pointer"
-                style={{ borderColor: botText + '30', color: botText }}
-              >
-                Skip
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  };
+  // Shared avatar props for the hoisted subcomponents below
+  const avatarProps = { avatarSrc: chatIconSrc, avatarName: chatbot.name as string | undefined, avatarShape: iconShapeClass };
 
   return (
     <div
@@ -1719,25 +1752,40 @@ function ChatMessages({
         {messages.map((message, index) => {
           // Empty bot placeholder — show typing indicator inline instead of empty bubble
           if (message.senderType === 'BOT' && !message.content && index === messages.length - 1) {
-            return <LoadingDots key={index} text={t('thinking')} />;
+            return <LoadingDots key={index} label={t('thinking')} {...avatarProps} />;
           }
+          const id = `msg-${index}`;
           return (
             <MessageBubble
               key={index}
-              index={index}
               message={message}
               isUser={message.senderType === 'USER'}
               isLastBot={index === lastBotIndex}
+              lastBotMessageRef={lastBotMessageRef}
+              userBg={userBg} userText={userText} botBg={botBg} botText={botText}
+              formatTime={formatTime} showTTS={showTTS}
+              isSpeaking={activeSpeakingId === id && isPlaying}
+              onSpeak={() => handleSpeak(id, message.content)}
+              {...avatarProps}
             />
           );
         })}
 
         {onLeadAction && hasMultipleMessages && !hasSubmittedLead && !loading && (
-          <LeadCard />
+          <LeadCard
+            leadCollectionStatus={leadCollectionStatus}
+            hasSubmittedLead={hasSubmittedLead}
+            botBg={botBg} botText={botText} accentColor={accentColor}
+            message={chatbot.theme?.leadCardMessage || "Before we continue, mind sharing a few quick details? Totally optional."}
+            onLeadAction={onLeadAction} onSkipLead={onSkipLead}
+            {...avatarProps}
+          />
         )}
 
-        {loading && status === 'submitted' && messages[messages.length - 1]?.content !== '' && <LoadingDots text={t('thinking')} />}
-        {loading && status === 'streaming'  && <LoadingDots text={t('searching')} small />}
+        {/* "Thinking" indicator while waiting for the first token. Once streaming starts the
+            inline empty-bot placeholder (in the map above) and then the streaming text itself
+            are the indicators, so no separate streaming loader is needed here. */}
+        {loading && status === 'submitted' && messages[messages.length - 1]?.content !== '' && <LoadingDots label={t('thinking')} {...avatarProps} />}
 
         {/* Quick suggestions — shown only before any user message */}
         {!hasUserMessages && (
@@ -1782,6 +1830,7 @@ interface ChatInputProps {
   isMicrophoneOn: boolean;
   isAutoSendPending?: boolean;
   browserSupportsSpeechRecognition: boolean;
+  voiceBlockedMessage?: string | null;
   onSubmit: (e?: React.FormEvent) => Promise<void>;
   onNewChat: () => void;
   status: 'submitted' | 'streaming' | 'ready' | 'error';
@@ -1801,6 +1850,7 @@ interface ChatInputProps {
 
 function ChatInput({
   text, setText, loading, isMicrophoneOn, isAutoSendPending = false, browserSupportsSpeechRecognition,
+  voiceBlockedMessage = null,
   onSubmit, onNewChat, status, inputRef, onToggleMicrophone,
   hasLeadForm, onLeadAction, isLoadingLeadConfig,
   isAwaitingLeadAnswer, isConversationalMode, chatbot,
@@ -1927,6 +1977,19 @@ function ChatInput({
                     className={`cursor-pointer transition-all ${isMicrophoneOn ? 'bg-red-100 text-red-600 ring-2 ring-red-400 ring-offset-1 animate-pulse rounded-md' : ''}`}
                   >
                     {isMicrophoneOn ? <MicOffIcon className="h-4 w-4" /> : <MicIcon className="h-4 w-4" />}
+                  </PromptInputButton>
+                )}
+
+                {/* Mic blocked (denied / insecure context) — show a disabled icon with reason
+                    instead of silently hiding voice so the user knows why it's unavailable. */}
+                {showMic && !browserSupportsSpeechRecognition && voiceBlockedMessage && (
+                  <PromptInputButton
+                    type="button" size="sm" variant="ghost" disabled
+                    title={voiceBlockedMessage}
+                    aria-label={voiceBlockedMessage}
+                    className="opacity-50 cursor-not-allowed text-muted-foreground"
+                  >
+                    <MicOffIcon className="h-4 w-4" />
                   </PromptInputButton>
                 )}
 
