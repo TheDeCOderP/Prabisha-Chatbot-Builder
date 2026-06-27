@@ -261,6 +261,48 @@ Status legend: `[ ]` pending · `[~]` in progress · `[x]` done · `[!]` needs Y
 
 ---
 
+## 🔥 LIVE CONSOLE ERRORS (round 4 — real browser, propertyguideonline)
+
+### CP-22 — **Mic blocked: parent site Permissions-Policy me origin unquoted** (asli voice root cause)
+- **Severity:** Critical (voice command totally dead on that site)
+- **Finding:** Console: `Permissions policy violation: microphone is not allowed in this document` +
+  `NotAllowedError`. embed.js ka `allow="microphone"` sahi tha — par **parent site**
+  (`clients/propertyguideonline-new/next.config.js`) ka header galat tha:
+  ```
+  microphone=(self https://chatbots.prabisha.com)   ❌  (URL unquoted)
+  ```
+  Permissions-Policy structured syntax me origin **double-quoted** hona chahiye. Unquoted hone se browser
+  us allowlist item ko **reject** kar deta → chatbot iframe (cross-origin) ko mic nahi milta.
+- **Fix:** `microphone=(self "https://chatbots.prabisha.com")` ✅ (quotes add). `self` keyword hai, unquoted
+  rehta hai.
+- **Status:** `[x]` DONE — property site config fixed. **Property site redeploy hone par voice chalega.**
+- **NOTE:** Yeh fix **har customer site pe** chahiye jiska Permissions-Policy header strict hai. Agar site
+  koi Permissions-Policy header **bhejti hi nahi**, to default delegation se mic apne aap kaam karta hai.
+
+### CP-23 — `speaker-selection` unrecognized feature warning
+- **Severity:** Low
+- **Finding:** Console: `Unrecognized feature: 'speaker-selection'`. iframe `allow` me ye token unsupported tha.
+- **Fix:** `allow='microphone *; autoplay *'` (speaker-selection hata diya).
+- **Status:** `[x]` DONE.
+
+### CP-24 — AudioContext autoplay warning (auto-open notification sound)
+- **Severity:** Low
+- **Finding:** Console: `The AudioContext was not allowed to start...`. Auto-open (popup_onload) pe
+  `playNotificationSound` bina user-gesture ke AudioContext banata tha → blocked + warning.
+- **Fix:** `navigator.userActivation.hasBeenActive` false ho to sound skip (pre-gesture allowed nahi hota).
+- **Status:** `[x]` DONE.
+
+### CP-25 — Host-site errors (hamari widget ke nahi)
+- **Finding:** `placeholder-property.jpg` 400, React **#418 hydration**, `ERR_NAME_NOT_RESOLVED` — ye sab
+  **property site ke apne** Next.js bundle/images/network ke errors hain (hamari widget gate ke peeche
+  LoadingSpinner se hydrate hoti hai, mismatch-safe). Hamari widget ke `loadConversationMessages` aur
+  `i18next` logs normal hain.
+- **Action:** Property site team dekhe — `placeholder-property.jpg` missing/remotePatterns, aur #418
+  hydration unke kisi component me (`window`/`Date`/`Math.random` render me).
+- **Status:** `[ ]` (property site scope, hamari embed/voice ka nahi)
+
+---
+
 ## Fix order (execution plan)
 1. CP-1 — `/api/embed` delete + docs (safe, removes confusion)
 2. CP-4a + CP-5 + CP-6 — `useSpeechToText` error surfacing + widget mic hint (core voice permission fix)

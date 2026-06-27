@@ -60,6 +60,12 @@
   function playNotificationSound(volume) {
     if (!volume || volume <= 0) return;
 
+    // Browsers block Audio / AudioContext until the user has interacted with the page.
+    // On auto-open (popup_onload) there is no gesture yet, so playing here would be denied
+    // and log a console warning. Skip silently — the sound just isn't allowed pre-gesture.
+    if (typeof navigator !== 'undefined' && navigator.userActivation &&
+        !navigator.userActivation.hasBeenActive) return;
+
     // Custom audio file URL — user-provided MP3/WAV
     if (config.notificationSoundUrl) {
       try {
@@ -694,9 +700,10 @@
 
   async function createIframe(extraStyle = {}) {
     iframe = document.createElement('iframe');
-    // Delegate only what the widget actually uses: microphone (voice command),
-    // autoplay (notification sound / TTS greeting) and speaker-selection.
-    iframe.setAttribute('allow', 'microphone *; autoplay *; speaker-selection *');
+    // Delegate only what the widget actually uses: microphone (voice command) and autoplay
+    // (notification sound / TTS greeting). 'speaker-selection' was removed — it's not a
+    // recognised Permissions-Policy feature and just logged a console warning.
+    iframe.setAttribute('allow', 'microphone *; autoplay *');
     iframe.title = 'Chatbot';
 
     const qp = new URLSearchParams();
