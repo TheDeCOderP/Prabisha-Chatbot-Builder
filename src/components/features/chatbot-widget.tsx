@@ -1122,9 +1122,21 @@ function ChatBot({
       }
     };
 
+    // embed.js posts live viewport state on rotate/resize. The is_mobile query param is only
+    // read once at load, so this keeps the layout (full-bleed + header close button) correct.
+    const onViewportMsg = (e: MessageEvent) => {
+      if (e.data?.type === 'chatbot-viewport' && typeof e.data.isMobile === 'boolean') {
+        setIsMobile(e.data.isMobile);
+      }
+    };
+
     checkMobile();
     window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
+    window.addEventListener('message', onViewportMsg);
+    return () => {
+      window.removeEventListener('resize', checkMobile);
+      window.removeEventListener('message', onViewportMsg);
+    };
   }, []);
 
   useEffect(() => {

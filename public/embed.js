@@ -700,7 +700,7 @@
     iframe.title = 'Chatbot';
 
     const qp = new URLSearchParams();
-    qp.set('is_mobile', String(window.innerWidth < 768));
+    qp.set('is_mobile', String(isMobileViewport()));
     try {
       if (navigator.permissions) {
         const s = await navigator.permissions.query({ name: 'microphone' });
@@ -728,6 +728,31 @@
     return '50%';
   }
 
+  // ─── Viewport helpers ──────────────────────────────────────────────────────
+  // Single source of truth for "is this a small screen". Fullscreen the chat window for
+  // phones (narrow) AND short landscape screens — otherwise a 600px window overflows a
+  // short landscape phone and the header gets clipped. `isMobileViewport` also drives the
+  // widget's internal mobile layout (full-bleed + header close button).
+  function isFullscreenViewport() {
+    return window.innerWidth <= 480 || (window.innerWidth < 900 && window.innerHeight <= 450);
+  }
+  function isMobileViewport() {
+    return isFullscreenViewport() || window.innerWidth < 768;
+  }
+  // Keep the embedded widget's mobile state in sync on rotate/resize — the is_mobile query
+  // param is only read at load, so without this a desktop→narrow resize (or rotation) could
+  // leave the widget in the wrong layout and even hide its close button.
+  function notifyViewport() {
+    if (iframe && iframe.contentWindow) {
+      try {
+        iframe.contentWindow.postMessage(
+          { type: 'chatbot-viewport', chatbotId: config.chatbotId, isMobile: isMobileViewport() },
+          '*'
+        );
+      } catch (_) {}
+    }
+  }
+
   // ─── Position helpers ──────────────────────────────────────────────────────
 
   function applyBtnPosition(el) {
@@ -751,7 +776,7 @@
   }
 
   function applyWinPosition(el, btnSize) {
-    const isMob  = window.innerWidth <= 480;
+    const isMob  = isFullscreenViewport();
     const margin = config.widgetMargin ?? 20;
     el.style.bottom = el.style.top = el.style.left = el.style.right = 'auto';
 
@@ -886,7 +911,7 @@
     const r = iframe.getBoundingClientRect();
     closeBtn.style.top  = (r.top  - 16) + 'px';
     closeBtn.style.left = (r.right - 16) + 'px';
-    closeBtn.style.display = (window.innerWidth <= 480 || iframe.style.display === 'none') ? 'none' : 'flex';
+    closeBtn.style.display = (isFullscreenViewport() || iframe.style.display === 'none') ? 'none' : 'flex';
   }
 
   function toggleChat() {
@@ -900,7 +925,7 @@
     iframe.style.display = 'block';
     iframe.style.animation = '__cb_fadeInUp 0.35s cubic-bezier(0.34,1.2,0.64,1) forwards';
     if (closeBtn) { closeBtn.style.display = 'flex'; requestAnimationFrame(positionCloseBtn); }
-    if (button && window.innerWidth <= 480) button.style.display = 'none';
+    if (button && isFullscreenViewport()) button.style.display = 'none';
     // Voice greeting — only once per session
     if (config.voiceGreeting && config._greetingText && !config._greetingSpoken) {
       config._greetingSpoken = true;
@@ -927,9 +952,9 @@
 
   function onResize() {
     if (!iframe) return;
-    const isMob = window.innerWidth <= 480;
+    const isMob = isFullscreenViewport();
     if (isMob) {
-      Object.assign(iframe.style, { bottom:'0',right:'0',left:'0',top:'0', width:'100%',maxWidth:'100%', height:'100%',maxHeight:'100vh', borderRadius:'0' });
+      Object.assign(iframe.style, { bottom:'0',right:'0',left:'0',top:'0', width:'100%',maxWidth:'100%', height:'100%',maxHeight:'100dvh', borderRadius:'0' });
     } else {
       const btnSize = window.innerWidth < 768 ? config.widgetSizeMobile : config.widgetSize;
       iframe.style.width        = (config.windowWidth || 420)  + 'px';
@@ -945,6 +970,8 @@
       button.style.height = s + 'px';
     }
     positionCloseBtn();
+    // Tell the embedded widget whether to use its mobile layout now
+    notifyViewport();
   }
 
   // ─── 2. TEASER BUBBLE ──────────────────────────────────────────────────────

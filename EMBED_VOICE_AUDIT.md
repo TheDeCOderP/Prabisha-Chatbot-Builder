@@ -228,6 +228,39 @@ Status legend: `[ ]` pending · `[~]` in progress · `[x]` done · `[!]` needs Y
 
 ---
 
+## 📱 MOBILE / RESPONSIVE REVIEW (round 3)
+
+### CP-21 — Mobile breakpoint inconsistency + rotation/landscape bugs
+- **Severity:** High (mobile correctness)
+- **Findings (3 real issues):**
+  1. **Do alag breakpoints:** `is_mobile` param `< 768` pe set hota tha par iframe fullscreen sirf `<= 480`
+     pe. Beech ke / rotation cases me layout aur window-size mismatch.
+  2. **`is_mobile` sirf load pe set:** iframe ka `is_mobile` query param sirf ek baar (load) set hota hai;
+     rotate/resize pe widget ka `checkMobile` stale param hi padhta tha → galat layout, aur **desktop→narrow
+     resize pe close button hi gayab** ho sakta tha.
+  3. **Landscape clip:** fullscreen check sirf width dekhta tha → landscape phone (chhoti height) pe 600px
+     floating window ka header top se cut hota tha.
+- **Fix:** embed.js me single source-of-truth `isFullscreenViewport()` (width ≤480 **ya** short-landscape)
+  aur `isMobileViewport()`. Saare fullscreen/close/launcher decisions ab inhi se. Plus `notifyViewport()`
+  jo rotate/resize pe iframe ko live `chatbot-viewport` postMessage bhejta hai; widget us message pe
+  `isMobile` update karta hai. Fullscreen height ab `100dvh` (iOS keyboard-safe).
+- **Status:** `[x]` DONE — typecheck + embed.js syntax clean.
+
+### Mobile behaviour matrix (ab)
+| Viewport | Window | Internal layout | Close button |
+|---|---|---|---|
+| Phone portrait (≤480w) | **Fullscreen** (100% / 100dvh, radius 0) | Mobile (full-bleed) | Header ✕ |
+| Landscape phone (short height) | **Fullscreen** (ab clip nahi) | Mobile | Header ✕ |
+| Large phone / small tablet (481–767w) | Floating 420px (cap 100%-40) | Mobile | Header ✕ |
+| Tablet/Desktop (≥768w) | Floating `windowWidth × windowHeight`, maxH 85vh | Desktop | External ✕ |
+| Rotate / resize | **Live re-sync** via postMessage | Updates | Always present |
+- Widget iframe ke andar hamesha `w-full h-full` rehta hai → **on-screen size poori tarah iframe size se
+  control hoti hai** (single source of truth, no double-sizing).
+- Sticky-bar / slide-drawer / inline modes apni `min()`-based sizing use karte hain (screen se chhote
+  rehte hain) — overflow safe.
+
+---
+
 ## Fix order (execution plan)
 1. CP-1 — `/api/embed` delete + docs (safe, removes confusion)
 2. CP-4a + CP-5 + CP-6 — `useSpeechToText` error surfacing + widget mic hint (core voice permission fix)
