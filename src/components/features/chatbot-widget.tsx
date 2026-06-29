@@ -1061,7 +1061,7 @@ function ChatBot({
   const {
     transcript, startListening, stopListening,
     resetTranscript, browserSupportsSpeechRecognition,
-    policyBlocked, policyMessage,
+    policyBlocked, policyMessage, isTranscribing,
   } = useSpeechToText({ continuous: true, lang: SPEECH_LANG_MAP[selectedLang] || 'en-US' });
   const [isMicrophoneOn, setIsMicrophoneOn] = useState(false);
   const [isAutoSendPending, setIsAutoSendPending] = useState(false);
@@ -1183,6 +1183,12 @@ function ChatBot({
       }
     }
   }, [isMicrophoneOn, startListening, stopListening, resetTranscript]);
+
+  // If recording gets blocked (permission denied / insecure context), turn the mic
+  // toggle off so the "Listening…" indicator clears and the blocked-reason UI shows.
+  useEffect(() => {
+    if (policyBlocked) setIsMicrophoneOn(false);
+  }, [policyBlocked]);
 
   const handleClose = () => {
     if (isEmbedded) { onClose(); return; }
@@ -1309,6 +1315,7 @@ function ChatBot({
             loading={loading}
             isMicrophoneOn={isMicrophoneOn}
             isAutoSendPending={isAutoSendPending}
+            isTranscribing={isTranscribing}
             browserSupportsSpeechRecognition={micAllowed}
             voiceBlockedMessage={
               !micAllowed && browserSupportsSpeechRecognition
@@ -1841,6 +1848,7 @@ interface ChatInputProps {
   loading: boolean;
   isMicrophoneOn: boolean;
   isAutoSendPending?: boolean;
+  isTranscribing?: boolean;
   browserSupportsSpeechRecognition: boolean;
   voiceBlockedMessage?: string | null;
   onSubmit: (e?: React.FormEvent) => Promise<void>;
@@ -1861,7 +1869,7 @@ interface ChatInputProps {
 }
 
 function ChatInput({
-  text, setText, loading, isMicrophoneOn, isAutoSendPending = false, browserSupportsSpeechRecognition,
+  text, setText, loading, isMicrophoneOn, isAutoSendPending = false, isTranscribing = false, browserSupportsSpeechRecognition,
   voiceBlockedMessage = null,
   onSubmit, onNewChat, status, inputRef, onToggleMicrophone,
   hasLeadForm, onLeadAction, isLoadingLeadConfig,
@@ -1913,38 +1921,38 @@ function ChatInput({
         </div>
       )}
 
-      {/* Listening / auto-send indicator */}
-      {isMicrophoneOn && (
-        <div className={`flex items-center gap-3 px-3 py-2 mb-2 mx-1 border rounded-xl transition-colors duration-300 ${
-          isAutoSendPending
-            ? 'bg-orange-50 border-orange-200'
-            : 'bg-red-50 border-red-100'
-        }`}>
-          {/* Animated sound-wave bars */}
-          <div className="flex items-end gap-[3px] h-5 flex-shrink-0">
-            {([12, 18, 22, 18, 12] as number[]).map((h, i) => (
-              <span
-                key={i}
-                className="w-[3px] rounded-full animate-bounce"
-                style={{
-                  height: h,
-                  backgroundColor: isAutoSendPending ? '#f97316' : '#ef4444',
-                  animationDelay: `${i * 80}ms`,
-                  animationDuration: isAutoSendPending ? '0.4s' : '0.65s',
-                }}
-              />
-            ))}
+      {/* Voice state indicator: transcribing → sending → listening */}
+      {(isMicrophoneOn || isTranscribing) && (() => {
+        const voiceState = isTranscribing ? 'transcribing' : isAutoSendPending ? 'sending' : 'listening';
+        const styles = {
+          transcribing: { wrap: 'bg-blue-50 border-blue-200', text: 'text-blue-600', bar: '#3b82f6', dot: 'bg-blue-500 animate-pulse', label: 'Transcribing…', dur: '0.5s' },
+          sending:      { wrap: 'bg-orange-50 border-orange-200', text: 'text-orange-600', bar: '#f97316', dot: 'bg-orange-500 animate-ping', label: 'Sending… tap mic to cancel', dur: '0.4s' },
+          listening:    { wrap: 'bg-red-50 border-red-100', text: 'text-red-600', bar: '#ef4444', dot: 'bg-red-500 animate-pulse', label: 'Listening… speak now', dur: '0.65s' },
+        }[voiceState];
+        return (
+          <div className={`flex items-center gap-3 px-3 py-2 mb-2 mx-1 border rounded-xl transition-colors duration-300 ${styles.wrap}`}>
+            {/* Animated sound-wave bars */}
+            <div className="flex items-end gap-[3px] h-5 flex-shrink-0">
+              {([12, 18, 22, 18, 12] as number[]).map((h, i) => (
+                <span
+                  key={i}
+                  className="w-[3px] rounded-full animate-bounce"
+                  style={{
+                    height: h,
+                    backgroundColor: styles.bar,
+                    animationDelay: `${i * 80}ms`,
+                    animationDuration: styles.dur,
+                  }}
+                />
+              ))}
+            </div>
+            <span className={`text-xs font-medium flex-1 leading-tight ${styles.text}`}>
+              {styles.label}
+            </span>
+            <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${styles.dot}`} />
           </div>
-          <span className={`text-xs font-medium flex-1 leading-tight ${
-            isAutoSendPending ? 'text-orange-600' : 'text-red-600'
-          }`}>
-            {isAutoSendPending ? 'Sending… tap mic to cancel' : 'Listening… speak now'}
-          </span>
-          <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${
-            isAutoSendPending ? 'bg-orange-500 animate-ping' : 'bg-red-500 animate-pulse'
-          }`} />
-        </div>
-      )}
+        );
+      })()}
 
       <PromptInput
         onSubmit={async (e: React.FormEvent) => {
@@ -1960,7 +1968,7 @@ function ChatInput({
               value={text}
               onChange={e => { if (e.target.value.length <= 2000) setText(e.target.value); }}
               placeholder={isAwaitingLeadAnswer ? t('typeAnswer') : t('typeMessage')}
-              disabled={loading || isMicrophoneOn}
+              disabled={loading || isMicrophoneOn || isTranscribing}
               className="min-h-10 max-h-32 w-full text-[14px] bg-white/60 backdrop-blur-sm rounded-lg px-3 py-2 resize-none focus-visible:ring-0 focus-visible:ring-offset-0"
               rows={1}
             />

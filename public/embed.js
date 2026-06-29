@@ -153,8 +153,20 @@
     return true;
   }
 
+  // Persist "greeting already spoken" across same-tab page navigations so multi-page
+  // sites don't replay the voice greeting on every page load. Scoped per chatbot + tab.
+  function greetingSpokenKey() {
+    return '__cb_greeting_spoken_' + (config.chatbotId || 'default') + '__';
+  }
+  function persistGreetingSpoken() {
+    try { sessionStorage.setItem(greetingSpokenKey(), '1'); } catch (_) {}
+  }
+
   function speakGreeting(text, volume, rate) {
     if (!text || !window.speechSynthesis) return;
+    // speakGreeting is the single funnel for the voice greeting — persist here so the
+    // in-memory `config._greetingSpoken` guard survives a page navigation/reload.
+    persistGreetingSpoken();
     try {
       const browserLang = (navigator.language || 'en').split('-')[0];
       const targetLang  = VOICE_LANG_MAP[browserLang] || 'en-US';
@@ -328,6 +340,12 @@
 
     config = { ...defaults, ...userConfig };
     if (!config.chatbotId) { console.error('Chatbot ID is required'); return; }
+
+    // Restore "greeting already spoken" from this tab session so a multi-page site
+    // doesn't replay the voice greeting on every page load (see persistGreetingSpoken).
+    try {
+      if (sessionStorage.getItem(greetingSpokenKey()) === '1') config._greetingSpoken = true;
+    } catch (_) {}
 
     // ── Step 1: Render immediately with defaults so button appears instantly ──
     // No layout shift or late-pop — position is set on first paint.

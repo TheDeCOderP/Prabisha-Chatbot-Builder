@@ -66,6 +66,9 @@ export const chatLimiter = createRateLimiter({ windowMs: 60_000, max: 30 });
 /** Knowledge upload endpoint: 10 uploads per minute per user */
 export const knowledgeLimiter = createRateLimiter({ windowMs: 60_000, max: 10 });
 
+/** Speech-to-text endpoint: 20 transcriptions per minute per IP */
+export const sttLimiter = createRateLimiter({ windowMs: 60_000, max: 20 });
+
 /** Invitation creation: 20 invites per hour per user */
 export const inviteLimiter = createRateLimiter({ windowMs: 60 * 60_000, max: 20 });
 

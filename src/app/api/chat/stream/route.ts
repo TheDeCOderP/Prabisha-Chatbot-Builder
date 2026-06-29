@@ -86,7 +86,6 @@ export async function POST(req: Request) {
     );
 
     const encoder = new TextEncoder();
-    let fullBotResponse = '';
 
     const byteStream = new ReadableStream<Uint8Array>({
       async start(controller) {
@@ -95,26 +94,13 @@ export async function POST(req: Request) {
           while (true) {
             const { done, value } = await reader.read();
             if (done) break;
-            fullBotResponse += value;
             controller.enqueue(encoder.encode(value));
           }
         } finally {
+          // NOTE: the bot message is persisted inside streamRAGResponse (it stores the
+          // cleaned HTML with sources). Saving the raw stream here too would write a
+          // second, duplicate bot message every turn and corrupt conversation history.
           controller.close();
-
-          // Save the complete bot response to DB after streaming finishes
-          if (fullBotResponse.trim()) {
-            prisma.message
-              .create({
-                data: {
-                  content: fullBotResponse,
-                  senderType: 'BOT',
-                  conversationId: conversationIdFinal,
-                },
-              })
-              .catch((err: Error) =>
-                console.error('[stream] Failed to save bot message:', err)
-              );
-          }
         }
       },
     });

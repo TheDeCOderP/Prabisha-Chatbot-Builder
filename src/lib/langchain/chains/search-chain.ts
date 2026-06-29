@@ -110,21 +110,25 @@ const LANGUAGE_NAMES: Record<string, string> = {
   de: 'German (Deutsch)',
 };
 
+// Conservative, order-preserving normalization: lowercase, strip punctuation, collapse
+// whitespace. We intentionally do NOT reorder or drop words — alphabetizing the words
+// made different questions ("return policy" vs "policy return", "is X better than Y"
+// vs "is Y better than X") collide to the same cache key and serve the WRONG stored
+// answer. Cache correctness matters more than hit rate.
 function normalizeQuestion(q: string): string {
   return q
     .toLowerCase()
     .trim()
-    .replace(/[^\w\s]/g, '')                                        // strip punctuation
-    .replace(/\s+/g, ' ')
-    .split(' ')                                                     // 1. Break into array of words
-    .filter(word => !/\b(what|is|the|a|an|how|does|do|can|i|my|me)\b/.test(word)) // 2. Filter stopwords
-    .sort()                                                         // 3. Alphabetize the words
-    .join(' ')                                                      // 4. Re-join into a string
+    .replace(/[^\w\s]/g, '')   // strip punctuation
+    .replace(/\s+/g, ' ')      // collapse whitespace
     .trim();
 }
 
-function hashQuestion(normalized: string): string {
-  return createHash('sha256').update(normalized).digest('hex');
+// Fold the language into the hash so the same question in different languages produces
+// different cache keys. The unique constraint is only [chatbotId, questionHash], so
+// without this an English answer and a Hindi answer would overwrite each other.
+function hashQuestion(normalized: string, language: string): string {
+  return createHash('sha256').update(`${language}::${normalized}`).digest('hex');
 }
 
 function languageDirective(language: string): string {
@@ -200,6 +204,11 @@ function detectRealtimeIntent(message: string): RealtimeIntent {
   }
   return { isRealtime: false, type: null };
 }
+
+// Minimum top retrieval score for the context to be considered "strong" enough to
+// surface Sources to the user. Below this we still pass the context to the model
+// (it self-limits via the prompt) but don't advertise sources.
+const STRONG_CONTEXT_THRESHOLD = 0.35;
 
 // ─── Prompts ──────────────────────────────────────────────────────────────────
 const QUERY_REWRITE_PROMPT = `
@@ -341,8 +350,9 @@ export async function searchKnowledgeBases(
 ): Promise<{
   context: string;
   sources: Array<{ title: string; url: string; score: number }>;
+  bestScore: number;
 }> {
-  if (!chatbot.knowledgeBases?.length) return { context: '', sources: [] };
+  if (!chatbot.knowledgeBases?.length) return { context: '', sources: [], bestScore: 0 };
 
   const tTotal = timer(`searchKnowledgeBases (${queries.length} queries × ${chatbot.knowledgeBases.length} KBs)`);
 
@@ -396,10 +406,11 @@ export async function searchKnowledgeBases(
   if (!allResults.length) {
     tTotal.end();
     console.log('❌ No results found');
-    return { context: '', sources: [] };
+    return { context: '', sources: [], bestScore: 0 };
   }
 
   allResults.sort((a, b) => (b.score || 0) - (a.score || 0));
+  const bestScore = allResults[0]?.score ?? 0;
   const top = selectDiverseResults(allResults, 15);
 
   console.log(`✅ Selected ${top.length} diverse results for context`);
@@ -422,7 +433,7 @@ export async function searchKnowledgeBases(
     .slice(0, 5);
 
   tTotal.end();
-  return { context, sources };
+  return { context, sources, bestScore };
 }
 
 function selectDiverseResults(results: any[], limit: number): any[] {
@@ -454,6 +465,27 @@ export function formatHistory(messages: any[]): string {
   return recent.map(m =>
     `${m.senderType === 'USER' ? 'User' : 'Assistant'}: ${m.senderType === 'BOT' ? stripHtml(m.content) : m.content}`
   ).join('\n');
+}
+
+// Short follow-ups ("why?", "tell me more", "pricing") lose meaning on their own.
+// Attach the previous assistant turn so the model answers in context instead of
+// generically. Shared by both the streaming and non-streaming paths.
+const SHORT_FOLLOWUP_RE = /^(why|how|pricing|cost|tell me more|more|what about that|and that|so)\b/i;
+export function enrichFollowUp(userMessage: string, history: any[]): string {
+  const trimmed = userMessage.trim();
+  if (history.length > 0 && (trimmed.length <= 18 || SHORT_FOLLOWUP_RE.test(trimmed))) {
+    const lastAssistant = [...history].reverse().find(m => m.senderType === 'BOT');
+    if (lastAssistant) {
+      return `
+User follow-up question:
+"${userMessage}"
+
+This refers to the previous assistant response:
+${lastAssistant.content}
+`;
+    }
+  }
+  return userMessage;
 }
 
 export async function getLogicContext(chatbot: any, message: string, preloadedLogic?: any): Promise<string> {
@@ -822,6 +854,43 @@ function detectIntent(message: string): IntentType {
   return 'GENERAL';
 }
 
+// ─── Greeting fast-path ─────────────────────────────────────────────────────────
+/**
+ * Short, persona-aware reply to a bare greeting ("hi"/"hello"). Uses a tiny LLM call
+ * so the tone matches the bot's persona and the language is correct — instead of a
+ * single hardcoded English line that felt robotic and repeated on every greeting.
+ */
+export async function generateGreetingResponse(chatbot: any, language: string): Promise<string> {
+  const systemPrompt = generateSystemPrompt(chatbot);
+  const langDirective = languageDirective(language);
+  const nameHint = chatbot?.name ? ` Your name is ${chatbot.name}.` : '';
+
+  try {
+    const response = await ai.models.generateContent({
+      model: chatbot?.model || 'gemini-2.5-flash',
+      contents: [{
+        role: 'user',
+        parts: [{
+          text: `${langDirective}${systemPrompt}
+
+The user just greeted you (e.g. "hi" / "hello").${nameHint} Reply with ONE short, warm, natural greeting (max ~12 words) that invites them to ask their question. Vary the wording so it never sounds scripted — do NOT default to "How can I help you today". Wrap it in a single <p> tag. Output only the HTML.`,
+        }],
+      }],
+      config: { maxOutputTokens: 60, temperature: 0.85 },
+    });
+    const text = response.text?.trim();
+    if (text && /<p[\s>]/i.test(text)) return text;
+    if (text) return `<p>${text.replace(/<\/?[^>]+>/g, '')}</p>`;
+  } catch {
+    /* fall through to static fallback */
+  }
+
+  // Static fallback — still persona-light, not the old fixed line
+  return chatbot?.name
+    ? `<p>Hey! I'm ${chatbot.name} 👋 What can I do for you?</p>`
+    : `<p>Hey there 👋 What can I do for you?</p>`;
+}
+
 // ─── generateRAGResponse ──────────────────────────────────────────────────────
 export async function generateRAGResponse(
   chatbot: any,
@@ -856,50 +925,15 @@ export async function generateRAGResponse(
 
   const formattedHistory = formatHistory(history);
 
-  let enrichedUserMessage = userMessage;
-  const shortFollowUpPatterns = /^(why|how|pricing|cost|tell me more|more|what about that|and that|so)\b/i;
-
-  if (
-    history.length > 0 &&
-    (userMessage.trim().length <= 18 || shortFollowUpPatterns.test(userMessage.trim()))
-  ) {
-    const lastAssistant = [...history].reverse().find(m => m.senderType === 'BOT');
-    if (lastAssistant) {
-      enrichedUserMessage = `
-User follow-up question:
-"${userMessage}"
-
-This refers to the previous assistant response:
-${lastAssistant.content}
-`;
-    }
-  }
+  const enrichedUserMessage = enrichFollowUp(userMessage, history);
 
   const intent = detectIntent(userMessage);
 
   // ── GREETING FAST PATH ────────────────────────────────────────────────────
   if (intent === 'GREETING') {
-    // For greetings we still want the correct language, so run a tiny LLM call
-    // only if the language isn't English — otherwise use the static response.
-    let greetingText: string;
-
-    if (language === 'en') {
-      greetingText = `<p>Hi there 👋 How can I help you today?</p>`;
-    } else {
-      const tGreeting = timer('greeting fast-path LLM (non-English)');
-      try {
-        const response = await ai.models.generateContent({
-          model: chatbot.model || 'gemini-2.5-flash',
-          contents: [{ role: 'user', parts: [{ text: `${langDirective}Reply to a friendly greeting in one short sentence wrapped in a <p> tag. Output only the HTML.` }] }],
-          config: { maxOutputTokens: 60, temperature: 0.5 },
-        });
-        tGreeting.end();
-        greetingText = response.text?.trim() || `<p>👋</p>`;
-      } catch {
-        tGreeting.end();
-        greetingText = `<p>👋</p>`;
-      }
-    }
+    const tGreeting = timer('greeting fast-path (persona LLM)');
+    const greetingText = await generateGreetingResponse(chatbot, language);
+    tGreeting.end();
 
     const htmlResponse = `<div style="line-height:1.6;color:#1f2937;">${greetingText}</div>`;
     tTotal.end();
@@ -915,41 +949,21 @@ ${lastAssistant.content}
     };
   }
 
-  // STEP 2: Vector search
-  const tStep2 = timer(`Step 2: vector search (smart, ${chatbot.knowledgeBases?.length ?? 0} KBs)`);
-  const tPhase2a = timer('  Phase 2a: original query search');
-  const originalQuery = queries[0];
-  const searchresults = (await Promise.all(
-    chatbot.knowledgeBases.map((kb: any) =>
-      searchSimilar({
-        query: originalQuery,
-        chatbotId: chatbot.id,
-        knowledgeBaseId: kb.id,
-        limit: 6,
-        threshold: 0.3
-      }).catch(err => {
-        console.error(`KB ${kb.name} search failed:`, err);
-        return [];
-      })
-    )
-  )).flat();
-  tPhase2a.end();
-
-  const bestScore = searchresults.reduce((max, r) => Math.max(max, r.score ?? 0), 0);
-  console.log(`   └─ ${searchresults.length} results, best score: ${bestScore.toFixed(3)}`);
+  // STEP 2: Vector search — same multi-query retrieval as the streaming path so both
+  // paths produce identical context/quality.
+  const tStep2 = timer(`Step 2: vector search (${chatbot.knowledgeBases?.length ?? 0} KBs × ${queries.length} queries)`);
+  const { context: knowledgeContext, sources, bestScore } = await searchKnowledgeBases(chatbot, queries);
   tStep2.end();
 
-  const tProcess = timer('Step 2b: processSearchResults');
-  const { context: knowledgeContext, sources } = processSearchResults(searchresults.flat(), chatbot);
-  tProcess.end();
+  console.log(`   └─ knowledgeContext length: ${knowledgeContext.length} chars, sources: ${sources.length}, best score: ${bestScore.toFixed(3)}`);
 
-  console.log(`   └─ knowledgeContext length: ${knowledgeContext.length} chars, sources: ${sources.length}`);
+  const strongContext = bestScore >= STRONG_CONTEXT_THRESHOLD && knowledgeContext.length > 0;
 
-  const strongContext = bestScore >= 0.35 && knowledgeContext.length > 0;
-
-  // STEP 3: LLM generation — language directive injected into both prompt branches
+  // STEP 3: LLM generation — language directive injected into both prompt branches.
+  // Use RAG whenever we have ANY context (model self-limits via the prompt) — matches
+  // the streaming path. strongContext is only used to decide whether to show Sources.
   const systemPrompt = generateSystemPrompt(chatbot);
-  const prompt = strongContext
+  const prompt = knowledgeContext
     ? RAG_ANSWER_PROMPT
         .replace('{languageDirective}', langDirective)
         .replace('{systemPrompt}', systemPrompt)
@@ -1003,76 +1017,6 @@ ${lastAssistant.content}
   };
 }
 
-function extractSourceUrl(r: any): { url: string; title: string } | null {
-  const m = r.metadata || {};
-  const url =
-    m.source ||
-    m.url ||
-    m.link ||
-    m.pageUrl ||
-    r.source ||
-    null;
-
-  if (!url || !(url.startsWith('http://') || url.startsWith('https://'))) return null;
-
-  const title =
-    m.title ||
-    m.name ||
-    m.filename ||
-    m.page_title ||
-    (() => {
-      try {
-        const u = new URL(url);
-        const path = u.pathname.replace(/\/$/, '').split('/').filter(Boolean).pop() || '';
-        const readable = path.replace(/[-_]/g, ' ').replace(/\.[^.]+$/, '');
-        return readable
-          ? `${readable.charAt(0).toUpperCase()}${readable.slice(1)}`
-          : u.hostname;
-      } catch {
-        return url;
-      }
-    })();
-
-  return { url, title };
-}
-
-function processSearchResults(allResults: any[], chatbot: any) {
-  const seen = new Set();
-  const uniqueResults = allResults
-    .filter(r => {
-      const isDuplicate = seen.has(r.content.substring(0, 100));
-      seen.add(r.content.substring(0, 100));
-      return !isDuplicate;
-    })
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 8);
-
-  const context = uniqueResults.map((r, i) => {
-    const src = extractSourceUrl(r);
-    // Only label chunks that have a real URL — the model uses these for citations
-    // KB name labels (e.g. "Files - 3/26/2026") get echoed verbatim, so skip them
-    if (src?.url && src?.title) {
-      return `[Source: ${src.title} (${src.url})]\n${r.content}`;
-    }
-    return r.content;
-  }).join('\n\n');
-
-  const sourceMap = new Map<string, { title: string; url: string }>();
-  for (const r of uniqueResults) {
-    const src = extractSourceUrl(r);
-    if (src && !sourceMap.has(src.url)) {
-      sourceMap.set(src.url, src);
-    }
-  }
-  const sources = Array.from(sourceMap.values()).slice(0, 5);
-
-  if (uniqueResults.length > 0) {
-    console.log('🔍 Sample result metadata:', JSON.stringify(uniqueResults[0]?.metadata, null, 2));
-    console.log(`🔗 Sources found: ${sources.length}`, sources.map(s => s.url));
-  }
-
-  return { context, sources };
-}
 
 // ─── executeSearchChain ───────────────────────────────────────────────────────
 export async function executeSearchChain(config: SearchChainConfig): Promise<SearchChainResult> {
@@ -1088,9 +1032,13 @@ export async function executeSearchChain(config: SearchChainConfig): Promise<Sea
   } = config;
 
   const realtimeIntent = detectRealtimeIntent(userMessage);
+  // Greetings are generated fresh each time (persona + variety) — never cache them,
+  // otherwise every "hi" returns the identical stored reply.
+  const isGreeting = detectIntent(userMessage) === 'GREETING';
+  const cacheable = !realtimeIntent.isRealtime && !isGreeting;
 
-   // 2. Only check cache for non-realtime questions
-  if (!realtimeIntent.isRealtime) {
+   // 2. Only check cache for non-realtime, non-greeting questions
+  if (cacheable) {
     const cached = await getCachedResponse(chatbotId, userMessage, language);
     if (cached) {
       console.log('⚡ Cache hit — skipping LLM');
@@ -1160,7 +1108,7 @@ export async function executeSearchChain(config: SearchChainConfig): Promise<Sea
       language  // ← forwarded
     );
 
-    if (!realtimeIntent.isRealtime) {
+    if (cacheable) {
       await setCachedResponse(chatbotId, userMessage, htmlResponse, language);
       console.log('💾 Response cached for future identical questions');
     }
@@ -1269,22 +1217,7 @@ export async function streamRAGResponse(
 
   // ── GREETING FAST PATH ────────────────────────────────────────────────────
   if (intent === 'GREETING') {
-    let greetingText: string;
-
-    if (language === 'en') {
-      greetingText = `<p>Hi there 👋 How can I help you today?</p>`;
-    } else {
-      try {
-        const response = await ai.models.generateContent({
-          model: chatbot.model || 'gemini-2.5-flash',
-          contents: [{ role: 'user', parts: [{ text: `${langDirective}Reply to a friendly greeting in one short sentence wrapped in a <p> tag. Output only the HTML.` }] }],
-          config: { maxOutputTokens: 60, temperature: 0.5 },
-        });
-        greetingText = response.text?.trim() || `<p>👋</p>`;
-      } catch {
-        greetingText = `<p>👋</p>`;
-      }
-    }
+    const greetingText = await generateGreetingResponse(chatbot, language);
 
     tTotal.end();
     console.groupEnd();
@@ -1296,13 +1229,18 @@ export async function streamRAGResponse(
     });
   }
 
+  // Same follow-up enrichment as the non-streaming path so short replies ("why?",
+  // "tell me more") stay in context instead of going generic.
+  const enrichedUserMessage = enrichFollowUp(userMessage, history);
+
   const tRewrite = timer('rewriteQuery');
   const queries = await rewriteQuery(userMessage);
   tRewrite.end();
 
   const tSearch = timer('searchKnowledgeBases');
-  const { context: knowledgeContext, sources } = await searchKnowledgeBases(chatbot, queries);
+  const { context: knowledgeContext, sources, bestScore } = await searchKnowledgeBases(chatbot, queries);
   tSearch.end();
+  console.log(`   └─ knowledgeContext length: ${knowledgeContext.length} chars, sources: ${sources.length}, best score: ${bestScore.toFixed(3)}`);
 
   const tLogic = timer('getLogicContext');
   const logicContext = await getLogicContext(chatbot, userMessage);
@@ -1316,13 +1254,13 @@ export async function streamRAGResponse(
         .replace('{systemPrompt}', systemPrompt)
         .replace('{context}', knowledgeContext)
         .replace('{history}', formattedHistory)
-        .replace('{question}', userMessage)
+        .replace('{question}', enrichedUserMessage)
     : GENERAL_ANSWER_PROMPT
         .replace('{languageDirective}', langDirective)
         .replace('{systemPrompt}', systemPrompt)
         .replace('{history}', formattedHistory)
         .replace('{logicContext}', logicContext)
-        .replace('{question}', userMessage);
+        .replace('{question}', enrichedUserMessage);
 
   const tStreamInit = timer('streamText init (LLM call start)');
   const streamResult = await ai.models.generateContentStream({
