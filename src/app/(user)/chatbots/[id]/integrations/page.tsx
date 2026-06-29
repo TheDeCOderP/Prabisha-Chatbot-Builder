@@ -214,9 +214,13 @@ export default function EmbedPage() {
 
   const [selectedStack, setSelectedStack] = useState<TechStack>('vanilla');
   const [copied, setCopied] = useState(false);
+  const [modeOverride, setModeOverride] = useState<EmbedMode | null>(null);
 
   const baseUrl   = process.env.NEXT_PUBLIC_APP_URL || 'https://chatbots.prabisha.com';
-  const embedMode = (chatbot?.theme?.embedMode || 'FLOATING_BUTTON') as EmbedMode;
+  const dbEmbedMode = (chatbot?.theme?.embedMode || 'FLOATING_BUTTON') as EmbedMode;
+  // The snippet's pattern can differ from the dashboard default so the same chatbot can
+  // be embedded differently per site (the embed script honours this per-snippet override).
+  const embedMode = modeOverride ?? dbEmbedMode;
   const embedCode = generateEmbedCode(selectedStack, chatbotId, baseUrl, embedMode, chatbot?.theme);
   const selectedMeta = TECH_STACKS.find(s => s.id === selectedStack)!;
 
@@ -260,17 +264,42 @@ export default function EmbedPage() {
   return (
     <div className="space-y-6">
 
-      {/* ── Embed Mode badge ─────────────────────────────────────────────── */}
-      <div className="flex items-center gap-2.5 p-3 rounded-xl border bg-muted/40">
-        <div className="flex-1 min-w-0">
-          <p className="text-xs font-medium text-foreground">Active Embed Mode</p>
-          <p className="text-[11px] text-muted-foreground mt-0.5">
-            Configure in <strong>Theme → Embed Style</strong>
-          </p>
+      {/* ── Embed pattern selector (per-snippet override) ────────────────── */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <Label>Embed pattern</Label>
+          <span className="text-[11px] text-muted-foreground">
+            Dashboard default: <strong>{modeLabels[dbEmbedMode].label}</strong>
+          </span>
         </div>
-        <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full border ${modeLabels[embedMode].color}`}>
-          {modeLabels[embedMode].label}
-        </span>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+          {(Object.keys(modeLabels) as EmbedMode[]).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              onClick={() => setModeOverride(mode)}
+              className={`
+                flex items-center justify-between gap-1.5 px-3 py-2 rounded-md border text-xs font-medium
+                transition-colors text-left
+                ${embedMode === mode
+                  ? 'border-primary bg-primary/5 text-primary'
+                  : 'border-border bg-background text-foreground hover:bg-muted/50'
+                }
+              `}
+            >
+              <span>{modeLabels[mode].label}</span>
+              {mode === dbEmbedMode && (
+                <span className="text-[9px] px-1 py-0.5 rounded border bg-muted text-muted-foreground font-medium shrink-0">
+                  default
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+        <p className="text-[11px] text-muted-foreground">
+          Pick the pattern for <strong>this</strong> snippet — it overrides the dashboard default
+          on the site you paste it into, so you can mix patterns across sites.
+        </p>
       </div>
 
       {/* ── Inline mode documentation ─────────────────────────────────── */}

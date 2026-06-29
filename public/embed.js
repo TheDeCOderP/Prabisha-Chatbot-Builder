@@ -339,6 +339,13 @@
     if (isInitialized) return;
 
     config = { ...defaults, ...userConfig };
+    // Track which placement options the snippet set explicitly. These must win over the
+    // dashboard/DB values so one chatbot can use different embed patterns/positions on
+    // different sites (anything the snippet omits still falls back to the DB default).
+    config._userSet = {
+      mode:     typeof userConfig?.embedMode === 'string' && userConfig.embedMode.length > 0,
+      position: typeof userConfig?.position === 'string' && userConfig.position.length > 0,
+    };
     if (!config.chatbotId) { console.error('Chatbot ID is required'); return; }
 
     // Restore "greeting already spoken" from this tab session so a multi-page site
@@ -408,7 +415,7 @@
       if (th.widgetColor)    config.buttonBorderColor = th.widgetColor;
       config.closeBtnBgColor = th.closeButtonBgColor || config.closeBtnBgColor;
       config.closeBtnColor   = th.closeButtonColor   || config.closeBtnColor;
-      if (th.widgetPosition) config.position = th.widgetPosition.split(/(?=[A-Z])/).join('-').toLowerCase();
+      if (th.widgetPosition && !config._userSet.position) config.position = th.widgetPosition.split(/(?=[A-Z])/).join('-').toLowerCase();
       config.widgetCustomPosition = th.widgetCustomPosition || false;
       config.widgetTop    = th.widgetTop    ?? null;
       config.widgetBottom = th.widgetBottom ?? null;
@@ -470,8 +477,12 @@
         config.autoOpen = th.popup_onload ?? db.popup_onload ?? false;
       }
 
-      // Embed mode — if DB says a different mode, teardown current UI and rebuild with correct config
-      const newMode = (th.embedMode || config.embedMode || 'FLOATING_BUTTON').toUpperCase().replace(/-/g, '_');
+      // Embed mode — the snippet's data-mode wins over the DB value so the same chatbot
+      // can be placed differently per site; otherwise fall back to the DB/default mode.
+      const dbMode = (th.embedMode || '').toUpperCase().replace(/-/g, '_');
+      const newMode = config._userSet.mode
+        ? config.embedMode
+        : (dbMode || config.embedMode || 'FLOATING_BUTTON');
       if (newMode !== config.embedMode) {
         config.embedMode = newMode;
         teardown();
@@ -536,45 +547,13 @@
       // Patch teaser bubble — rebuild with correct DB config if it hasn't appeared yet
       // (teaserEl is null before the teaserDelay fires, so we patch config in place;
       //  if it somehow already rendered with defaults, remove and re-schedule it)
-      if (config.embedMode === 'TEASER_BUBBLE') {
-        if (teaserEl) {
-          // Already rendered with stale defaults — remove and show fresh version
-          teaserEl.remove();
-          teaserEl = null;
-          if (!_isTeaserDismissed() && config.teaserEnabled) {
-            const isMob   = window.innerWidth < 768;
-            const btnSize = isMob ? config.widgetSizeMobile : config.widgetSize;
-            const margin  = config.widgetMargin ?? 20;
-            const pos     = config.position || 'bottom-right';
-            const onLeft  = pos.includes('left');
-            teaserEl = document.createElement('div');
-            Object.assign(teaserEl.style, {
-              position: 'fixed', zIndex: '999998', maxWidth: '240px',
-              backgroundColor: config.teaserBgColor,
-              color:           config.teaserTextColor,
-              padding: '12px 16px',
-              borderRadius: onLeft ? '12px 12px 12px 0' : '12px 12px 0 12px',
-              boxShadow: '0 6px 24px rgba(0,0,0,0.15)',
-              fontSize: '13px', fontWeight: '500', lineHeight: '1.5',
-              cursor: 'pointer', fontFamily: 'inherit',
-              animation: '__cb_fadeInUp 0.4s ease forwards',
-              bottom: (margin + btnSize + 14) + 'px',
-              [onLeft ? 'left' : 'right']: margin + 'px',
-            });
-            teaserEl.innerHTML = `
-              <p style="margin:0 0 10px;">${config.teaserMessage}</p>
-              <div style="display:flex;gap:8px;">
-                <button id="__cb_teaser_yes__" style="flex:1;padding:5px 12px;border-radius:20px;background:rgba(255,255,255,0.2);color:inherit;font-size:12px;font-weight:600;border:1px solid rgba(255,255,255,0.3);cursor:pointer;font-family:inherit;">${config.teaserCtaYes}</button>
-                <button id="__cb_teaser_no__"  style="padding:5px 12px;border-radius:20px;background:transparent;color:inherit;font-size:12px;border:1px solid rgba(255,255,255,0.2);cursor:pointer;font-family:inherit;">${config.teaserCtaNo}</button>
-              </div>`;
-            teaserEl.querySelector('#__cb_teaser_yes__').onclick = (e) => { e.stopPropagation(); dismissTeaser(false); openChat(); };
-            teaserEl.querySelector('#__cb_teaser_no__').onclick  = (e) => { e.stopPropagation(); dismissTeaser(true); };
-            teaserEl.onclick = () => { dismissTeaser(false); openChat(); };
-            document.body.appendChild(teaserEl);
-          }
-        }
-        // If teaserEl is null, the setTimeout hasn't fired yet — config is already patched above
-        // so when it fires it will use the correct values. Nothing extra needed.
+      if (config.embedMode === 'TEASER_BUBBLE' && teaserEl) {
+        // Already rendered with stale defaults — remove and re-render with DB config.
+        // (If teaserEl is null the setTimeout hasn't fired yet; config is already patched
+        //  above so it will render with the correct values when it does.)
+        teaserEl.remove();
+        teaserEl = null;
+        renderTeaser();
       }
 
       // Patch sticky bar elements — fixes text/color/position not updating on external sites
@@ -852,8 +831,10 @@
     applyWinPosition(iframe, btnSize);
     document.body.appendChild(iframe);
 
-    // Close button (desktop)
-    if (window.innerWidth > 768) buildCloseBtn();
+    // Always build the close button; positionCloseBtn() shows it only on non-fullscreen
+    // viewports. (Building it only when wide at load meant a mobile→desktop resize left
+    // the chat with no external ✕.)
+    buildCloseBtn();
 
     // Launcher button
     if (config.showButton) buildLauncherBtn(btnSize);
@@ -949,7 +930,8 @@
     if (config.notificationSound) playNotificationSound(config.notificationVolume);
     iframe.style.display = 'block';
     iframe.style.animation = '__cb_fadeInUp 0.35s cubic-bezier(0.34,1.2,0.64,1) forwards';
-    if (closeBtn) { closeBtn.style.display = 'flex'; requestAnimationFrame(positionCloseBtn); }
+    // positionCloseBtn() sets the correct display (flex on desktop, none on fullscreen)
+    if (closeBtn) requestAnimationFrame(positionCloseBtn);
     if (button && isFullscreenViewport()) button.style.display = 'none';
     // Voice greeting — only once per session
     if (config.voiceGreeting && config._greetingText && !config._greetingSpoken) {
@@ -1018,6 +1000,54 @@
     try { localStorage.setItem(_teaserDismissKey(), String(Date.now())); } catch (_) {}
   }
 
+  // Build + show the teaser bubble. Shared by buildTeaserBubble (initial, after delay)
+  // and the post-API config patch (re-render with the correct DB values). Self-guards
+  // on: teaser disabled / dismissed / already showing / chat already open.
+  function renderTeaser() {
+    if (!config.teaserEnabled || _isTeaserDismissed()) return;
+    if (teaserEl) return;                                    // already showing
+    if (iframe && iframe.style.display !== 'none') return;   // chat already open
+
+    teaserEl = document.createElement('div');
+    const isMob   = window.innerWidth < 768;
+    const btnSize = isMob ? config.widgetSizeMobile : config.widgetSize;
+    const margin  = config.widgetMargin ?? 20;
+    const pos     = config.position || 'bottom-right';
+    const onLeft  = pos.includes('left');
+
+    Object.assign(teaserEl.style, {
+      position:        'fixed',
+      zIndex:          '999998',
+      maxWidth:        '240px',
+      backgroundColor: config.teaserBgColor,
+      color:           config.teaserTextColor,
+      padding:         '12px 16px',
+      borderRadius:    onLeft ? '12px 12px 12px 0' : '12px 12px 0 12px',
+      boxShadow:       '0 6px 24px rgba(0,0,0,0.15)',
+      fontSize:        '13px',
+      fontWeight:      '500',
+      lineHeight:      '1.5',
+      cursor:          'pointer',
+      animation:       '__cb_fadeInUp 0.4s ease forwards',
+      fontFamily:      'inherit',
+      bottom:          (margin + btnSize + 14) + 'px',
+      [onLeft ? 'left' : 'right']: margin + 'px',
+    });
+
+    teaserEl.innerHTML = `
+      <p style="margin:0 0 10px;">${config.teaserMessage}</p>
+      <div style="display:flex;gap:8px;">
+        <button id="__cb_teaser_yes__" style="flex:1;padding:5px 12px;border-radius:20px;background:rgba(255,255,255,0.2);color:inherit;font-size:12px;font-weight:600;border:1px solid rgba(255,255,255,0.3);cursor:pointer;font-family:inherit;">${config.teaserCtaYes}</button>
+        <button id="__cb_teaser_no__"  style="padding:5px 12px;border-radius:20px;background:transparent;color:inherit;font-size:12px;border:1px solid rgba(255,255,255,0.2);cursor:pointer;font-family:inherit;">${config.teaserCtaNo}</button>
+      </div>`;
+
+    teaserEl.querySelector('#__cb_teaser_yes__').onclick = (e) => { e.stopPropagation(); dismissTeaser(false); openChat(); };
+    teaserEl.querySelector('#__cb_teaser_no__').onclick  = (e) => { e.stopPropagation(); dismissTeaser(true); };
+    teaserEl.onclick = () => { dismissTeaser(false); openChat(); };
+
+    document.body.appendChild(teaserEl);
+  }
+
   async function buildTeaserBubble() {
     await buildFloating(); // reuse floating infrastructure
 
@@ -1028,49 +1058,7 @@
 
     setTimeout(() => {
       if (!button || !document.body.contains(button)) return;
-      // Don't show teaser if chat is already open
-      if (iframe && iframe.style.display !== 'none') return;
-      // Re-check after delay (user may have dismissed a prior teaser on same page visit)
-      if (_isTeaserDismissed()) return;
-
-      teaserEl = document.createElement('div');
-      const isMob   = window.innerWidth < 768;
-      const btnSize = isMob ? config.widgetSizeMobile : config.widgetSize;
-      const margin  = config.widgetMargin ?? 20;
-      const pos     = config.position || 'bottom-right';
-      const onLeft  = pos.includes('left');
-
-      Object.assign(teaserEl.style, {
-        position:        'fixed',
-        zIndex:          '999998',
-        maxWidth:        '240px',
-        backgroundColor: config.teaserBgColor,
-        color:           config.teaserTextColor,
-        padding:         '12px 16px',
-        borderRadius:    onLeft ? '12px 12px 12px 0' : '12px 12px 0 12px',
-        boxShadow:       '0 6px 24px rgba(0,0,0,0.15)',
-        fontSize:        '13px',
-        fontWeight:      '500',
-        lineHeight:      '1.5',
-        cursor:          'pointer',
-        animation:       '__cb_fadeInUp 0.4s ease forwards',
-        fontFamily:      'inherit',
-        bottom:          (margin + btnSize + 14) + 'px',
-        [onLeft ? 'left' : 'right']: margin + 'px',
-      });
-
-      teaserEl.innerHTML = `
-        <p style="margin:0 0 10px;">${config.teaserMessage}</p>
-        <div style="display:flex;gap:8px;">
-          <button id="__cb_teaser_yes__" style="flex:1;padding:5px 12px;border-radius:20px;background:rgba(255,255,255,0.2);color:inherit;font-size:12px;font-weight:600;border:1px solid rgba(255,255,255,0.3);cursor:pointer;font-family:inherit;">${config.teaserCtaYes}</button>
-          <button id="__cb_teaser_no__"  style="padding:5px 12px;border-radius:20px;background:transparent;color:inherit;font-size:12px;border:1px solid rgba(255,255,255,0.2);cursor:pointer;font-family:inherit;">${config.teaserCtaNo}</button>
-        </div>`;
-
-      teaserEl.querySelector('#__cb_teaser_yes__').onclick = (e) => { e.stopPropagation(); dismissTeaser(false); openChat(); };
-      teaserEl.querySelector('#__cb_teaser_no__').onclick  = (e) => { e.stopPropagation(); dismissTeaser(true); };
-      teaserEl.onclick = () => { dismissTeaser(false); openChat(); };
-
-      document.body.appendChild(teaserEl);
+      renderTeaser();
     }, (config.teaserDelay ?? 3) * 1000);
   }
 
@@ -1419,17 +1407,23 @@
   if (script) {
     const chatbotId = script.getAttribute('data-chatbot-id');
     if (chatbotId) {
-      const modeAttr = script.getAttribute('data-mode') || '';
-      init({
-        chatbotId,
-        baseUrl:     script.getAttribute('data-base-url')    || defaultBaseUrl,
-        showButton:  script.getAttribute('data-show-button') !== 'false',
-        autoOpen:    script.getAttribute('data-auto-open')   === 'true',
-        position:    script.getAttribute('data-position')    || 'bottom-right',
-        container:   script.getAttribute('data-container')   || null,
-        // embedMode from attribute overrides DB value only if explicitly set
-        ...(modeAttr && { embedMode: modeAttr.toUpperCase().replace(/-/g, '_') }),
-      });
+      // Only include attributes that are actually present, so anything the snippet sets
+      // explicitly overrides the dashboard/DB value while anything it omits falls back
+      // to the DB default (placement, auto-open, position can differ per site).
+      const cfg = { chatbotId };
+      const baseUrl   = script.getAttribute('data-base-url');
+      const showBtn   = script.getAttribute('data-show-button');
+      const autoOpen  = script.getAttribute('data-auto-open');
+      const position  = script.getAttribute('data-position');
+      const container = script.getAttribute('data-container');
+      const modeAttr  = script.getAttribute('data-mode');
+      if (baseUrl)           cfg.baseUrl = baseUrl;
+      if (showBtn !== null)  cfg.showButton = showBtn !== 'false';
+      if (autoOpen !== null) cfg.autoOpen = autoOpen === 'true';
+      if (position)          cfg.position = position;
+      if (container)         cfg.container = container;
+      if (modeAttr)          cfg.embedMode = modeAttr.toUpperCase().replace(/-/g, '_');
+      init(cfg);
     }
   }
 
