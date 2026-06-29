@@ -150,12 +150,8 @@ async function getCachedResponse(chatbotId: string, userMessage: string, languag
   const hash = hashQuestion(normalized, language);
 
   const cached = await prisma.questionCache.findUnique({
-    where: { 
-      chatbotId_questionHash: { 
-        chatbotId, 
-        questionHash: hash 
-      }, 
-      language
+    where: {
+      chatbotId_questionHash: { chatbotId, questionHash: hash },
     }
   });
 
@@ -295,6 +291,14 @@ AVAILABLE ACTIONS:
 
 USER:
 {question}
+
+────────────────────────
+NO KNOWLEDGE-BASE MATCH (IMPORTANT)
+────────────────────────
+You have no specific documents for this question. So:
+- Answer general or conversational questions naturally and helpfully, staying in character.
+- Do NOT invent company-specific facts — prices, policies, features, dates, names, URLs, availability, contact details. If the user asks for a specific detail you don't actually know, say so plainly and briefly in your own voice, then offer a useful next step (rephrasing, or one of the AVAILABLE ACTIONS above if relevant).
+- Never pretend you looked something up or have data you don't.
 
 ────────────────────────
 FORMAT
@@ -1035,7 +1039,12 @@ export async function executeSearchChain(config: SearchChainConfig): Promise<Sea
   // Greetings are generated fresh each time (persona + variety) — never cache them,
   // otherwise every "hi" returns the identical stored reply.
   const isGreeting = detectIntent(userMessage) === 'GREETING';
-  const cacheable = !realtimeIntent.isRealtime && !isGreeting;
+  // Short / follow-up messages ("why?", "tell me more") depend on conversation context,
+  // but the cache is keyed only by question text — caching them would serve one
+  // conversation's answer to a different conversation. Skip caching those.
+  const trimmedMsg = userMessage.trim();
+  const isContextDependent = trimmedMsg.length <= 18 || SHORT_FOLLOWUP_RE.test(trimmedMsg);
+  const cacheable = !realtimeIntent.isRealtime && !isGreeting && !isContextDependent;
 
    // 2. Only check cache for non-realtime, non-greeting questions
   if (cacheable) {
