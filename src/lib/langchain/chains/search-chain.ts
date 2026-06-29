@@ -147,7 +147,7 @@ All output HTML, labels, and prose must be in ${name}.
 
 async function getCachedResponse(chatbotId: string, userMessage: string, language: string) {
   const normalized = normalizeQuestion(userMessage);
-  const hash = hashQuestion(normalized);
+  const hash = hashQuestion(normalized, language);
 
   const cached = await prisma.questionCache.findUnique({
     where: { 
@@ -172,7 +172,7 @@ async function getCachedResponse(chatbotId: string, userMessage: string, languag
 
 async function setCachedResponse(chatbotId: string, userMessage: string, htmlResponse: string, language = 'en') {
   const normalized = normalizeQuestion(userMessage);
-  const hash = hashQuestion(normalized);
+  const hash = hashQuestion(normalized, language);
 
   await prisma.questionCache.upsert({
     where: { chatbotId_questionHash: { chatbotId, questionHash: hash } },
