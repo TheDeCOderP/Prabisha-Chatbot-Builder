@@ -253,7 +253,7 @@ FORMAT — return clean, well-structured HTML
 - Open with a direct 1–2 sentence answer in a <p>.
 - If the answer is genuinely short, a sentence or two in a <p> is enough — do NOT force headings or lists.
 - When the answer has multiple parts, STRUCTURE it so it's easy to scan:
-  • Label each section with a short bold sub-heading: <p><strong>Section title</strong></p> (or <h4>).
+  • Start each section with a heading tag: <h4>Section title</h4> (always <h4>, never a bold paragraph).
   • Use <ul><li>…</li></ul> for features / options / points; use <ol><li>…</li></ol> for ordered steps.
   • Use <strong> for key terms, labels, prices, and names — not for whole sentences.
 - Keep paragraphs short (1–3 sentences). Never return one long wall of text.
@@ -265,12 +265,16 @@ FORMAT — return clean, well-structured HTML
   (Make it feel like something a real person would ask, not a formal "Would you like to know more about X?")
 
 ────────────────────────
-CITATION RULES
+CITATION RULES (keep it clean — do NOT over-cite)
 ────────────────────────
-When using info from a chunk that has a URL, cite inline:
-<cite data-url="FULL_URL">Page Title</cite>
-For any other link you mention, use a normal <a href="FULL_URL">descriptive words</a>.
-Do NOT invent URLs. Skip citation if no URL exists.
+- Add AT MOST 1–2 inline <cite data-url="FULL_URL">a few descriptive words</cite> in the
+  WHOLE answer, only for the single most relevant source. The interface already shows a
+  "Sources" list, so you do NOT need to cite every point.
+- Never paste a raw page title (e.g. "Some Title | Company") into the text or in italics.
+- NEVER put a citation on every bullet or sentence, and never cite the same URL twice.
+- For an actual link the user should click, use a normal <a href="FULL_URL">descriptive words</a>.
+- Do NOT invent URLs. If a chunk has NO URL, do NOT name its source or page title at all —
+  never write raw titles like "Some Page Title | Company Name". Just use the info in your own words.
 
 ────────────────────────
 CONTEXT:
@@ -312,7 +316,7 @@ FORMAT — return clean, well-structured HTML
 ────────────────────────
 - Get to the point in the first sentence, in a <p>.
 - If the answer is short, a sentence or two in a <p> is enough — don't force headings or lists.
-- For multi-part answers, structure so it scans easily: bold sub-heading <p><strong>…</strong></p> per section,
+- For multi-part answers, structure so it scans easily: an <h4>…</h4> heading per section,
   <ul><li>…</li></ul> for points, <ol><li>…</li></ol> for ordered steps.
 - Use <strong> for key terms/labels — not whole sentences. Keep paragraphs short (1–3 sentences).
 - Turn every URL into a real link: <a href="FULL_URL">descriptive words</a> — never a bare URL as plain text.
@@ -432,10 +436,11 @@ export async function searchKnowledgeBases(
 
   const formatted = top.map((r, i) => {
     const src = r.metadata?.source || r.metadata?.url;
-    const title = r.metadata?.title;
-    // Only include a label when there's a real URL to cite — KB names get echoed by the model
-    if (src && (src.startsWith('http://') || src.startsWith('https://')) && title) {
-      return `[Source: ${title} (${src})]\n${r.content}`;
+    // Give the model the URL only (for citing) — NOT the page title. When the title was in
+    // context the model kept echoing it as plain/italic text ("Some Title | Company"), which
+    // looked like noise. The human-readable title still appears in the Sources section below.
+    if (src && (src.startsWith('http://') || src.startsWith('https://'))) {
+      return `[Source URL: ${src}]\n${r.content}`;
     }
     return r.content;
   }).join('\n\n---\n\n');
@@ -686,11 +691,34 @@ function cleanHtmlResponse(html: string): string {
   cleaned = cleaned.replace(/(<br\s*\/?>){2,}/gi, '<br>');
   cleaned = cleaned.replace(/^<br\s*\/?>/i, '');
   cleaned = cleaned.replace(/<br\s*\/?>$/i, '');
-  cleaned = cleaned.replace(/<\/p><p>/g, '</p><p style="margin-top: 12px;">');
-  cleaned = cleaned.replace(/<ul>/g, '<ul style="margin: 12px 0; padding-left: 24px;">');
-  cleaned = cleaned.replace(/<ol>/g, '<ol style="margin: 12px 0; padding-left: 24px;">');
-  cleaned = cleaned.replace(/<li>/g, '<li style="margin-bottom: 6px;">');
-  cleaned = cleaned.replace(/^<p style="margin-top: 12px;">/, '<p>');
+  // Vertical rhythm — clear gaps between paragraphs, lists and headings so the answer
+  // doesn't read as one dense block.
+  cleaned = cleaned.replace(/<\/p><p>/g, '</p><p style="margin: 12px 0 0;">');
+  cleaned = cleaned.replace(/<ul>/g, '<ul style="margin: 10px 0 16px; padding-left: 22px;">');
+  cleaned = cleaned.replace(/<ol>/g, '<ol style="margin: 10px 0 16px; padding-left: 22px;">');
+  cleaned = cleaned.replace(/<li>/g, '<li style="margin-bottom: 8px; line-height: 1.55;">');
+  cleaned = cleaned.replace(/^<p style="margin: 12px 0 0;">/, '<p>');
+
+  // Strip bare <cite> tags (no data-url) — the model uses these to echo a source's page
+  // title ("Some Title | Company"), which renders as italic noise. If there's no URL to
+  // link to, the title adds nothing, so remove the whole tag.
+  cleaned = cleaned.replace(/<cite(?![^>]*\bdata-url=)[^>]*>[\s\S]*?<\/cite>/gi, '');
+
+  // Keep inline citations clean: dedupe by URL and cap how many appear inline, so the
+  // answer isn't littered with the same source pill on every bullet. Dropped sources still
+  // surface in the collapsible "Sources" section (appendReadMoreSection).
+  {
+    const seenCite = new Set<string>();
+    let keptCites = 0;
+    const MAX_INLINE_CITES = 2;
+    cleaned = cleaned.replace(/<cite data-url="([^"]+)">[\s\S]*?<\/cite>/g, (m, url) => {
+      if (seenCite.has(url)) return '';
+      seenCite.add(url);
+      if (keptCites >= MAX_INLINE_CITES) return '';
+      keptCites++;
+      return m;
+    });
+  }
 
   cleaned = cleaned.replace(
     /<cite data-url="([^"]+)">([^<]+)<\/cite>/g,
@@ -720,8 +748,18 @@ function cleanHtmlResponse(html: string): string {
     '<a$1 style="color:#2563eb;text-decoration:underline;text-underline-offset:2px;font-weight:500;">'
   );
 
-  // Style structural headings the model may emit
-  cleaned = cleaned.replace(/<h4>/g, '<h4 style="margin:14px 0 6px;font-size:1em;font-weight:700;color:#111827;">');
+  // Normalize "bold-only paragraph" headings (<p><strong>Title</strong></p>) into real
+  // <h4> so section titles look consistent whether the model used <h4> or a bold paragraph.
+  // (Only matches a paragraph whose entire content is one <strong> — inline bold labels
+  //  like "<strong>SEO:</strong> …" have text after </strong> and are left alone.)
+  cleaned = cleaned.replace(/<p[^>]*><strong>([^<][\s\S]*?)<\/strong><\/p>/g, '<h4>$1</h4>');
+
+  // Style structural headings — noticeably bigger than body text with a clear gap above,
+  // so sections are visually distinct (not the same size/spacing as the prose).
+  cleaned = cleaned.replace(/<h4>/g, '<h4 style="margin:22px 0 8px;font-size:1.25em;font-weight:700;color:#0f172a;line-height:1.35;">');
+  cleaned = cleaned.replace(/<h3>/g, '<h3 style="margin:24px 0 8px;font-size:1.4em;font-weight:700;color:#0f172a;line-height:1.3;">');
+  // A heading shouldn't carry a big top margin when it's the very first thing in the answer.
+  cleaned = cleaned.replace(/^(<h[34]) style="margin:2[24]px 0 8px;/, '$1 style="margin:0 0 8px;');
 
   if (!cleaned.startsWith('<div') && !cleaned.startsWith('<p')) {
     cleaned = `<div style="line-height: 1.6; color: #1f2937;">${cleaned}</div>`;

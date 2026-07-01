@@ -442,8 +442,20 @@ function markdownToHtml(text: string): string {
   return DOMPurify.sanitize(out.join(''));
 }
 
+// The streaming path renders RAW model HTML live (the server's cleanHtmlResponse only runs
+// when the message is persisted to the DB). So mirror the important clean-ups here too, so
+// the live/streamed view matches the stored one: turn data-url citations into real links,
+// drop bare <cite> title-echoes (browsers render them as italic noise), and strip stray
+// <em>/<i> emphasis the model sometimes wraps source titles in.
+function cleanBotHtml(html: string): string {
+  return html
+    .replace(/<cite[^>]*\bdata-url="([^"]+)"[^>]*>([\s\S]*?)<\/cite>/gi, '<a href="$1">$2</a>')
+    .replace(/<cite\b[^>]*>[\s\S]*?<\/cite>/gi, '')
+    .replace(/<\/?(?:em|i)>/gi, '');
+}
+
 const sanitizeHtml = (html: string): string => {
-  return markdownToHtml(html).replace(/<a /g, '<a target="_blank" rel="noopener noreferrer" ');
+  return markdownToHtml(cleanBotHtml(html)).replace(/<a /g, '<a target="_blank" rel="noopener noreferrer" ');
 };
 
 function resolveSuggestion(
@@ -1652,7 +1664,7 @@ function MessageBubble({
           }}
         >
           <div
-            className="prose prose-sm max-w-none text-[13px] overflow-hidden min-w-0 [&_*]:max-w-full [&_pre]:whitespace-pre-wrap [&_pre]:break-words [&_a]:break-words [&_a]:text-[#2563eb] [&_a]:underline [&_a]:underline-offset-2 [&_a]:font-medium [&_a:hover]:text-[#1d4ed8] [&_img]:h-auto [&_img]:block [&_table]:block [&_table]:overflow-x-auto [&_div]:box-border"
+            className="prose prose-sm max-w-none text-[13px] overflow-hidden min-w-0 [&_*]:max-w-full [&_pre]:whitespace-pre-wrap [&_pre]:break-words [&_a]:break-words [&_a]:text-[#2563eb] [&_a]:underline [&_a]:underline-offset-2 [&_a]:font-medium [&_a:hover]:text-[#1d4ed8] [&_h4]:text-[15.5px] [&_h4]:font-bold [&_h4]:text-slate-900 [&_h4]:mt-5 [&_h4]:mb-1.5 [&_h4]:leading-snug [&_h3]:text-[17px] [&_h3]:font-bold [&_h3]:text-slate-900 [&_h3]:mt-5 [&_h3]:mb-2 [&_ul]:my-2.5 [&_ol]:my-2.5 [&_li]:my-1 [&_li]:leading-relaxed [&_p]:my-2 [&_p]:leading-relaxed [&_strong]:font-semibold [&_img]:h-auto [&_img]:block [&_table]:block [&_table]:overflow-x-auto [&_div]:box-border"
             style={{ color: isUser ? userText : botText }}
             dangerouslySetInnerHTML={{ __html: sanitizeHtml(message.content) }}
           />
@@ -1675,21 +1687,9 @@ function MessageBubble({
                 >
                   {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
                 </button>
-                {/* TTS button */}
-                {showTTS && (
-                  <button
-                    onClick={onSpeak}
-                    className={[
-                      'p-1.5 rounded-full transition-all duration-200 cursor-pointer',
-                      isSpeaking
-                        ? 'bg-primary/20 text-primary scale-110'
-                        : 'hover:bg-primary/10 text-muted-foreground opacity-0 group-hover:opacity-100',
-                    ].join(' ')}
-                    title={isSpeaking ? 'Stop reading' : 'Read aloud'}
-                  >
-                    {isSpeaking ? <VolumeX className="h-3.5 w-3.5" /> : <Volume2 className="h-3.5 w-3.5" />}
-                  </button>
-                )}
+                {/* Per-message "Read aloud" button removed — it cluttered every reply.
+                    Spoken output now happens only via voice-to-voice (auto-speak when the
+                    user asks by voice), controlled by the mic-bar toggle. */}
               </div>
             )}
           </div>
