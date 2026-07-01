@@ -36,6 +36,7 @@ import { useLeadGeneration } from '@/hooks/useLeadGeneration';
 import { LeadForm } from '@/components/forms/lead-form';
 import { Button } from '@/components/ui/button';
 import { useTextToSpeech } from '@/hooks/useTextToSpeech';
+import { unlockTTSAudio } from '@/lib/tts-audio';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { EmojiClickData } from 'emoji-picker-react';
@@ -1091,6 +1092,8 @@ function ChatBot({
   const [voicePending, setVoicePending] = useState(false);
   const toggleVoiceReply = () => setVoiceReplyOn(v => {
     const next = !v;
+    // Turning it on is a gesture — unlock audio now so replies can be spoken later.
+    if (next) unlockTTSAudio();
     try { localStorage.setItem(`chatbot_${chatbot?.id}_voiceReply`, next ? '1' : '0'); } catch {}
     return next;
   });
@@ -1365,7 +1368,14 @@ function ChatBot({
             onNewChat={handleNewChat}
             status={status}
             inputRef={inputRef}
-            onToggleMicrophone={() => { if (micAllowed) setIsMicrophoneOn(p => !p); }}
+            onToggleMicrophone={() => {
+              if (!micAllowed) return;
+              // Unlock audio here — this click is a real user gesture, so the shared TTS
+              // AudioContext becomes "running" and can play the reply aloud a few seconds
+              // later (voice-to-voice) without being blocked by the autoplay policy.
+              unlockTTSAudio();
+              setIsMicrophoneOn(p => !p);
+            }}
             hasLeadForm={!hasSubmittedLead && !!activeLeadForm}
             onLeadAction={handleLeadAction}
             isLoadingLeadConfig={isLoadingLeadConfig}

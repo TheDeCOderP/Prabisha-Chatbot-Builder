@@ -1,8 +1,8 @@
 import { useState, useRef, useCallback } from 'react';
+import { getTTSAudioContext } from '@/lib/tts-audio';
 
 export const useTextToSpeech = () => {
   const [isPlaying, setIsPlaying] = useState(false);
-  const audioContextRef = useRef<AudioContext | null>(null);
   const nextStartTimeRef = useRef<number>(0);
   const isStoppingRef = useRef(false);
   const sourcesRef = useRef<AudioBufferSourceNode[]>([]);
@@ -13,10 +13,8 @@ export const useTextToSpeech = () => {
       try { source.stop(); } catch (e) {}
     });
     sourcesRef.current = [];
-    if (audioContextRef.current) {
-      audioContextRef.current.close().catch(console.error);
-      audioContextRef.current = null;
-    }
+    // NOTE: we deliberately do NOT close the AudioContext — it's a shared, gesture-unlocked
+    // singleton (see lib/tts-audio). Closing it would re-lock audio for the next reply.
     setIsPlaying(false);
   }, []);
 
@@ -28,13 +26,12 @@ export const useTextToSpeech = () => {
       isStoppingRef.current = false;
       setIsPlaying(true);
 
-      if (!audioContextRef.current) {
-        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-      }
-      
-      const ctx = audioContextRef.current;
+      // Reuse the shared context that was unlocked on the mic tap so deferred voice-to-voice
+      // playback is allowed by the browser's autoplay policy.
+      const ctx = getTTSAudioContext();
+      if (!ctx) { setIsPlaying(false); return; }
       if (ctx.state === 'suspended') {
-        await ctx.resume();
+        await ctx.resume().catch(() => {});
       }
 
       nextStartTimeRef.current = ctx.currentTime;
