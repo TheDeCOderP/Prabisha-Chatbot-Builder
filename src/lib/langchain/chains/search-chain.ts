@@ -248,13 +248,19 @@ HOW TO ANSWER
 - If something isn't in the context, say "I'm not sure about that" plainly
 
 ────────────────────────
-FORMAT
+FORMAT — return clean, well-structured HTML
 ────────────────────────
-- PREFER short paragraphs over long walls of text
-- Wrap paragraphs in <p>
-- Use <ul><li> ONLY for genuine lists (3+ truly list-like items) — don't convert natural prose into bullets
-- Use <strong> sparingly — only for the most critical term in a sentence
-- No markdown, no <br> tags
+- Open with a direct 1–2 sentence answer in a <p>.
+- If the answer is genuinely short, a sentence or two in a <p> is enough — do NOT force headings or lists.
+- When the answer has multiple parts, STRUCTURE it so it's easy to scan:
+  • Label each section with a short bold sub-heading: <p><strong>Section title</strong></p> (or <h4>).
+  • Use <ul><li>…</li></ul> for features / options / points; use <ol><li>…</li></ol> for ordered steps.
+  • Use <strong> for key terms, labels, prices, and names — not for whole sentences.
+- Keep paragraphs short (1–3 sentences). Never return one long wall of text.
+- Turn every URL into a real, clickable link: <a href="FULL_URL">descriptive words</a>.
+  Never paste a bare URL as plain text and never use the raw URL as the link text.
+- Allowed tags ONLY: <p> <strong> <em> <ul> <ol> <li> <h4> <a> <cite>. Avoid <br>.
+- Output real HTML — never emit markdown syntax (**bold**, ## heading, - bullet); convert it to the tags above.
 - End with ONE short, natural follow-up question in <p class="follow-up-question">...</p>
   (Make it feel like something a real person would ask, not a formal "Would you like to know more about X?")
 
@@ -263,6 +269,7 @@ CITATION RULES
 ────────────────────────
 When using info from a chunk that has a URL, cite inline:
 <cite data-url="FULL_URL">Page Title</cite>
+For any other link you mention, use a normal <a href="FULL_URL">descriptive words</a>.
 Do NOT invent URLs. Skip citation if no URL exists.
 
 ────────────────────────
@@ -301,13 +308,15 @@ You have no specific documents for this question. So:
 - Never pretend you looked something up or have data you don't.
 
 ────────────────────────
-FORMAT
+FORMAT — return clean, well-structured HTML
 ────────────────────────
-- Get to the point in the first sentence
-- Short paragraphs, wrapped in <p>
-- Use <ul><li> ONLY for genuine lists (3+ items) — not for normal prose
-- Use <strong> sparingly
-- No markdown, no <br> tags
+- Get to the point in the first sentence, in a <p>.
+- If the answer is short, a sentence or two in a <p> is enough — don't force headings or lists.
+- For multi-part answers, structure so it scans easily: bold sub-heading <p><strong>…</strong></p> per section,
+  <ul><li>…</li></ul> for points, <ol><li>…</li></ol> for ordered steps.
+- Use <strong> for key terms/labels — not whole sentences. Keep paragraphs short (1–3 sentences).
+- Turn every URL into a real link: <a href="FULL_URL">descriptive words</a> — never a bare URL as plain text.
+- Allowed tags ONLY: <p> <strong> <em> <ul> <ol> <li> <h4> <a>. Avoid <br>. No markdown syntax — convert it to HTML.
 - End with ONE short, natural follow-up question in <p class="follow-up-question">...</p>
 
 Return ONLY clean HTML.
@@ -325,7 +334,8 @@ export async function rewriteQuery(userMessage: string): Promise<string[]> {
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents: [{ role: 'user', parts: [{ text: QUERY_REWRITE_PROMPT.replace('{question}', userMessage) }] }],
-      config: { maxOutputTokens: 100, temperature: 0.3 },
+      // thinkingBudget:0 → don't spend the tiny token budget on internal reasoning
+      config: { maxOutputTokens: 100, temperature: 0.3, thinkingConfig: { thinkingBudget: 0 } },
     });
     t.end();
 
@@ -696,6 +706,23 @@ function cleanHtmlResponse(html: string): string {
       `</svg>${label}</a>`
   );
 
+  // Convert any leftover markdown links the model slipped in: [text](https://…)
+  cleaned = cleaned.replace(
+    /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,
+    '<a href="$2">$1</a>'
+  );
+
+  // Give every plain <a> (i.e. NOT the styled cite pill / sources, which already carry an
+  // inline style) a distinct colour + underline so links are obvious. target/rel is added
+  // by the widget on render.
+  cleaned = cleaned.replace(
+    /<a\b(?![^>]*\bstyle=)([^>]*)>/gi,
+    '<a$1 style="color:#2563eb;text-decoration:underline;text-underline-offset:2px;font-weight:500;">'
+  );
+
+  // Style structural headings the model may emit
+  cleaned = cleaned.replace(/<h4>/g, '<h4 style="margin:14px 0 6px;font-size:1em;font-weight:700;color:#111827;">');
+
   if (!cleaned.startsWith('<div') && !cleaned.startsWith('<p')) {
     cleaned = `<div style="line-height: 1.6; color: #1f2937;">${cleaned}</div>`;
   } else if (cleaned.startsWith('<p')) {
@@ -880,7 +907,8 @@ export async function generateGreetingResponse(chatbot: any, language: string): 
 The user just greeted you (e.g. "hi" / "hello").${nameHint} Reply with ONE short, warm, natural greeting (max ~12 words) that invites them to ask their question. Vary the wording so it never sounds scripted — do NOT default to "How can I help you today". Wrap it in a single <p> tag. Output only the HTML.`,
         }],
       }],
-      config: { maxOutputTokens: 60, temperature: 0.85 },
+      // thinkingBudget:0 → the 60-token budget must go to the greeting, not hidden reasoning
+      config: { maxOutputTokens: 60, temperature: 0.85, thinkingConfig: { thinkingBudget: 0 } },
     });
     const text = response.text?.trim();
     if (text && /<p[\s>]/i.test(text)) return text;
@@ -988,6 +1016,10 @@ export async function generateRAGResponse(
     config: {
       maxOutputTokens: chatbot.max_tokens || 1200,
       temperature: chatbot.temperature ?? 0.4,
+      // Disable "thinking" so the whole token budget produces the visible answer.
+      // Otherwise gemini-2.5-flash spends most of max_tokens on hidden reasoning and
+      // the HTML answer gets truncated mid-sentence (broken tags).
+      thinkingConfig: { thinkingBudget: 0 },
     },
   }));
   const text = response.text ?? '';
@@ -1278,6 +1310,9 @@ export async function streamRAGResponse(
     config: {
       maxOutputTokens: chatbot.max_tokens || 1200,
       temperature: chatbot.temperature ?? 0.4,
+      // Disable "thinking" so the whole token budget produces the visible answer
+      // (otherwise the streamed HTML answer truncates mid-sentence).
+      thinkingConfig: { thinkingBudget: 0 },
     },
   });
   tStreamInit.end();

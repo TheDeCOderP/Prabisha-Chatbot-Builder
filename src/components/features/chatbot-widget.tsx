@@ -412,7 +412,11 @@ function markdownToHtml(text: string): string {
   const inlineFormat = (s: string) =>
     s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
      .replace(/\*([^*]+)\*/g, '<em>$1</em>')
-     .replace(/`([^`]+)`/g, '<code style="background:#f1f5f9;padding:1px 4px;border-radius:3px;font-size:0.85em;">$1</code>');
+     .replace(/`([^`]+)`/g, '<code style="background:#f1f5f9;padding:1px 4px;border-radius:3px;font-size:0.85em;">$1</code>')
+     // Markdown links [text](url) → anchor
+     .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2">$1</a>')
+     // Bare URLs → anchor (skip ones already inside markup)
+     .replace(/(^|[^"(>])(https?:\/\/[^\s<]+)/g, '$1<a href="$2">$2</a>');
 
   for (const raw of lines) {
     const line = raw.trimEnd();
@@ -1064,6 +1068,20 @@ function ChatBot({
     policyBlocked, policyMessage, isTranscribing,
   } = useSpeechToText({ continuous: true, lang: SPEECH_LANG_MAP[selectedLang] || 'en-US' });
   const [isMicrophoneOn, setIsMicrophoneOn] = useState(false);
+  // Voice-to-voice: when the user asks by voice, speak the reply back. User-toggleable,
+  // remembered per chatbot. `voicePending` marks that the in-flight question came from the mic.
+  const [voiceReplyOn, setVoiceReplyOn] = useState<boolean>(() => {
+    try {
+      const v = localStorage.getItem(`chatbot_${chatbot?.id}_voiceReply`);
+      return v === null ? true : v === '1';
+    } catch { return true; }
+  });
+  const [voicePending, setVoicePending] = useState(false);
+  const toggleVoiceReply = () => setVoiceReplyOn(v => {
+    const next = !v;
+    try { localStorage.setItem(`chatbot_${chatbot?.id}_voiceReply`, next ? '1' : '0'); } catch {}
+    return next;
+  });
   const [isAutoSendPending, setIsAutoSendPending] = useState(false);
   const autoSendTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingVoiceTextRef = useRef<string>('');
@@ -1160,6 +1178,8 @@ function ChatBot({
       // Reset transcript AFTER we've captured the final text, not before.
       resetTranscript();
       if (toSend.trim()) {
+        // This question came from the mic → ask ChatMessages to speak the reply aloud.
+        if (voiceReplyOn) setVoicePending(true);
         // overrideText bypasses the stale `text` state inside handleSubmit's closure
         handleSubmit(undefined, toSend);
       }
@@ -1305,6 +1325,10 @@ function ChatBot({
             onSkipLead={!hasSubmittedLead && activeLeadForm ? handleSkipLead : undefined}
             t={t}
             selectedLang={selectedLang}
+            voicePending={voicePending}
+            voiceReplyOn={voiceReplyOn}
+            micActive={isMicrophoneOn}
+            onVoiceConsumed={() => setVoicePending(false)}
           />
 
           {error && !isDashboardPreview && <ErrorBanner error={error} />}
@@ -1340,6 +1364,8 @@ function ChatBot({
             onLanguageChange={onLanguageChange}
             t={t}
             availableLanguages={availableLanguages}
+            voiceReplyOn={voiceReplyOn}
+            onToggleVoiceReply={toggleVoiceReply}
           />
 
           {(chatbot.theme?.showPoweredBy ?? true) && (
@@ -1525,6 +1551,11 @@ interface ChatMessagesProps {
   onSkipLead?: () => void;
   t: (key: string) => string;
   selectedLang: LanguageCode;
+  // Voice-to-voice: speak the bot's reply aloud when the question came from the mic.
+  voicePending?: boolean;             // last user message was voice-initiated → speak its answer
+  voiceReplyOn?: boolean;             // user preference toggle
+  micActive?: boolean;                // mic currently listening → stop any ongoing speech (barge-in)
+  onVoiceConsumed?: () => void;       // reset voicePending after we start speaking
 }
 
 // ── Hoisted message-list subcomponents ──────────────────────────────────────
@@ -1621,7 +1652,7 @@ function MessageBubble({
           }}
         >
           <div
-            className="prose prose-sm max-w-none text-[13px] overflow-hidden min-w-0 [&_*]:max-w-full [&_pre]:whitespace-pre-wrap [&_pre]:break-words [&_a]:break-words [&_img]:h-auto [&_img]:block [&_table]:block [&_table]:overflow-x-auto [&_div]:box-border"
+            className="prose prose-sm max-w-none text-[13px] overflow-hidden min-w-0 [&_*]:max-w-full [&_pre]:whitespace-pre-wrap [&_pre]:break-words [&_a]:break-words [&_a]:text-[#2563eb] [&_a]:underline [&_a]:underline-offset-2 [&_a]:font-medium [&_a:hover]:text-[#1d4ed8] [&_img]:h-auto [&_img]:block [&_table]:block [&_table]:overflow-x-auto [&_div]:box-border"
             style={{ color: isUser ? userText : botText }}
             dangerouslySetInnerHTML={{ __html: sanitizeHtml(message.content) }}
           />
@@ -1716,6 +1747,7 @@ function ChatMessages({
   messages, loading, status, quickQuestions, onQuickQuestion,
   chatContainerRef, messagesEndRef, lastBotMessageRef, formatTime, chatbot,
   hasSubmittedLead, isConversationalMode, leadCollectionStatus, onLeadAction, onSkipLead, t, selectedLang,
+  voicePending, voiceReplyOn, micActive, onVoiceConsumed,
 }: ChatMessagesProps) {
   const { speak, stop, isPlaying } = useTextToSpeech();
   const [activeSpeakingId, setActiveSpeakingId] = useState<string | null>(null);
@@ -1757,6 +1789,33 @@ function ChatMessages({
       await speak(plainText);
     }
   };
+
+  // ── Voice-to-voice: auto-speak the reply when the question came from the mic ──
+  // Fires once per voice question, only on a genuine …→ready completion (never the
+  // error→ready path, so error messages aren't read aloud).
+  const prevStatusRef = useRef(status);
+  useEffect(() => {
+    const prev = prevStatusRef.current;
+    prevStatusRef.current = status;
+    if (!voicePending || !voiceReplyOn || !showTTS) return;
+    const justCompleted = status === 'ready' && (prev === 'streaming' || prev === 'submitted');
+    if (!justCompleted) return;
+    const lastIdx = messages.length - 1;
+    const last = messages[lastIdx];
+    if (!last || last.senderType !== 'BOT' || !last.content?.trim()) return;
+    onVoiceConsumed?.();
+    handleSpeak(`msg-${lastIdx}`, last.content);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status, messages, voicePending, voiceReplyOn, showTTS]);
+
+  // Barge-in / mute: stop speaking when the user re-opens the mic or turns voice replies off.
+  useEffect(() => {
+    if ((micActive || !voiceReplyOn) && isPlaying) {
+      stop();
+      setActiveSpeakingId(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [micActive, voiceReplyOn]);
 
   // Shared avatar props for the hoisted subcomponents below
   const avatarProps = { avatarSrc: chatIconSrc, avatarName: chatbot.name as string | undefined, avatarShape: iconShapeClass };
@@ -1866,6 +1925,8 @@ interface ChatInputProps {
   onLanguageChange: (code: LanguageCode) => void;
   t: (key: string) => string;
   availableLanguages: typeof GLOBAL_LANGUAGES;
+  voiceReplyOn?: boolean;
+  onToggleVoiceReply?: () => void;
 }
 
 function ChatInput({
@@ -1875,12 +1936,14 @@ function ChatInput({
   hasLeadForm, onLeadAction, isLoadingLeadConfig,
   isAwaitingLeadAnswer, isConversationalMode, chatbot,
   selectedLang, onLanguageChange, t, availableLanguages,
+  voiceReplyOn = true, onToggleVoiceReply,
 }: ChatInputProps) {
   const th = chatbot?.theme || {};
   const accentColor  = th.inputButtonColor  || '#DD692E';
   const inputBg      = th.inputBgColor      || '#ffffff';
   const borderColor  = th.inputBorderColor  || '#e2e8f0';
   const showMic      = th.showMic           ?? true;
+  const showTTS      = th.showTTS           ?? true;
   const showEmoji    = th.showEmoji         ?? true;
   const showNewChat  = th.showNewChat       ?? true;
   const showLangSwitch = th.showLanguageSwitcher ?? true;
@@ -1997,6 +2060,21 @@ function ChatInput({
                     className={`cursor-pointer transition-all ${isMicrophoneOn ? 'bg-red-100 text-red-600 ring-2 ring-red-400 ring-offset-1 animate-pulse rounded-md' : ''}`}
                   >
                     {isMicrophoneOn ? <MicOffIcon className="h-4 w-4" /> : <MicIcon className="h-4 w-4" />}
+                  </PromptInputButton>
+                )}
+
+                {/* Voice-reply toggle — bot speaks its answer aloud when you ask by voice */}
+                {showMic && browserSupportsSpeechRecognition && showTTS && (
+                  <PromptInputButton
+                    type="button" size="sm" variant="ghost"
+                    onClick={(e) => { e.preventDefault(); onToggleVoiceReply?.(); }}
+                    title={voiceReplyOn
+                      ? 'Voice replies on — the bot speaks answers to your spoken questions'
+                      : 'Voice replies off — tap to have the bot speak answers to voice questions'}
+                    aria-label="Toggle spoken replies"
+                    className={`cursor-pointer transition-all ${voiceReplyOn ? 'text-emerald-600' : 'text-muted-foreground opacity-70'}`}
+                  >
+                    {voiceReplyOn ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
                   </PromptInputButton>
                 )}
 

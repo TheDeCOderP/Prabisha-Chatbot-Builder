@@ -7,6 +7,38 @@
 
   if (window.self !== window.top) return; // prevent recursion inside iframes
 
+  // ─── Local-dev kill switch ──────────────────────────────────────────────────
+  // Fully disable the widget on localhost / loopback / *.local so developers can
+  // work on their site without the chatbot loading at all. Opt back in per-page
+  // with <script ... data-allow-localhost="true"> or window.__CHATBOT_ALLOW_LOCALHOST__ = true.
+  function isLocalDevHost() {
+    var host = (window.location.hostname || '').toLowerCase();
+    return (
+      host === 'localhost' ||
+      host === '0.0.0.0' ||
+      host === '[::1]' || host === '::1' ||
+      host === '' ||                       // file:// pages have an empty hostname
+      /\.local$/.test(host) ||             // *.local (Bonjour / mDNS)
+      /\.test$/.test(host) ||              // *.test dev TLD
+      /^127\./.test(host) ||               // 127.x.x.x loopback range (incl. 127.0.0.1)
+      /^192\.168\./.test(host) ||          // common LAN dev IPs
+      /^10\./.test(host)                   // private LAN range
+    );
+  }
+  if (isLocalDevHost()) {
+    var _cbScript = document.currentScript;
+    var _cbAllowLocal =
+      (typeof window.__CHATBOT_ALLOW_LOCALHOST__ !== 'undefined' && window.__CHATBOT_ALLOW_LOCALHOST__) ||
+      (_cbScript && _cbScript.getAttribute('data-allow-localhost') === 'true');
+    if (!_cbAllowLocal) {
+      // Swallow any queued/late chatbot() calls so nothing renders on local dev.
+      window.chatbot = function () {};
+      console.info('[chatbot] Widget disabled on local/dev host "' + window.location.hostname +
+        '". Add data-allow-localhost="true" to the embed <script> to force it on.');
+      return;
+    }
+  }
+
   window.chatbot = window.chatbot || function () {
     (window.chatbot.q = window.chatbot.q || []).push(arguments);
   };
@@ -926,6 +958,7 @@
 
   function openChat() {
     if (!iframe) return;
+    _markEngaged();                          // user opened chat → stop future teaser nagging
     // Notification sound (user clicked = allowed by browsers)
     if (config.notificationSound) playNotificationSound(config.notificationVolume);
     iframe.style.display = 'block';
@@ -988,23 +1021,35 @@
   function _teaserDismissKey() {
     return '__cb_teaser_dismissed_' + (config.chatbotId || 'default') + '__';
   }
+  function _engagedKey() {
+    return '__cb_engaged_' + (config.chatbotId || 'default') + '__';
+  }
   function _isTeaserDismissed() {
     try {
       const val = localStorage.getItem(_teaserDismissKey());
       if (!val) return false;
-      // val = timestamp (ms) when dismissed — hide for 30 minutes
-      return (Date.now() - parseInt(val, 10)) < 30 * 60 * 1000;
+      // val = timestamp (ms) when dismissed via "Not now" — hide for 24 hours so the
+      // bubble doesn't nag on every page load / navigation.
+      return (Date.now() - parseInt(val, 10)) < 24 * 60 * 60 * 1000;
     } catch (_) { return false; }
   }
   function _markTeaserDismissed() {
     try { localStorage.setItem(_teaserDismissKey(), String(Date.now())); } catch (_) {}
+  }
+  // Once the user has actually opened the chat, stop showing the "need help?" teaser —
+  // they've already engaged, so re-nagging them is what made it feel spammy.
+  function _hasEngaged() {
+    try { return localStorage.getItem(_engagedKey()) === '1'; } catch (_) { return false; }
+  }
+  function _markEngaged() {
+    try { localStorage.setItem(_engagedKey(), '1'); } catch (_) {}
   }
 
   // Build + show the teaser bubble. Shared by buildTeaserBubble (initial, after delay)
   // and the post-API config patch (re-render with the correct DB values). Self-guards
   // on: teaser disabled / dismissed / already showing / chat already open.
   function renderTeaser() {
-    if (!config.teaserEnabled || _isTeaserDismissed()) return;
+    if (!config.teaserEnabled || _isTeaserDismissed() || _hasEngaged()) return;
     if (teaserEl) return;                                    // already showing
     if (iframe && iframe.style.display !== 'none') return;   // chat already open
 
@@ -1173,6 +1218,7 @@
   }
 
   function openStickyChat() {
+    _markEngaged();
     if (config.notificationSound) playNotificationSound(config.notificationVolume);
     iframe.style.display = 'block';
     iframe.style.animation = '__cb_fadeInUp 0.35s cubic-bezier(0.34,1.2,0.64,1) forwards';
@@ -1285,6 +1331,7 @@
   }
 
   function openDrawer() {
+    _markEngaged();
     if (config.notificationSound) playNotificationSound(config.notificationVolume);
     drawerEl.style.transform = 'translateX(0)';
     overlay.style.opacity    = '1';
