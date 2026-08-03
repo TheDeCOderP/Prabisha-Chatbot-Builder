@@ -127,19 +127,19 @@ export default function AppSidebar({ ...props }: React.ComponentProps<typeof Sid
           },
         ],
       },
-      {
-        title: "Collaborate",
-        url: "#",
-        icon: Users,
-        isActive: true,
-        items: [
-          {
-            icon: UserRoundPlus,
-            title: "Invites",
-            url: "/invites",
-          },
-        ],
-      }
+      // {
+      //   title: "Collaborate",
+      //   url: "#",
+      //   icon: Users,
+      //   isActive: true,
+      //   items: [
+      //     {
+      //       icon: UserRoundPlus,
+      //       title: "Invites",
+      //       url: "/invites",
+      //     },
+      //   ],
+      // }
     ],
     chatbotNav: [
       {

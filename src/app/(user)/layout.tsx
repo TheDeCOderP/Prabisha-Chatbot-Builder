@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { useSession } from "next-auth/react";
+import { signIn, useSession } from "next-auth/react";
 import { useParams, usePathname, useSearchParams } from "next/navigation";
 import AppSidebar from "@/components/layout/sidebar";
 import { Separator } from "@/components/ui/separator";
@@ -20,7 +19,6 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import { WorkspaceProvider } from "@/providers/workspace-provider";
-import { Loader2 } from "lucide-react";
 import Loader from "@/components/ui/loader";
 
 // Breadcrumb label mappings
@@ -60,7 +58,6 @@ interface BreadcrumbItemData {
 export default function UserLayout({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession();
   const searchParams = useSearchParams();
-  const router = useRouter();
   const params = useParams();
   const pathname = usePathname();
 
@@ -68,9 +65,9 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
     if (status === "unauthenticated") {
       const queryString = searchParams.toString();
       const callbackUrl = queryString ? `${pathname}?${queryString}` : pathname;
-      router.push(`/?callbackUrl=${encodeURIComponent(callbackUrl)}`);
+      signIn("central-auth", { callbackUrl, prompt: "login" });
     }
-  }, [status, pathname, searchParams, router]);
+  }, [status, pathname, searchParams]);
 
   const generateBreadcrumbs = (): BreadcrumbItemData[] => {
     if (!pathname) return [];
