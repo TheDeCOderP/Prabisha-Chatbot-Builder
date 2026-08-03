@@ -65,15 +65,43 @@ interface ChatWidgetProps {
   className?: string;
   showTypewriter?: boolean;
   typewriterTexts?: string[];
-  isDisabled?: boolean; // New prop to disable interaction
+  isDisabled?: boolean;
 }
 
-
-const handleLogin = async (callbackUrl = "/dashboard") => {
+// ==================== Popup Login Handler ====================
+const handleLogin = (callbackUrl = "/dashboard") => {
   try {
-    await signIn("central-auth", { callbackUrl }, { prompt: "login" });
+    // Width and height dimensions for the Google-like popup window
+    const width = 500;
+    const height = 600;
+    
+    // Calculate coordinates to align the popup dead-center of the user's screen
+    const left = window.screenX + (window.outerWidth - width) / 2;
+    const top = window.screenY + (window.outerHeight - height) / 2;
+
+    // Open NextAuth initialization endpoint natively into an isolated window context
+    // redirect=false blocks NextAuth from redirecting your landing page parent frame
+    const popup = window.open(
+      `/api/auth/signin/central-auth?callbackUrl=${encodeURIComponent(callbackUrl)}&redirect=false`,
+      "Central Account Login",
+      `width=${width},height=${height},left=${left},top=${top},scrollbars=yes,status=no,resizable=yes`
+    );
+
+    if (popup) {
+      // Poll checking if user finishes authorization or drops out of the screen
+      const timer = setInterval(() => {
+        if (popup.closed) {
+          clearInterval(timer);
+          // Force parent window verification update to look at updated cookie states
+          window.location.reload();
+        }
+      }, 1000);
+    } else {
+      toast.error("Popup blocked! Please allow popup windows for this site to log in.");
+    }
   } catch (error) {
     console.error("Central login error:", error);
+    toast.error("Something went wrong initializing secure popup login.");
   }
 };
 
@@ -270,7 +298,6 @@ const TrustBar = ({
   speed = 'normal',
   direction = 'forward'
 }: TrustBarProps) => {
-  // Map speed to actual values for AutoScroll
   const getSpeedValue = () => {
     switch(speed) {
       case 'slow': return 0.5;
@@ -279,15 +306,13 @@ const TrustBar = ({
     }
   };
 
-  // Default companies if no items provided
-  const defaultItems: TrustItem[] = [
+  const items = propItems || [
     { id: "1", name: "UKBiz", logo: '/carousel/ukbiz.png', icon: Briefcase },
     { id: "2", name: "Prabisha", logo: '/carousel/prabisha.png', icon: Briefcase },
     { id: "3", name: "EcoKartUk", logo: '/carousel/ecokartuk.webp', icon: Briefcase },
     { id: "4", name: "AINexus", logo: '/carousel/ainexus.avif', icon: Briefcase },
   ];
 
-  const items = propItems || defaultItems;
   const finalSpeed = getSpeedValue();
 
   return (
@@ -358,11 +383,10 @@ const PainValueSection = () => {
             </ul>
           </div>
 
-          <CircleChevronRight   className="w-16 h-16 text-primary absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+          <CircleChevronRight className="w-16 h-16 text-primary absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
 
           {/* Value Side - The AI Solution */}
           <div className="p-12 md:p-16 bg-gradient-to-br from-primary/[0.03] via-primary/[0.06] to-transparent relative group">
-            {/* Subtle Brand Accent */}
             <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full blur-3xl -mr-16 -mt-16 group-hover:bg-primary/10 transition-colors" />
             
             <div className="flex items-start gap-4 mb-8 relative z-10">
@@ -401,7 +425,6 @@ const DemoSection = () => {
   const [inputValue, setInputValue] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Initial messages
   const [messages, setMessages] = useState([
     { id: 1, role: 'bot', text: "Hi there! How can I help you today?" },
     { id: 2, role: 'user', text: "I need help with pricing and plans." },
@@ -422,7 +445,6 @@ const DemoSection = () => {
     { icon: TrendingUp, label: "Conversion Rate", value: "1.30%", change: "+12%" },
   ];
 
-  // Auto-scroll to bottom
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -480,9 +502,7 @@ const DemoSection = () => {
       </div>
 
       <div className="max-w-[1200px] mx-auto grid md:grid-cols-[2fr_1fr] gap-6 items-stretch">
-        {/* Chat Interface */}
         <div className="bg-white border border-slate-200 rounded-2xl shadow-sm flex flex-col h-[520px] overflow-hidden">
-          {/* Header */}
           <div className="flex items-center gap-2.5 p-5 border-b border-slate-100 bg-white z-10">
             <Image src="/logo1.png" alt="AI Avatar" width={32} height={32} className="w-8 h-8 rounded-full" />
             <div>
@@ -494,7 +514,6 @@ const DemoSection = () => {
             </div>
           </div>
 
-          {/* Messages Container */}
           <div ref={scrollRef} className="flex-1 overflow-y-auto p-5 space-y-4 scroll-smooth">
             {messages.map((msg) => (
               <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} items-start gap-2.5`}>
@@ -523,7 +542,6 @@ const DemoSection = () => {
             )}
           </div>
 
-          {/* Input Area */}
           <form onSubmit={handleSendMessage} className="p-4 bg-white border-t border-slate-100">
             <div className="flex items-center gap-2 bg-slate-50 rounded-full p-1.5 pl-4 border border-slate-200 focus-within:border-primary/40 transition-colors">
               <input
@@ -544,7 +562,6 @@ const DemoSection = () => {
           </form>
         </div>
 
-        {/* Analytics Column */}
         <div className="flex flex-col gap-4">
           <div className="text-[11px] font-bold tracking-wider uppercase text-slate-400 ml-1">Live Analytics</div>
           {stats.map((stat) => (
@@ -580,7 +597,6 @@ const FeaturesSection = () => {
 
   return (
     <section className="p-10 bg-slate-50/50">
-      {/* Improved Header Design */}
       <div className="text-center mb-16 max-w-[700px] mx-auto">
         <h2 className="text-[42px] font-black tracking-tighter text-slate-900 leading-tight mb-4">
           Powerful AI Chatbot Features <br />
@@ -597,10 +613,8 @@ const FeaturesSection = () => {
             key={feature.title} 
             className="group relative border-slate-200 rounded-2xl p-8 shadow-sm bg-white hover:shadow-xl hover:-translate-y-1 hover:border-primary/20 transition-all duration-300 cursor-default overflow-hidden"
           >
-            {/* Subtle background glow on hover */}
             <div className="absolute -right-8 -top-8 w-24 h-24 bg-primary/5 rounded-full blur-2xl group-hover:bg-primary/10 transition-colors" />
             
-            {/* Icon Container with double layer */}
             <div className="relative w-14 h-14 mb-6">
               <div className="absolute inset-0 bg-primary/10 rounded-2xl rotate-6 group-hover:rotate-12 transition-transform duration-300" />
               <div className="relative inset-0 w-14 h-14 bg-white border border-primary/10 rounded-2xl flex items-center justify-center text-primary shadow-sm">
@@ -627,9 +641,7 @@ const CTASection = () => {
   return (
     <section className="py-20 px-10 bg-white">
       <div className="max-w-[900px] mx-auto">
-        {/* Updated Gradient to use Primary/Secondary */}
         <div className="bg-gradient-to-br from-primary to-secondary rounded-3xl p-[72px_56px] text-center relative overflow-hidden">
-          {/* Abstract Decorations */}
           <div className="absolute top-[-60px] right-[-60px] w-[280px] h-[280px] bg-white/10 rounded-full" />
           <div className="absolute bottom-[-60px] left-[-60px] w-[220px] h-[220px] bg-white/5 rounded-full" />
           
@@ -647,13 +659,11 @@ const CTASection = () => {
             </p>
             
             <div className="flex items-center justify-center gap-3.5">
-              {/* Primary Action: White button with Primary text */}
               <Button onClick={() => handleLogin()} className="rounded-full bg-white text-primary text-[15px] font-extrabold h-auto py-3.5 px-8 flex items-center gap-2 hover:bg-slate-50 transition-colors">
                 Get Your AI Chatbot
                 <ArrowRight className="w-4 h-4" />
               </Button>
               
-              {/* Secondary Action: Outlined white button */}
               <Button variant="outline" className="rounded-full border-white/40 text-white bg-transparent text-[15px] font-extrabold h-auto py-3.5 px-8 hover:bg-white/10 transition-colors">
                 See Live Demo
               </Button>
@@ -667,6 +677,15 @@ const CTASection = () => {
 
 // ==================== Main Landing Page Component ====================
 const LandingPage = () => {
+  // Edge-case handling: If this page runs layout checks within a popup setup,
+  // tell the primary opener container frame to sync updates and close the isolated window wrapper context.
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.opener && window.opener !== window) {
+      window.opener.location.reload();
+      window.close();
+    }
+  }, []);
+
   return (
     <div className="font-outfit text-slate-900 bg-white">
       <Header />
@@ -740,7 +759,6 @@ export const ChatbotCarousel = ({
   const [chatbots, setChatbots] = useState<Chatbot[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Fetch chatbots from API
   useEffect(() => {
     const fetchChatbots = async () => {
       try {
@@ -758,12 +776,10 @@ export const ChatbotCarousel = ({
     };
 
     fetchChatbots();
-  }, [toast]);
+  }, []);
 
-  // Prepare display items (repeat for smooth looping)
   const displayItems = React.useMemo(() => {
     if (!chatbots.length) return [];
-    // Repeat items to ensure smooth infinite scroll
     let repeated = [...chatbots];
     while (repeated.length < 20) {
       repeated = [...repeated, ...chatbots];
@@ -771,7 +787,6 @@ export const ChatbotCarousel = ({
     return repeated;
   }, [chatbots]);
 
-  // Configure carousel options
   const options = React.useMemo(() => ({
     loop: true,
     align: 'start' as const,
@@ -779,7 +794,6 @@ export const ChatbotCarousel = ({
     slidesToScroll: 1,
   }), []);
 
-  // Configure auto-scroll plugin
   const autoScrollPlugin = React.useMemo(() => {
     if (!autoPlay) return undefined;
     
@@ -804,7 +818,6 @@ export const ChatbotCarousel = ({
     if (emblaApi) emblaApi.scrollNext();
   }, [emblaApi]);
 
-  // Handle carousel pause/resume on hover
   const handleMouseEnter = useCallback(() => {
     if (autoScrollPlugin && pauseOnHover) {
       autoScrollPlugin.stop();
@@ -839,7 +852,6 @@ export const ChatbotCarousel = ({
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
-      {/* Navigation Arrows */}
       {showArrows && chatbots.length > 0 && (
         <>
           <button
@@ -861,11 +873,9 @@ export const ChatbotCarousel = ({
         </>
       )}
 
-      {/* Gradient Overlays */}
       <div className="absolute left-0 top-0 bottom-0 w-32 bg-gradient-to-r from-white via-white/80 to-transparent pointer-events-none z-10" />
       <div className="absolute right-0 top-0 bottom-0 w-32 bg-gradient-to-l from-white via-white/80 to-transparent pointer-events-none z-10" />
 
-      {/* Carousel Container */}
       <div className="overflow-hidden" ref={emblaRef}>
         <div className="flex gap-6 py-4">
           {displayItems.map((chatbot, index) => (
@@ -921,7 +931,6 @@ export const ChatbotCard = ({
         className="group relative w-[320px] flex-shrink-0 cursor-pointer transition-all duration-300 hover:shadow-xl hover:-translate-y-1 border-slate-200 overflow-hidden"
         onClick={() => onSelect?.(chatbot.id)}
       >
-        {/* Gradient Border Effect */}
         <div 
           className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
           style={{
@@ -930,7 +939,6 @@ export const ChatbotCard = ({
         />
         
         <CardContent className="p-5 relative">
-          {/* Header with Icon/Avatar */}
           <div className="flex items-start justify-between mb-4">
             <div className="flex items-center gap-3">
               <div 
@@ -973,14 +981,12 @@ export const ChatbotCard = ({
             </div>
           </div>
 
-          {/* Description */}
           {chatbot.description && (
             <p className="text-sm text-slate-500 mb-4 line-clamp-2">
               {chatbot.description}
             </p>
           )}
 
-          {/* Stats Placeholder */}
           <div className="flex items-center justify-between mb-4 pt-2 border-t border-slate-100">
             <div className="flex items-center gap-1 text-xs text-slate-400">
               <Users className="w-3 h-3" />
@@ -992,7 +998,6 @@ export const ChatbotCard = ({
             </div>
           </div>
 
-          {/* Action Buttons */}
           <div className="flex gap-2 mt-2">
             <Button
               size="sm"

@@ -117,10 +117,6 @@ export const authOptions: AuthOptions = {
       return session;
     },
   },
-  pages: {
-    signIn: '/login',
-    error: '/auth/error',
-  },
   session: {
     strategy: 'jwt', // This allows us to remove the Session table
   },
