@@ -142,7 +142,7 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
             </div>
           </header>
 
-          <div className="flex flex-1 flex-col overflow-auto p-4 rounded-2xl max-h-[calc(100vh-104px)] no-scrollbar">
+          <div className="flex flex-1 flex-col overflow-auto px-4 rounded-2xl max-h-[calc(100vh-104px)] no-scrollbar">
             {children}
           </div>
         </SidebarInset>

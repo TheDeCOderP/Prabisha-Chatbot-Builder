@@ -8,7 +8,7 @@ import { ChatbotProvider } from '@/providers/chatbot-provider';
 function ChatbotLayoutContent({ children, title, chatbotId }: { children: React.ReactNode, title: string, chatbotId: string }) {
     return (
         <div className='flex w-full max-h-[calc(100vh-7rem)] h-full'>
-            <div className="w-full lg:w-1/2 border-r border-border overflow-y-auto no-scrollbar p-2">
+            <div className="w-full lg:w-1/2 border-r border-border overflow-y-auto no-scrollbar pr-4">
                 <h1 className='text-2xl font-semibold mb-8'>{title}</h1>
                 {children}
             </div>
