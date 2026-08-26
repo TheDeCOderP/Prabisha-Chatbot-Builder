@@ -1,7 +1,22 @@
 "use client";
 
 import { useRef, useState, useEffect } from "react";
-import { Monitor, Smartphone, RefreshCw, MessageCircle, X, AlignJustify, PanelRight, Layers, Bell } from "lucide-react";
+import { 
+  Monitor, 
+  Smartphone, 
+  RefreshCw, 
+  MessageCircle, 
+  X, 
+  AlignJustify, 
+  PanelRight, 
+  Layers, 
+  Bell, 
+  ZoomIn, 
+  ZoomOut, 
+  RotateCcw,
+  Headset,
+  MicOff
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface ChatIframePreviewProps {
@@ -13,25 +28,65 @@ type EmbedMode = "FLOATING_BUTTON" | "INLINE" | "STICKY_BAR" | "TEASER_BUBBLE" |
 export default function ChatIframePreview({ chatbotId }: ChatIframePreviewProps) {
   const desktopRef = useRef<HTMLIFrameElement>(null);
   const mobileRef  = useRef<HTMLIFrameElement>(null);
-  const [mode, setMode]     = useState<"desktop" | "mobile">("desktop");
-  const [key, setKey]       = useState(0);
-  const [isOpen, setIsOpen] = useState(false);
-  const [theme, setTheme]   = useState<any>(null);
-  const [iconSrc, setIconSrc] = useState<string | null>(null);
+  
+  // States
+  const [isMounted, setIsMounted]     = useState(false);
+  const [mode, setMode]               = useState<"desktop" | "mobile">("desktop");
+  const [key, setKey]                 = useState(0);
+  const [isOpen, setIsOpen]           = useState(false);
+  const [theme, setTheme]             = useState<any>(null);
+  const [iconSrc, setIconSrc]         = useState<string | null>(null);
+  const [botName, setBotName]         = useState<string>("Assistant");
+  const [zoom, setZoom]               = useState(1);
+  const [isHandsFree, setIsHandsFree] = useState(false);
+  const [isBotSpeaking, setIsBotSpeaking] = useState(false);
 
+  // 1. Fetch Chatbot Data
   useEffect(() => {
     fetch(`/api/chatbots/${chatbotId}`)
       .then(r => r.json())
       .then(data => {
         setTheme(data?.theme || null);
         setIconSrc(data?.icon || data?.avatar || null);
+        if (data?.name) setBotName(data.name);
       })
       .catch(() => {});
   }, [chatbotId]);
 
+  // 2. Load Saved User Preferences from Local Storage (Hydration Safe)
+  useEffect(() => {
+    setIsMounted(true);
+    try {
+      const savedMode = localStorage.getItem(`preview_mode_${chatbotId}`);
+      if (savedMode === "mobile" || savedMode === "desktop") setMode(savedMode);
+      
+      const savedZoom = localStorage.getItem(`preview_zoom_${chatbotId}`);
+      if (savedZoom) setZoom(parseFloat(savedZoom));
+      
+      const savedMic = localStorage.getItem(`preview_handsfree_${chatbotId}`);
+      if (savedMic === "true") setIsHandsFree(true);
+    } catch (e) {
+      console.warn("Failed to load local settings", e);
+    }
+  }, [chatbotId]);
+
+  // 3. Save User Preferences automatically on change
+  useEffect(() => {
+    if (!isMounted) return;
+    try {
+      localStorage.setItem(`preview_mode_${chatbotId}`, mode);
+      localStorage.setItem(`preview_zoom_${chatbotId}`, zoom.toString());
+      localStorage.setItem(`preview_handsfree_${chatbotId}`, isHandsFree.toString());
+    } catch (e) {
+      console.warn("Failed to save local settings", e);
+    }
+  }, [mode, zoom, isHandsFree, isMounted, chatbotId]);
+
+  // 4. Handle Iframe Messages
   useEffect(() => {
     const handler = (e: MessageEvent) => {
       if (e.data?.type === "chatbot-close") { setIsOpen(false); return; }
+      if (e.data?.type === "tts-playing") { setIsBotSpeaking(e.data.isPlaying); return; }
       if (e.data?.type === "theme-update") {
         if (e.data.theme) setTheme((prev: any) => ({ ...prev, ...e.data.theme }));
         const target = mode === "desktop" ? desktopRef.current : mobileRef.current;
@@ -41,6 +96,94 @@ export default function ChatIframePreview({ chatbotId }: ChatIframePreviewProps)
     window.addEventListener("message", handler);
     return () => window.removeEventListener("message", handler);
   }, [mode]);
+
+  // 5. Privacy-First Hands-Free Voice Activation Loop
+  useEffect(() => {
+    // If Hands Free is off OR the bot is currently talking, completely turn off the mic!
+    if (!isHandsFree || isBotSpeaking) return;
+
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      console.warn("Speech recognition not supported in this browser.");
+      setIsHandsFree(false);
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = "en-US";
+
+    let silenceTimer: NodeJS.Timeout;
+
+    recognition.onresult = (e: any) => {
+      let interim = "";
+      let final = "";
+
+      for (let i = e.resultIndex; i < e.results.length; ++i) {
+        if (e.results[i].isFinal) final += e.results[i][0].transcript;
+        else interim += e.results[i][0].transcript;
+      }
+
+      const currentText = (final || interim).toLowerCase().trim();
+      if (!currentText) return;
+
+      const nameMatch = botName.toLowerCase();
+      const target = mode === "desktop" ? desktopRef.current : mobileRef.current;
+
+      const closePhrases = ["close chat", "close widget", "close assistant", `close ${nameMatch}`, "hide chat", "exit chat"];
+      const isCloseCommand = closePhrases.some(p => currentText.includes(p));
+
+      // Behavior A: Chat is Closed -> Listen for Wake Word ONLY to OPEN
+      if (!isOpen) {
+        const wakeWords = [nameMatch, "hello", "hey", "open chat", "open widget"];
+        const detectedWakeWord = wakeWords.find(w => currentText.includes(w));
+        
+        if (detectedWakeWord) {
+          setIsOpen(true);
+          recognition.stop(); 
+        }
+      } 
+      // Behavior B: Chat is Open -> Hands Free Mode (Auto Submit / Close)
+      else {
+        target?.contentWindow?.postMessage({ type: "voice-interim", transcript: currentText }, "*");
+        
+        if (isCloseCommand) {
+          setIsOpen(false);
+          target?.contentWindow?.postMessage({ type: "voice-interim", transcript: "" }, "*");
+          recognition.stop();
+          return;
+        }
+
+        clearTimeout(silenceTimer);
+        silenceTimer = setTimeout(() => {
+          target?.contentWindow?.postMessage({ type: "voice-activation", transcript: currentText }, "*");
+          recognition.stop();
+        }, 2000); // 2 second pause for hands-free auto submit
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) recognition.stop();
+      else if (isHandsFree && !isBotSpeaking) { try { recognition.start(); } catch (err) {} }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    recognition.onend = () => {
+      if (isHandsFree && !document.hidden && !isBotSpeaking) {
+        try { recognition.start(); } catch (err) {}
+      }
+    };
+
+    try { recognition.start(); } catch (err) { console.error("Mic initialization failed:", err); }
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      recognition.onend = null;
+      recognition.stop();
+      clearTimeout(silenceTimer);
+    };
+  }, [isHandsFree, mode, isOpen, botName, isBotSpeaking]);
 
   const embedMode: EmbedMode = (theme?.embedMode as EmbedMode) || "FLOATING_BUTTON";
   const src = `/embed/widget/${chatbotId}`;
@@ -58,6 +201,12 @@ export default function ChatIframePreview({ chatbotId }: ChatIframePreviewProps)
     setIsOpen(false);
   };
 
+  const handleZoomIn = () => setZoom(z => Math.min(Math.round((z + 0.1) * 10) / 10, 2));
+  const handleZoomOut = () => setZoom(z => Math.max(Math.round((z - 0.1) * 10) / 10, 0.5));
+  const handleZoomReset = () => setZoom(1);
+
+  if (!isMounted) return <div className="h-full bg-background" />;
+
   return (
     <div className="h-full flex flex-col">
       {/* Toolbar */}
@@ -70,6 +219,41 @@ export default function ChatIframePreview({ chatbotId }: ChatIframePreviewProps)
           </div>
         </div>
         <div className="flex items-center gap-1">
+          {/* Zoom controls */}
+          <div className="flex items-center gap-0.5 border-r border-border pr-1 mr-1">
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleZoomOut} title="Zoom Out">
+              <ZoomOut className="h-3.5 w-3.5" />
+            </Button>
+            <span className="text-[10px] font-mono w-8 text-center text-muted-foreground">{Math.round(zoom * 100)}%</span>
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleZoomIn} title="Zoom In">
+              <ZoomIn className="h-3.5 w-3.5" />
+            </Button>
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleZoomReset} disabled={zoom === 1} title="Reset Zoom">
+              <RotateCcw className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+
+          {/* Voice controls */}
+          <div className="flex items-center gap-0.5 border-r border-border pr-1 mr-1">
+            <Button 
+              variant={isHandsFree ? "secondary" : "ghost"} 
+              size="icon" 
+              className={`h-7 w-7 transition-all ${isHandsFree ? "bg-purple-100 text-purple-600 hover:bg-purple-200" : ""}`} 
+              onClick={() => setIsHandsFree(!isHandsFree)} 
+              title={isHandsFree ? "Hands-Free Mode Active" : "Start Hands-Free Mode"}
+            >
+              {isHandsFree ? (
+                <span className="relative flex h-3.5 w-3.5 items-center justify-center">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75"></span>
+                  <Headset className="relative inline-flex h-3.5 w-3.5" />
+                </span>
+              ) : (
+                <MicOff className="h-3.5 w-3.5 text-muted-foreground" />
+              )}
+            </Button>
+          </div>
+
+          {/* Platform controls */}
           <Button variant={mode === "desktop" ? "secondary" : "ghost"} size="icon" className="h-7 w-7"
             onClick={() => setMode("desktop")} title="Desktop">
             <Monitor className="h-3.5 w-3.5" />
@@ -78,7 +262,7 @@ export default function ChatIframePreview({ chatbotId }: ChatIframePreviewProps)
             onClick={() => setMode("mobile")} title="Mobile">
             <Smartphone className="h-3.5 w-3.5" />
           </Button>
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleReload} title="Reload">
+          <Button variant="ghost" size="icon" className="h-7 w-7 ml-1" onClick={handleReload} title="Reload">
             <RefreshCw className="h-3.5 w-3.5" />
           </Button>
         </div>
@@ -88,10 +272,10 @@ export default function ChatIframePreview({ chatbotId }: ChatIframePreviewProps)
       <div className="flex-1 overflow-hidden relative bg-muted/20">
         {mode === "desktop" ? (
           <DesktopPreview src={src} reloadKey={key} iframeRef={desktopRef}
-            isOpen={isOpen} setIsOpen={setIsOpen} theme={theme} iconSrc={iconSrc} embedMode={embedMode} />
+            isOpen={isOpen} setIsOpen={setIsOpen} theme={theme} iconSrc={iconSrc} embedMode={embedMode} zoom={zoom} />
         ) : (
           <MobilePreview src={src} reloadKey={key} iframeRef={mobileRef}
-            isOpen={isOpen} setIsOpen={setIsOpen} theme={theme} iconSrc={iconSrc} embedMode={embedMode} />
+            isOpen={isOpen} setIsOpen={setIsOpen} theme={theme} iconSrc={iconSrc} embedMode={embedMode} zoom={zoom} />
         )}
       </div>
     </div>
@@ -109,6 +293,7 @@ interface PreviewProps {
   theme: any;
   iconSrc: string | null;
   embedMode: EmbedMode;
+  zoom: number;
 }
 
 // ─── Launcher button ──────────────────────────────────────────────────────────
@@ -195,11 +380,17 @@ function ChatWindow({ src, reloadKey, iframeRef, isOpen, top, bottom, left, righ
 
 // ─── Page background ──────────────────────────────────────────────────────────
 
-function PageBackground({ children }: { children: React.ReactNode }) {
+function PageBackground({ children, zoom = 1 }: { children: React.ReactNode; zoom?: number }) {
   return (
-    <div className="absolute inset-0 overflow-hidden" style={{
+    <div style={{
+      position: "absolute", top: 0, left: 0,
+      width: `${100 / zoom}%`,
+      height: `${100 / zoom}%`,
+      transform: `scale(${zoom})`,
+      transformOrigin: '0 0',
       backgroundImage: `linear-gradient(rgba(0,0,0,0.04) 1px,transparent 1px),linear-gradient(90deg,rgba(0,0,0,0.04) 1px,transparent 1px)`,
       backgroundSize: "24px 24px", backgroundColor: "#f9fafb",
+      overflow: "hidden"
     }}>
       <div className="absolute inset-0 flex flex-col gap-3 p-6 pointer-events-none opacity-20">
         <div className="h-6 w-48 bg-gray-400 rounded" />
@@ -216,13 +407,10 @@ function PageBackground({ children }: { children: React.ReactNode }) {
 
 // ─── Desktop preview ──────────────────────────────────────────────────────────
 
-function DesktopPreview({ src, reloadKey, iframeRef, isOpen, setIsOpen, theme, iconSrc, embedMode }: PreviewProps) {
-  // BUG FIX 1: teaser needs its own dismissed state
+function DesktopPreview({ src, reloadKey, iframeRef, isOpen, setIsOpen, theme, iconSrc, embedMode, zoom }: PreviewProps) {
   const [teaserDismissed, setTeaserDismissed] = useState(false);
 
-  // Reset teaser dismissed state on reload
   useEffect(() => { setTeaserDismissed(false); }, [reloadKey]);
-  // Also reset when chat opens (so teaser re-appears if user closes & reopens)
   useEffect(() => { if (!isOpen) setTeaserDismissed(false); }, [isOpen]);
 
   const borderR   = theme?.windowBorderRadius ?? 16;
@@ -242,7 +430,7 @@ function DesktopPreview({ src, reloadKey, iframeRef, isOpen, setIsOpen, theme, i
   // ── FLOATING BUTTON ────────────────────────────────────────────────────────
   if (embedMode === "FLOATING_BUTTON") {
     return (
-      <PageBackground>
+      <PageBackground zoom={zoom}>
         <ChatWindow src={src} reloadKey={reloadKey} iframeRef={iframeRef} isOpen={isOpen}
           bottom={btnBottom + btnSize + 12}
           {...(onLeft ? { left: btnEdge } : { right: btnEdge })}
@@ -263,18 +451,16 @@ function DesktopPreview({ src, reloadKey, iframeRef, isOpen, setIsOpen, theme, i
     const ctaYes     = theme?.teaserCtaYes    || "Yes, help me";
     const ctaNo      = theme?.teaserCtaNo     || "Not now";
 
-    // BUG FIX 2: show teaser only when chat is closed AND not dismissed
     const showTeaser = !isOpen && !teaserDismissed;
 
     return (
-      <PageBackground>
+      <PageBackground zoom={zoom}>
         <ChatWindow src={src} reloadKey={reloadKey} iframeRef={iframeRef} isOpen={isOpen}
           bottom={btnBottom + btnSize + 12}
           {...(onLeft ? { left: btnEdge } : { right: btnEdge })}
           width={winW} height={winH} borderR={borderR}
         />
 
-        {/* Teaser bubble — only when not dismissed */}
         {showTeaser && (
           <div style={{
             position: "absolute",
@@ -286,13 +472,11 @@ function DesktopPreview({ src, reloadKey, iframeRef, isOpen, setIsOpen, theme, i
             borderRadius: onLeft ? "12px 12px 12px 0" : "12px 12px 0 12px",
             boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
             fontSize: 12, fontWeight: 500, lineHeight: 1.5,
-            // BUG FIX 3: cursor pointer only on the message, not the whole box that opens chat
             zIndex: 20,
             animation: "fadeInUp 0.4s ease",
           }}>
             <p style={{ margin: "0 0 8px", cursor: "default" }}>{teaserMsg}</p>
             <div style={{ display: "flex", gap: 6 }}>
-              {/* BUG FIX 4: "Yes" opens chat, "Not now" dismisses bubble only */}
               <button
                 style={{
                   flex: 1, padding: "5px 10px", borderRadius: 20,
@@ -315,7 +499,6 @@ function DesktopPreview({ src, reloadKey, iframeRef, isOpen, setIsOpen, theme, i
                 }}
                 onClick={(e) => {
                   e.stopPropagation();
-                  // BUG FIX 5: "Not now" ONLY dismisses bubble, does NOT open chat
                   setTeaserDismissed(true);
                 }}
               >
@@ -342,12 +525,11 @@ function DesktopPreview({ src, reloadKey, iframeRef, isOpen, setIsOpen, theme, i
     const ctaText  = theme?.stickyBarCtaText   || "Start chat →";
 
     return (
-      <PageBackground>
+      <PageBackground zoom={zoom}>
         <ChatWindow src={src} reloadKey={reloadKey} iframeRef={iframeRef} isOpen={isOpen}
           {...(barPos === "bottom" ? { bottom: 48, right: 16 } : { top: 48, right: 16 })}
           width={winW} height={winH} borderR={borderR}
         />
-        {/* Sticky bar */}
         <div
           onClick={() => setIsOpen(!isOpen)}
           style={{
@@ -387,10 +569,8 @@ function DesktopPreview({ src, reloadKey, iframeRef, isOpen, setIsOpen, theme, i
     const tabText    = theme?.drawerTabText    || "Chat";
     const tabBg      = theme?.drawerTabBgColor || theme?.widgetBgColor || "#111CA8";
 
-    // BUG FIX 6: dim overlay when drawer is open
     return (
-      <PageBackground>
-        {/* Dim overlay */}
+      <PageBackground zoom={zoom}>
         {isOpen && (
           <div
             onClick={() => setIsOpen(false)}
@@ -402,7 +582,6 @@ function DesktopPreview({ src, reloadKey, iframeRef, isOpen, setIsOpen, theme, i
           />
         )}
 
-        {/* Drawer panel */}
         <div style={{
           position: "absolute", top: 0, bottom: 0,
           ...(drawerSide === "right" ? { right: 0 } : { left: 0 }),
@@ -419,7 +598,6 @@ function DesktopPreview({ src, reloadKey, iframeRef, isOpen, setIsOpen, theme, i
           />
         </div>
 
-        {/* BUG FIX 7: tab transition animates the correct property (right or left) */}
         <div style={{
           position: "absolute", top: "50%",
           ...(drawerSide === "right"
@@ -427,7 +605,6 @@ function DesktopPreview({ src, reloadKey, iframeRef, isOpen, setIsOpen, theme, i
             : { left:  isOpen ? drawerW : 0 }
           ),
           transform: "translateY(-50%)",
-          // BUG FIX 8: transition on the correct CSS property
           transition: `${drawerSide} 0.35s cubic-bezier(0.32,0.72,0,1)`,
           zIndex: 11,
         }}>
@@ -455,10 +632,15 @@ function DesktopPreview({ src, reloadKey, iframeRef, isOpen, setIsOpen, theme, i
   // ── INLINE ─────────────────────────────────────────────────────────────────
   if (embedMode === "INLINE") {
     return (
-      <div className="absolute inset-0 p-4 flex flex-col gap-3" style={{
+      <div style={{
+        position: 'absolute', top: 0, left: 0,
+        width: `${100 / zoom}%`,
+        height: `${100 / zoom}%`,
+        transform: `scale(${zoom})`,
+        transformOrigin: '0 0',
         backgroundImage: `linear-gradient(rgba(0,0,0,0.04) 1px,transparent 1px),linear-gradient(90deg,rgba(0,0,0,0.04) 1px,transparent 1px)`,
         backgroundSize: "24px 24px", backgroundColor: "#f9fafb",
-      }}>
+      }} className="p-4 flex flex-col gap-3 overflow-hidden">
         <div className="flex items-center justify-between pointer-events-none opacity-30">
           <div className="h-5 w-32 bg-gray-400 rounded" />
           <div className="flex gap-2">
@@ -482,12 +664,11 @@ function DesktopPreview({ src, reloadKey, iframeRef, isOpen, setIsOpen, theme, i
 
 // ─── Mobile preview ───────────────────────────────────────────────────────────
 
-function MobilePreview({ src, reloadKey, iframeRef, isOpen, setIsOpen, theme, iconSrc, embedMode }: PreviewProps) {
+function MobilePreview({ src, reloadKey, iframeRef, isOpen, setIsOpen, theme, iconSrc, embedMode, zoom }: PreviewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
-
-  // BUG FIX 9: teaser dismiss state for mobile too
   const [teaserDismissed, setTeaserDismissed] = useState(false);
+  
   useEffect(() => { setTeaserDismissed(false); }, [reloadKey]);
   useEffect(() => { if (!isOpen) setTeaserDismissed(false); }, [isOpen]);
 
@@ -500,28 +681,29 @@ function MobilePreview({ src, reloadKey, iframeRef, isOpen, setIsOpen, theme, ic
     const compute = () => {
       const aw = container.clientWidth  - 48;
       const ah = container.clientHeight - 48;
-      if (aw > 0 && ah > 0) setScale(Math.min(aw / PHONE_W, ah / PHONE_H, 1));
+      if (aw > 0 && ah > 0) {
+        const baseScale = Math.min(aw / PHONE_W, ah / PHONE_H, 1);
+        setScale(baseScale * zoom);
+      }
     };
     compute();
     const ro = new ResizeObserver(compute);
     ro.observe(container);
     return () => ro.disconnect();
-  }, []);
+  }, [zoom]);
 
-  const barBg    = theme?.stickyBarBgColor   || "#111CA8";
-  const barText  = theme?.stickyBarTextColor || "#ffffff";
-  const barLabel = theme?.stickyBarText      || "💬 Chat with us";
-  // BUG FIX 10: respect stickyBarPosition in mobile
-  const barPos   = theme?.stickyBarPosition  || "bottom";
-  const teaserBg = theme?.teaserBgColor      || "#111CA8";
-  const teaserTx = theme?.teaserTextColor    || "#ffffff";
-  // BUG FIX 11: drawer side in mobile
+  const barBg      = theme?.stickyBarBgColor   || "#111CA8";
+  const barText    = theme?.stickyBarTextColor || "#ffffff";
+  const barLabel   = theme?.stickyBarText      || "💬 Chat with us";
+  const barPos     = theme?.stickyBarPosition  || "bottom";
+  const teaserBg   = theme?.teaserBgColor      || "#111CA8";
+  const teaserTx   = theme?.teaserTextColor    || "#ffffff";
   const drawerSide = theme?.drawerSide || "right";
   const tabBg      = theme?.drawerTabBgColor || theme?.widgetBgColor || "#111CA8";
 
   return (
-    <div ref={containerRef} className="absolute inset-0 flex items-center justify-center">
-      <div style={{ width: PHONE_W * scale, height: PHONE_H * scale }}>
+    <div ref={containerRef} className="absolute inset-0 overflow-auto flex" style={{ padding: '24px' }}>
+      <div style={{ margin: 'auto', width: PHONE_W * scale, height: PHONE_H * scale, flexShrink: 0, position: 'relative' }}>
         <div style={{
           width: PHONE_W, height: PHONE_H,
           transformOrigin: "top left", transform: `scale(${scale})`,
@@ -573,7 +755,6 @@ function MobilePreview({ src, reloadKey, iframeRef, isOpen, setIsOpen, theme, ic
                   style={{ width: "100%", height: "100%", border: "none", display: "block" }} />
               </div>
 
-              {/* BUG FIX 12: mobile teaser bubble with proper dismiss */}
               {!isOpen && !teaserDismissed && (
                 <div style={{
                   position: "absolute", bottom: 72, right: 12,
@@ -602,7 +783,6 @@ function MobilePreview({ src, reloadKey, iframeRef, isOpen, setIsOpen, theme, ic
                     }}
                       onClick={(e) => {
                         e.stopPropagation();
-                        // BUG FIX 13: "Not now" only dismisses, does NOT open chat
                         setTeaserDismissed(true);
                       }}
                     >
@@ -621,7 +801,6 @@ function MobilePreview({ src, reloadKey, iframeRef, isOpen, setIsOpen, theme, ic
           {/* ── STICKY BAR ── */}
           {embedMode === "STICKY_BAR" && (
             <>
-              {/* BUG FIX 14: respect barPos in mobile (top/bottom) */}
               <div style={{
                 position: "absolute",
                 ...(barPos === "bottom" ? { top: 0, bottom: 40 } : { top: 40, bottom: 0 }),
@@ -655,14 +834,12 @@ function MobilePreview({ src, reloadKey, iframeRef, isOpen, setIsOpen, theme, ic
           {/* ── SLIDE DRAWER ── */}
           {embedMode === "SLIDE_DRAWER" && (
             <>
-              {/* BUG FIX 15: dim overlay for mobile drawer */}
               {isOpen && (
                 <div onClick={() => setIsOpen(false)} style={{
                   position: "absolute", inset: 0, backgroundColor: "rgba(0,0,0,0.3)", zIndex: 9,
                 }} />
               )}
 
-              {/* BUG FIX 16: handle both left and right for mobile drawer */}
               <div style={{
                 position: "absolute", top: 0, bottom: 0,
                 ...(drawerSide === "right" ? { right: 0 } : { left: 0 }),
@@ -675,7 +852,6 @@ function MobilePreview({ src, reloadKey, iframeRef, isOpen, setIsOpen, theme, ic
                   style={{ width: "100%", height: "100%", border: "none", display: "block" }} />
               </div>
 
-              {/* BUG FIX 17: tab on correct side with correct transition */}
               <div style={{
                 position: "absolute", top: "50%",
                 ...(drawerSide === "right"

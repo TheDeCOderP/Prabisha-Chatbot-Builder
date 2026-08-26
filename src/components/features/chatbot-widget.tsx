@@ -1,4 +1,5 @@
 'use client';
+
 import Image from 'next/image';
 import DOMPurify from 'dompurify';
 import { useEffect, useRef, useState, startTransition } from 'react';
@@ -20,6 +21,7 @@ import {
   SmilePlus,
   Copy,
   Check,
+  Headset,
 } from 'lucide-react';
 import { Message } from '@/types/chat';
 import {
@@ -188,7 +190,6 @@ const languageResources = {
       live: 'مباشر',
     },
   },
-  // Indian Regional Languages
   pa: {
     translation: {
       online: "ਆਨਲਾਈਨ • ਆਮ ਤੌਰ 'ਤੇ ਤੁਰੰਤ ਜਵਾਬ ਦਿੰਦਾ ਹੈ",
@@ -347,7 +348,7 @@ interface ChatbotWidgetProps {
 
 // All supported languages (combined pool)
 const ALL_LANGUAGES = [
-  { name: 'English',    code: 'en', img: '/flags/en.png', dir: 'ltr' },
+  { name: 'English',   code: 'en', img: '/flags/en.png', dir: 'ltr' },
   { name: 'हिन्दी',     code: 'hi', img: '/flags/hi.svg', dir: 'ltr' },
   { name: 'ਪੰਜਾਬੀ',    code: 'pa', img: '/flags/hi.svg', dir: 'ltr' },
   { name: 'ಕನ್ನಡ',     code: 'kn', img: '/flags/hi.svg', dir: 'ltr' },
@@ -384,9 +385,9 @@ const getLocationBasedLanguages = async (): Promise<{
 };
 
 const DEFAULT_SUGGESTIONS: MultilingualSuggestion[] = [
-  { en: "What services do you offer?",  fr: "Quels services proposez-vous ?",   ar: "ما الخدمات التي تقدمونها؟",    es: "¿Qué servicios ofrecen?",          ja: "どのようなサービスを提供していますか？", hi: "आप कौन सी सेवाएं प्रदान करते हैं?", pa: "ਤੁਸੀਂ ਕਿਹੜੀਆਂ ਸੇਵਾਵਾਂ ਪ੍ਰਦਾਨ ਕਰਦੇ ਹੋ?", kn: "ನೀವು ಯಾವ ಸೇವೆಗಳನ್ನು ಒದಗಿಸುತ್ತೀರಿ?", te: "మీరు ఏ సేవలు అందిస్తారు?", bn: "আপনি কোন সেবা প্রদান করেন?", gu: "તમે કઈ સેવાઓ પ્રદાન કરો છો?", zh: "你们提供什么服务？" },
+  { en: "What services do you offer?",  fr: "Quels services proposez-vous ?",   ar: "ما الخدمات التي تقدمونها؟",    es: "¿Qué servicios ofrecen?",         ja: "どのようなサービスを提供していますか？", hi: "आप कौन सी सेवाएं प्रदान करते हैं?", pa: "ਤੁਸੀਂ ਕਿਹੜੀਆਂ ਸੇਵਾਵਾਂ ਪ੍ਰਦਾਨ ਕਰਦੇ ਹੋ?", kn: "ನೀವು ಯಾವ ಸೇವೆಗಳನ್ನು ಒದಗಿಸುತ್ತೀರಿ?", te: "మీరు ఏ సేవలు అందిస్తారు?", bn: "আপনি কোন সেবা প্রদান করেন?", gu: "તમે કઈ સેવાઓ પ્રદાન કરો છો?", zh: "你们提供什么服务？" },
   { en: "How can I contact support?",   fr: "Comment contacter le support ?",    ar: "كيف يمكنني التواصل مع الدعم؟", es: "¿Cómo puedo contactar al soporte?", ja: "サポートに連絡するには？", hi: "सहायता से कैसे संपर्क करें?", pa: "ਸਹਾਇਤਾ ਨਾਲ ਕਿਵੇਂ ਸੰਪਰਕ ਕਰੀਏ?", kn: "ಸಹಾಯವಾಣಿಯನ್ನು ಹೇಗೆ ಸಂಪರ್ಕಿಸುವುದು?", te: "సహాయాన్ని ఎలా సంప్రదించాలి?", bn: "সহায়তার সাথে কীভাবে যোগাযোগ করবেন?", gu: "સહાયતાનો સંપર્ક કેવી રીતે કરવો?", zh: "如何联系支持团队？" },
-  { en: "How do I get started?",        fr: "Comment commencer ?",               ar: "كيف أبدأ؟",                     es: "¿Cómo empiezo?",                   ja: "どうすれば始められますか？", hi: "मैं कैसे शुरू करूं?", pa: "ਮੈਂ ਕਿਵੇਂ ਸ਼ੁਰੂ ਕਰਾਂ?", kn: "ನಾನು ಹೇಗೆ ಪ್ರಾರಂಭಿಸುವುದು?", te: "నేను ఎలా ప్రారంభించాలి?", bn: "আমি কীভাবে শুরু করব?", gu: "હું કેવી રીતે શરૂ કરું?", zh: "如何开始？" },
+  { en: "How do I get started?",        fr: "Comment commencer ?",               ar: "كيف أبدأ؟",                      es: "¿Cómo empiezo?",                  ja: "どうすれば始められますか？", hi: "मैं कैसे शुरू करूं?", pa: "ਮੈਂ ਕਿਵੇਂ ਸ਼ੁਰੂ ਕਰਾਂ?", kn: "ನಾನು ಹೇಗೆ ಪ್ರಾರಂಭಿಸುವುದು?", te: "నేను ఎలా ప్రారంభించాలి?", bn: "আমি কীভাবে শুরু করব?", gu: "હું કેવી રીતે શરૂ કરું?", zh: "如何开始？" },
 ];
 
 type LanguageCode = string;
@@ -443,11 +444,6 @@ function markdownToHtml(text: string): string {
   return DOMPurify.sanitize(out.join(''));
 }
 
-// The streaming path renders RAW model HTML live (the server's cleanHtmlResponse only runs
-// when the message is persisted to the DB). So mirror the important clean-ups here too, so
-// the live/streamed view matches the stored one: turn data-url citations into real links,
-// drop bare <cite> title-echoes (browsers render them as italic noise), and strip stray
-// <em>/<i> emphasis the model sometimes wraps source titles in.
 function cleanBotHtml(html: string): string {
   return html
     .replace(/<cite[^>]*\bdata-url="([^"]+)"[^>]*>([\s\S]*?)<\/cite>/gi, '<a href="$1">$2</a>')
@@ -471,7 +467,6 @@ function resolveSuggestion(
   const english = item['en']?.trim();
   if (english) return english;
 
-  // Try to find any available language
   for (const key in item) {
     const fallback = item[key]?.trim();
     if (fallback) return fallback;
@@ -481,7 +476,7 @@ function resolveSuggestion(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Theme helpers — all visual sizing/shaping comes from ChatbotTheme
+// Theme helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
 function getWidgetSize(theme: any, isMobile: boolean): number {
@@ -501,7 +496,6 @@ function getWidgetShapeClass(theme: any): string {
 }
 
 function getIconShapeClass(theme: any): string {
-  // Icon in the chat header / message bubbles uses widgetShape too
   return getWidgetShapeClass(theme);
 }
 
@@ -611,8 +605,6 @@ function LanguageSelector({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const current = languages.find(l => l.code === currentLang) ?? languages[0];
 
-  // Position is computed inside the click handler (event handler, not an effect)
-  // so there are no cascading-render or ref-during-render linter issues.
   const handleOpen = () => {
     if (!open && triggerRef.current) {
       const rect = triggerRef.current.getBoundingClientRect();
@@ -697,30 +689,32 @@ export default function ChatbotWidget({
   const [selectedLang, setSelectedLang] = useState<LanguageCode>('en');
   const [availableLanguages, setAvailableLanguages] = useState(GLOBAL_LANGUAGES);
 
-  // Resolve language list and default from theme settings, falling back to IP detection
   useEffect(() => {
     const theme = initialChatbotData?.theme;
     const configuredDefault   = theme?.defaultLanguage;       // 'auto' | 'en' | 'hi' | ...
     const configuredRestricted: string[] = theme?.restrictedLanguages ?? [];
 
+    const savedLang = localStorage.getItem(`chatbot_${chatbotId}_language`);
+
     const applyLanguages = (langs: typeof ALL_LANGUAGES, lang: string) => {
-      // If admin restricted languages, filter to only those (always keep the default in the list)
+      // Use saved language if available and valid in the pool
+      const finalLang = savedLang && langs.some(l => l.code === savedLang) ? savedLang : lang;
+      
       const filtered = configuredRestricted.length > 0
-        ? ALL_LANGUAGES.filter(l => configuredRestricted.includes(l.code) || l.code === lang)
+        ? ALL_LANGUAGES.filter(l => configuredRestricted.includes(l.code) || l.code === finalLang)
         : langs;
+        
       setAvailableLanguages(filtered.length > 0 ? filtered : langs);
-      setSelectedLang(lang);
-      chatbotI18n.changeLanguage(lang);
-      onLanguageChange?.(lang);
+      setSelectedLang(finalLang);
+      chatbotI18n.changeLanguage(finalLang);
+      onLanguageChange?.(finalLang);
     };
 
     if (!configuredDefault || configuredDefault === 'auto') {
-      // Auto-detect via IP (original behavior)
       getLocationBasedLanguages().then(({ languages, defaultLang }) => {
         applyLanguages(languages, defaultLang);
       });
     } else {
-      // Admin set a specific default language — no IP call needed
       applyLanguages(ALL_LANGUAGES, configuredDefault);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -729,6 +723,11 @@ export default function ChatbotWidget({
   const handleLanguageChange = (code: LanguageCode) => {
     setSelectedLang(code);
     chatbotI18n.changeLanguage(code);
+    try {
+      localStorage.setItem(`chatbot_${chatbotId}_language`, code);
+    } catch (e) {
+      console.warn("Failed to save language choice");
+    }
     onLanguageChange?.(code);
   };
  
@@ -742,7 +741,7 @@ export default function ChatbotWidget({
     isConversationalMode,
     showLeadForm,
     hideLeadForm,
-    submitLeadForm,       
+    submitLeadForm,        
     checkLeadRequirements,
     markLeadAsSubmitted,
   } = useLeadGeneration({
@@ -803,7 +802,8 @@ export default function ChatbotWidget({
     localStorage.setItem(`chatbot_session_${chatbotId}`, sid);
     setIsInitialized(true);
     window.parent.postMessage({ type: 'chatbot-loaded', chatbotId }, '*');
-  }, [chatbotId]);  // Once chatbot data is loaded, send theme sizing/position to parent embed script
+  }, [chatbotId]); 
+
   useEffect(() => {
     if (!chatbot || !chatbotId) return;
     const th = chatbot.theme || {};
@@ -831,23 +831,17 @@ export default function ChatbotWidget({
     }, '*');
   }, [chatbot, chatbotId]);
 
-  // Voice greeting inside the widget — fires once when the greeting message is shown.
-  // This covers dashboard preview and any direct /embed/widget/[id] usage where embed.js
-  // is NOT present to handle speakGreeting(). The embed.js script handles this for external
-  // embeds, but we guard with _widget_greeting_spoken in sessionStorage to prevent double-play.
   useEffect(() => {
     if (!chatbot || !chatbotId) return;
     const th = chatbot.theme || {};
     if (!th.voiceGreeting) return;
     if (!window.speechSynthesis) return;
 
-    // Only play if this is NOT embedded in an iframe (embed.js handles the iframe case)
     if (window.self !== window.top) return;
 
     const sessionKey = `chatbot_${chatbotId}_greeting_spoken`;
     if (sessionStorage.getItem(sessionKey)) return;
 
-    // Wait until greeting message is rendered
     const timer = setTimeout(() => {
       try {
         const greetingArr = chatbot.greeting;
@@ -890,6 +884,19 @@ export default function ChatbotWidget({
             const chosen = pick(langExact) || pick(langPrefix) || pick(fallbackEn) || voices[0];
             if (chosen) utt.voice = chosen;
           }
+
+          // Broadcast that the bot is speaking its greeting so the mic doesn't catch it!
+          utt.onstart = () => {
+            window.parent.postMessage({ type: 'tts-playing', isPlaying: true }, '*');
+            window.dispatchEvent(new CustomEvent('tts-playing', { detail: true }));
+          };
+          const endSpeaker = () => {
+            window.parent.postMessage({ type: 'tts-playing', isPlaying: false }, '*');
+            window.dispatchEvent(new CustomEvent('tts-playing', { detail: false }));
+          };
+          utt.onend = endSpeaker;
+          utt.onerror = endSpeaker;
+
           window.speechSynthesis.speak(utt);
           sessionStorage.setItem(sessionKey, '1');
         };
@@ -916,6 +923,22 @@ export default function ChatbotWidget({
     return () => clearTimeout(timer);
   }, [chatbot, chatbotId]);
  
+  // Add effect to listen for voice commands from the parent iframe preview wrapper
+  useEffect(() => {
+    const handleParentVoiceCommand = (e: MessageEvent) => {
+      if (e.data?.type === "voice-activation" && e.data.transcript) {
+        setText(e.data.transcript);
+        handleSubmit(undefined, e.data.transcript); 
+      }
+      if (e.data?.type === "voice-interim" && e.data.transcript) {
+        setText(e.data.transcript);
+      }
+    };
+
+    window.addEventListener("message", handleParentVoiceCommand);
+    return () => window.removeEventListener("message", handleParentVoiceCommand);
+  }, [handleSubmit, setText]);
+
   useEffect(() => {
     if (messages.length > 0 && !hasSubmittedLead && conversationId) {
       checkLeadRequirements(conversationId);
@@ -1080,9 +1103,36 @@ function ChatBot({
     resetTranscript, browserSupportsSpeechRecognition,
     policyBlocked, policyMessage, isTranscribing,
   } = useSpeechToText({ continuous: true, lang: SPEECH_LANG_MAP[selectedLang] || 'en-US' });
+  
+  // TTS State management
+  const { speak, stop, isPlaying } = useTextToSpeech();
+  const [activeSpeakingId, setActiveSpeakingId] = useState<string | null>(null);
+  const [isGreetingSpeaking, setIsGreetingSpeaking] = useState(false);
+
+  // Sync TTS state globally to iframe parent
+  useEffect(() => {
+    if (window.parent !== window) {
+      window.parent.postMessage({ type: 'tts-playing', isPlaying }, '*');
+    }
+  }, [isPlaying]);
+
+  useEffect(() => {
+    const handleGreeting = (e: any) => setIsGreetingSpeaking(e.detail);
+    window.addEventListener('tts-playing', handleGreeting);
+    return () => window.removeEventListener('tts-playing', handleGreeting);
+  }, []);
+
+  // Standard Manual Dictation Toggle
   const [isMicrophoneOn, setIsMicrophoneOn] = useState(false);
-  // Voice-to-voice: when the user asks by voice, speak the reply back. User-toggleable,
-  // remembered per chatbot. `voicePending` marks that the in-flight question came from the mic.
+  
+  // Hands-Free Mode Toggle
+  const [isHandsFreeMode, setIsHandsFreeMode] = useState<boolean>(() => {
+    try {
+      const v = localStorage.getItem(`chatbot_${chatbot?.id}_handsFree`);
+      return v === '1';
+    } catch { return false; }
+  });
+
   const [voiceReplyOn, setVoiceReplyOn] = useState<boolean>(() => {
     try {
       const v = localStorage.getItem(`chatbot_${chatbot?.id}_voiceReply`);
@@ -1090,21 +1140,37 @@ function ChatBot({
     } catch { return true; }
   });
   const [voicePending, setVoicePending] = useState(false);
+  
+  const toggleHandsFreeMode = () => {
+    setIsHandsFreeMode(v => {
+      const next = !v;
+      if (next) {
+        unlockTTSAudio();
+        // Force Voice Reply ON when entering hands-free mode
+        setVoiceReplyOn(true);
+        try { localStorage.setItem(`chatbot_${chatbot?.id}_voiceReply`, '1'); } catch {}
+      }
+      try { localStorage.setItem(`chatbot_${chatbot?.id}_handsFree`, next ? '1' : '0'); } catch {}
+      return next;
+    });
+  };
+
   const toggleVoiceReply = () => setVoiceReplyOn(v => {
     const next = !v;
-    // Turning it on is a gesture — unlock audio now so replies can be spoken later.
     if (next) unlockTTSAudio();
     try { localStorage.setItem(`chatbot_${chatbot?.id}_voiceReply`, next ? '1' : '0'); } catch {}
     return next;
   });
+  
   const [isAutoSendPending, setIsAutoSendPending] = useState(false);
   const autoSendTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingVoiceTextRef = useRef<string>('');
+  const isOpenRef = useRef(isOpen);
+
   const [parentPolicyInfo, setParentPolicyInfo] = useState<{
     blocked: boolean;
     permission?: string;
   } | null>(() => {
-    // Read URL params once at mount — lazy initializer runs outside render so no effect needed.
     if (typeof window === 'undefined') return null;
     try {
       const params = new URLSearchParams(window.location.search);
@@ -1117,24 +1183,20 @@ function ChatBot({
     return null;
   });
 
-  // NOTE: `parentPolicyInfo.permission` reflects the PARENT page's origin, not this
-  // cross-origin iframe — so a parent 'denied' must NOT hard-disable the mic here.
-  // We only hard-block on an explicit Permissions-Policy block (`parent_policy_blocked`)
-  // or once our own getUserMedia/recognition attempt fails (policyBlocked). Otherwise we
-  // let the user try and surface the real reason via the hook.
   const micAllowed =
     browserSupportsSpeechRecognition &&
     !policyBlocked &&
     (isDashboardPreview ? true : !parentPolicyInfo?.blocked);
 
-  
+  useEffect(() => {
+    isOpenRef.current = isOpen;
+  }, [isOpen]);
 
   useEffect(() => {
     if (!isEmbedded) return;
     document.body.style.overflow = 'hidden';
     document.body.style.margin = '0';
     document.body.style.padding = '0';
-    // dvh shrinks when the iOS virtual keyboard opens; fall back to vh on old browsers
     const h = (typeof CSS !== 'undefined' && CSS.supports('height', '100dvh')) ? '100dvh' : '100vh';
     document.body.style.height = h;
     document.documentElement.style.height = h;
@@ -1155,8 +1217,6 @@ function ChatBot({
       }
     };
 
-    // embed.js posts live viewport state on rotate/resize. The is_mobile query param is only
-    // read once at load, so this keeps the layout (full-bleed + header close button) correct.
     const onViewportMsg = (e: MessageEvent) => {
       if (e.data?.type === 'chatbot-viewport' && typeof e.data.isMobile === 'boolean') {
         setIsMobile(e.data.isMobile);
@@ -1172,57 +1232,92 @@ function ChatBot({
     };
   }, []);
 
-  useEffect(() => {
-    if (!transcript) return;
-
-    // Accumulate the transcript into the input field so the user can see it growing.
-    // Do NOT call resetTranscript() here — that would wipe the accumulated text before
-    // the next recognition result arrives, causing only the last chunk to be sent.
-    pendingVoiceTextRef.current = transcript;
-    setText(transcript);
-
-    // Reset the auto-send countdown every time new speech arrives.
-    if (autoSendTimerRef.current) clearTimeout(autoSendTimerRef.current);
-
-    startTransition(() => setIsAutoSendPending(true));
-    autoSendTimerRef.current = setTimeout(() => {
-      setIsAutoSendPending(false);
-      setIsMicrophoneOn(false);
-      const toSend = pendingVoiceTextRef.current;
-      pendingVoiceTextRef.current = '';
-      // Reset transcript AFTER we've captured the final text, not before.
-      resetTranscript();
-      if (toSend.trim()) {
-        // This question came from the mic → ask ChatMessages to speak the reply aloud.
-        if (voiceReplyOn) setVoicePending(true);
-        // overrideText bypasses the stale `text` state inside handleSubmit's closure
-        handleSubmit(undefined, toSend);
-      }
-    }, 1500);
-  }, [transcript]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Listen if normal manual dictation is on OR Hands Free Mode is on AND the bot is NOT speaking
+  const shouldListen = micAllowed && (isMicrophoneOn || isHandsFreeMode) && !isPlaying && !isGreetingSpeaking;
 
   useEffect(() => {
-    if (isMicrophoneOn) {
-      // Clear any leftover text from a previous session before starting fresh
+    if (shouldListen) {
       pendingVoiceTextRef.current = '';
       startListening();
     } else {
       stopListening();
-      resetTranscript();
-      pendingVoiceTextRef.current = '';
-      // Cancel pending auto-send if user manually turned off mic
-      if (autoSendTimerRef.current) {
-        clearTimeout(autoSendTimerRef.current);
-        autoSendTimerRef.current = null;
-        startTransition(() => setIsAutoSendPending(false));
+    }
+  }, [shouldListen, startListening, stopListening]);
+
+  useEffect(() => {
+    if (!transcript) return;
+    const currentTranscript = transcript.toLowerCase();
+    const botName = (chatbot.name || 'Assistant').toLowerCase();
+    
+    const closePhrases = ["close chat", "close widget", "close assistant", `close ${botName}`, "hide chat", "exit chat"];
+    const isCloseCommand = closePhrases.some(p => currentTranscript.includes(p));
+
+    if (!isOpenRef.current) {
+      // Behavior A: Hands-Free Mode (closed) -> Wake Word (Bot Name or "Open Chat")
+      if (isHandsFreeMode && (currentTranscript.includes(botName) || currentTranscript.includes('open chat'))) {
+        setIsOpen(true);
+        resetTranscript();
+        
+        if (window.speechSynthesis && voiceReplyOn) {
+           const utt = new SpeechSynthesisUtterance(`Hello!`);
+           window.speechSynthesis.speak(utt);
+        }
+        return; // Just open, do not submit as a query
+      }
+    } else {
+      // Behavior B: Chat is Open
+      pendingVoiceTextRef.current = transcript;
+      setText(transcript);
+      if (autoSendTimerRef.current) clearTimeout(autoSendTimerRef.current);
+
+      if (isHandsFreeMode) {
+        // Voice command to close widget
+        if (isCloseCommand) {
+          setIsOpen(false);
+          resetTranscript();
+          setText('');
+          return;
+        }
+
+        // Auto-Submit continuous questions in Hands-Free Mode after 2 seconds silence
+        startTransition(() => setIsAutoSendPending(true));
+        autoSendTimerRef.current = setTimeout(() => {
+          setIsAutoSendPending(false);
+          const toSend = pendingVoiceTextRef.current;
+          pendingVoiceTextRef.current = '';
+          resetTranscript();
+          if (toSend.trim()) {
+            if (voiceReplyOn) setVoicePending(true);
+            handleSubmit(undefined, toSend);
+          }
+        }, 2000);
+      } else {
+        // Normal Manual Dictation (only auto-submits if bot name is explicitly mentioned)
+        if (currentTranscript.includes(botName)) {
+          startTransition(() => setIsAutoSendPending(true));
+          autoSendTimerRef.current = setTimeout(() => {
+            setIsAutoSendPending(false);
+            setIsMicrophoneOn(false); // turn off normal dictation after submit
+            const toSend = pendingVoiceTextRef.current;
+            pendingVoiceTextRef.current = '';
+            resetTranscript();
+            if (toSend.trim()) {
+              if (voiceReplyOn) setVoicePending(true);
+              handleSubmit(undefined, toSend);
+            }
+          }, 1500);
+        } else {
+          startTransition(() => setIsAutoSendPending(false));
+        }
       }
     }
-  }, [isMicrophoneOn, startListening, stopListening, resetTranscript]);
+  }, [transcript]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // If recording gets blocked (permission denied / insecure context), turn the mic
-  // toggle off so the "Listening…" indicator clears and the blocked-reason UI shows.
   useEffect(() => {
-    if (policyBlocked) setIsMicrophoneOn(false);
+    if (policyBlocked) {
+      setIsMicrophoneOn(false);
+      setIsHandsFreeMode(false);
+    }
   }, [policyBlocked]);
 
   const handleClose = () => {
@@ -1244,7 +1339,6 @@ function ChatBot({
   const currentLangMeta = availableLanguages.find(l => l.code === selectedLang);
   const dir = currentLangMeta?.dir ?? 'ltr';
 
-  // All visual theme values come from chatbot.theme
   const th = chatbot.theme || {};
   const primaryLight = th.inputBgColor   || '#f8fafc';
   const borderColor  = th.inputBorderColor || '#e2e8f0';
@@ -1342,7 +1436,12 @@ function ChatBot({
             selectedLang={selectedLang}
             voicePending={voicePending}
             voiceReplyOn={voiceReplyOn}
-            micActive={isMicrophoneOn}
+            speak={speak}
+            stop={stop}
+            isPlaying={isPlaying}
+            activeSpeakingId={activeSpeakingId}
+            setActiveSpeakingId={setActiveSpeakingId}
+            micActive={isMicrophoneOn || isHandsFreeMode}
             onVoiceConsumed={() => setVoicePending(false)}
           />
 
@@ -1353,6 +1452,8 @@ function ChatBot({
             setText={setText}
             loading={loading}
             isMicrophoneOn={isMicrophoneOn}
+            isHandsFreeMode={isHandsFreeMode}
+            isBotSpeaking={isPlaying || isGreetingSpeaking}
             isAutoSendPending={isAutoSendPending}
             isTranscribing={isTranscribing}
             browserSupportsSpeechRecognition={micAllowed}
@@ -1370,11 +1471,14 @@ function ChatBot({
             inputRef={inputRef}
             onToggleMicrophone={() => {
               if (!micAllowed) return;
-              // Unlock audio here — this click is a real user gesture, so the shared TTS
-              // AudioContext becomes "running" and can play the reply aloud a few seconds
-              // later (voice-to-voice) without being blocked by the autoplay policy.
               unlockTTSAudio();
+              setIsHandsFreeMode(false); // Turn off hands free if manually activating standard mic
               setIsMicrophoneOn(p => !p);
+            }}
+            onToggleHandsFreeMode={() => {
+              if (!micAllowed) return;
+              setIsMicrophoneOn(false); // Turn off standard mic if switching to Hands-Free
+              toggleHandsFreeMode();
             }}
             hasLeadForm={!hasSubmittedLead && !!activeLeadForm}
             onLeadAction={handleLeadAction}
@@ -1403,7 +1507,15 @@ function ChatBot({
         </div>
       ) : (
         !isEmbedded && !isMobile && (
-          <ChatToggleButton onClick={() => setIsOpen(true)} chatbot={chatbot} isMobile={isMobile} openLabel={t('openChat')} />
+          <ChatToggleButton 
+            onClick={() => setIsOpen(true)} 
+            chatbot={chatbot} 
+            isMobile={isMobile} 
+            openLabel={t('openChat')} 
+            isHandsFreeMode={isHandsFreeMode}
+            onToggleHandsFreeMode={toggleHandsFreeMode}
+            micAllowed={micAllowed}
+          />
         )
       )}
     </div>
@@ -1411,7 +1523,7 @@ function ChatBot({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ChatHeader — reads everything from chatbot.theme
+// ChatHeader
 // ─────────────────────────────────────────────────────────────────────────────
 
 function ChatHeader({
@@ -1427,11 +1539,9 @@ function ChatHeader({
   const th = chatbot?.theme || {};
   const headerBg      = th.headerBgColor      || '#111CA8';
   const headerText    = th.headerTextColor    || '#ffffff';
-  const accentColor   = th.inputButtonColor   || '#DF6A2E';
   const closeBtnBg    = th.closeButtonBgColor || '#DF6A2E';
   const closeBtnColor = th.closeButtonColor   || '#ffffff';
 
-  // Icon image: prefer theme widgetIcon (if IMAGE type), then avatar, then icon
   const th_icon = chatbot?.theme || {};
   const iconType_h = th_icon.widgetIconType || 'EMOJI';
   const iconSrc = (iconType_h === 'IMAGE' && th_icon.widgetIcon)
@@ -1498,16 +1608,19 @@ function ChatHeader({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ChatToggleButton — reads size/shape/colors entirely from chatbot.theme
+// ChatToggleButton
 // ─────────────────────────────────────────────────────────────────────────────
 
 function ChatToggleButton({
-  onClick, chatbot, isMobile, openLabel,
+  onClick, chatbot, isMobile, openLabel, isHandsFreeMode, onToggleHandsFreeMode, micAllowed
 }: {
   onClick: () => void;
   chatbot: any;
   isMobile: boolean;
   openLabel: string;
+  isHandsFreeMode?: boolean;
+  onToggleHandsFreeMode?: () => void;
+  micAllowed?: boolean;
 }) {
   const size = getWidgetSize(chatbot.theme, isMobile);
   const shapeClass = getWidgetShapeClass(chatbot.theme);
@@ -1515,39 +1628,50 @@ function ChatToggleButton({
   const iconType = th.widgetIconType || 'EMOJI';
   const widgetIcon = th.widgetIcon || null;
 
-  // Determine what to render as the icon
   const resolvedIconUrl = iconType !== 'EMOJI' ? (widgetIcon || chatbot.avatar || chatbot.icon || null) : null;
   const resolvedEmoji   = iconType === 'EMOJI'  ? (widgetIcon || null) : null;
 
   return (
-    <button
-      onClick={onClick}
-      className={`fixed bottom-6 right-6 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-110 active:scale-95 cursor-pointer overflow-hidden flex items-center justify-center ${shapeClass}`}
-      aria-label={openLabel}
-      style={{
-        width: `${size}px`, height: `${size}px`,
-        backgroundColor: th.widgetBgColor || '#FFFFFF',
-        border: `3px solid ${th.widgetColor || '#111CA8'}`,
-      }}
-    >
-      {resolvedEmoji ? (
-        <span style={{ fontSize: `${Math.round(size * 0.4)}px`, lineHeight: 1, userSelect: 'none' }}>{resolvedEmoji}</span>
-      ) : resolvedIconUrl ? (
-        <Image
-          src={resolvedIconUrl}
-          height={size} width={size}
-          alt={chatbot.name || 'Chat'}
-          className={`w-full h-full object-contain ${shapeClass}`}
-          unoptimized
-        />
-      ) : (
-        /* Default chat bubble SVG */
-        <svg width={size * 0.45} height={size * 0.45} viewBox="0 0 24 24" fill={th.widgetColor || '#111CA8'} xmlns="http://www.w3.org/2000/svg">
-          <path d="M20 2H4C2.9 2 2 2.9 2 4V22L6 18H20C21.1 18 22 17.1 22 16V4C22 2.9 21.1 2 20 2Z"/>
-        </svg>
+    <div className="fixed bottom-6 right-6 flex flex-col items-end gap-3 z-50">
+      {micAllowed && onToggleHandsFreeMode && (
+        <button
+          onClick={onToggleHandsFreeMode}
+          className={`flex items-center justify-center h-11 w-11 rounded-full shadow-lg transition-all ${
+            isHandsFreeMode ? 'bg-purple-500 text-white animate-pulse' : 'bg-white text-gray-500 hover:bg-gray-50 border border-gray-200'
+          }`}
+          title={isHandsFreeMode ? `Hands-Free Mode ON: Listening for "${chatbot.name || 'bot'}"...` : "Enable Hands-Free Mode"}
+        >
+          {isHandsFreeMode ? <Headset size={20} /> : <MicOffIcon size={20} />}
+        </button>
       )}
-      <span className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-green-500 border-2 border-white" />
-    </button>
+      <button
+        onClick={onClick}
+        className={`shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-110 active:scale-95 cursor-pointer overflow-hidden flex items-center justify-center ${shapeClass}`}
+        aria-label={openLabel}
+        style={{
+          width: `${size}px`, height: `${size}px`,
+          backgroundColor: th.widgetBgColor || '#FFFFFF',
+          border: `3px solid ${th.widgetColor || '#111CA8'}`,
+        }}
+      >
+        {resolvedEmoji ? (
+          <span style={{ fontSize: `${Math.round(size * 0.4)}px`, lineHeight: 1, userSelect: 'none' }}>{resolvedEmoji}</span>
+        ) : resolvedIconUrl ? (
+          <Image
+            src={resolvedIconUrl}
+            height={size} width={size}
+            alt={chatbot.name || 'Chat'}
+            className={`w-full h-full object-contain ${shapeClass}`}
+            unoptimized
+          />
+        ) : (
+          <svg width={size * 0.45} height={size * 0.45} viewBox="0 0 24 24" fill={th.widgetColor || '#111CA8'} xmlns="http://www.w3.org/2000/svg">
+            <path d="M20 2H4C2.9 2 2 2.9 2 4V22L6 18H20C21.1 18 22 17.1 22 16V4C22 2.9 21.1 2 20 2Z"/>
+          </svg>
+        )}
+        <span className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-green-500 border-2 border-white" />
+      </button>
+    </div>
   );
 }
 
@@ -1573,17 +1697,16 @@ interface ChatMessagesProps {
   onSkipLead?: () => void;
   t: (key: string) => string;
   selectedLang: LanguageCode;
-  // Voice-to-voice: speak the bot's reply aloud when the question came from the mic.
-  voicePending?: boolean;             // last user message was voice-initiated → speak its answer
-  voiceReplyOn?: boolean;             // user preference toggle
-  micActive?: boolean;                // mic currently listening → stop any ongoing speech (barge-in)
-  onVoiceConsumed?: () => void;       // reset voicePending after we start speaking
+  voicePending?: boolean;              
+  voiceReplyOn?: boolean;              
+  micActive?: boolean;                
+  onVoiceConsumed?: () => void;
+  speak: (text: string) => Promise<void>;
+  stop: () => void;
+  isPlaying: boolean;
+  activeSpeakingId: string | null;
+  setActiveSpeakingId: (id: string | null) => void;
 }
-
-// ── Hoisted message-list subcomponents ──────────────────────────────────────
-// Defined at module scope (NOT inside ChatMessages' render) so React keeps the same
-// component identity across renders — prevents full remount of every bubble on each
-// render, which was causing flicker, lost local state (e.g. "copied"), and image reloads.
 
 function ChatbotAvatar({ src, name, shapeClass, small = false }: {
   src: string; name?: string; shapeClass: string; small?: boolean;
@@ -1684,7 +1807,6 @@ function MessageBubble({
             )}
             {!isUser && (
               <div className="flex items-center gap-0.5">
-                {/* Copy button */}
                 <button
                   onClick={handleCopy}
                   className={[
@@ -1697,9 +1819,6 @@ function MessageBubble({
                 >
                   {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
                 </button>
-                {/* Per-message "Read aloud" button removed — it cluttered every reply.
-                    Spoken output now happens only via voice-to-voice (auto-speak when the
-                    user asks by voice), controlled by the mic-bar toggle. */}
               </div>
             )}
           </div>
@@ -1720,7 +1839,7 @@ function LeadCard({
 }) {
   if (leadCollectionStatus === 'done' || hasSubmittedLead) return null;
   const isCollecting = leadCollectionStatus === 'collecting' || leadCollectionStatus === 'submitting';
-  if (isCollecting) return null; // conversational lead hook handles the chat messages
+  if (isCollecting) return null;
 
   return (
     <div className="flex gap-3 animate-in fade-in">
@@ -1757,24 +1876,19 @@ function ChatMessages({
   messages, loading, status, quickQuestions, onQuickQuestion,
   chatContainerRef, messagesEndRef, lastBotMessageRef, formatTime, chatbot,
   hasSubmittedLead, isConversationalMode, leadCollectionStatus, onLeadAction, onSkipLead, t, selectedLang,
-  voicePending, voiceReplyOn, micActive, onVoiceConsumed,
+  voicePending, voiceReplyOn, micActive, onVoiceConsumed, speak, stop, isPlaying, activeSpeakingId, setActiveSpeakingId
 }: ChatMessagesProps) {
-  const { speak, stop, isPlaying } = useTextToSpeech();
-  const [activeSpeakingId, setActiveSpeakingId] = useState<string | null>(null);
-  // Note: the "speaking" icon derives from `activeSpeakingId === id && isPlaying`, so it
-  // resets automatically when playback ends — no effect needed to clear activeSpeakingId.
 
   const th = chatbot.theme || {};
-  const botBg    = th.botMessageBgColor    || '#FFFFFF';
-  const botText  = th.botMessageTextColor  || '#1E293B';
-  const userBg   = th.userMessageBgColor   || '#111CA8';
+  const botBg    = th.botMessageBgColor   || '#FFFFFF';
+  const botText  = th.botMessageTextColor || '#1E293B';
+  const userBg   = th.userMessageBgColor  || '#111CA8';
   const userText = th.userMessageTextColor || '#ffffff';
   const accentColor = th.inputButtonColor  || '#DF6A2E';
   const msgBg    = th.messageBgColor       || '#f8fafc';
   const fontSize = th.fontSize             || 14;
   const showTTS  = th.showTTS              ?? true;
 
-  // Icon src: prefer theme widgetIcon (IMAGE type), then avatar, then icon
   const thIcon = th;
   const iconType_m = thIcon.widgetIconType || 'EMOJI';
   const chatIconSrc = (iconType_m === 'IMAGE' && thIcon.widgetIcon)
@@ -1794,15 +1908,11 @@ function ChatMessages({
     if (activeSpeakingId === id && isPlaying) { stop(); setActiveSpeakingId(null); }
     else {
       setActiveSpeakingId(id);
-      // Strip HTML tags before sending to TTS so it reads clean text
       const plainText = content.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
       await speak(plainText);
     }
   };
 
-  // ── Voice-to-voice: auto-speak the reply when the question came from the mic ──
-  // Fires once per voice question, only on a genuine …→ready completion (never the
-  // error→ready path, so error messages aren't read aloud).
   const prevStatusRef = useRef(status);
   useEffect(() => {
     const prev = prevStatusRef.current;
@@ -1818,7 +1928,6 @@ function ChatMessages({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, messages, voicePending, voiceReplyOn, showTTS]);
 
-  // Barge-in / mute: stop speaking when the user re-opens the mic or turns voice replies off.
   useEffect(() => {
     if ((micActive || !voiceReplyOn) && isPlaying) {
       stop();
@@ -1827,7 +1936,6 @@ function ChatMessages({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [micActive, voiceReplyOn]);
 
-  // Shared avatar props for the hoisted subcomponents below
   const avatarProps = { avatarSrc: chatIconSrc, avatarName: chatbot.name as string | undefined, avatarShape: iconShapeClass };
 
   return (
@@ -1838,7 +1946,6 @@ function ChatMessages({
     >
       <div className="p-4 space-y-6">
         {messages.map((message, index) => {
-          // Empty bot placeholder — show typing indicator inline instead of empty bubble
           if (message.senderType === 'BOT' && !message.content && index === messages.length - 1) {
             return <LoadingDots key={index} label={t('thinking')} {...avatarProps} />;
           }
@@ -1870,12 +1977,8 @@ function ChatMessages({
           />
         )}
 
-        {/* "Thinking" indicator while waiting for the first token. Once streaming starts the
-            inline empty-bot placeholder (in the map above) and then the streaming text itself
-            are the indicators, so no separate streaming loader is needed here. */}
         {loading && status === 'submitted' && messages[messages.length - 1]?.content !== '' && <LoadingDots label={t('thinking')} {...avatarProps} />}
 
-        {/* Quick suggestions — shown only before any user message */}
         {!hasUserMessages && (
           <div className="mt-4 flex flex-wrap gap-2">
             {(quickQuestions.length > 0 ? quickQuestions : DEFAULT_SUGGESTIONS)
@@ -1916,6 +2019,8 @@ interface ChatInputProps {
   setText: (text: string) => void;
   loading: boolean;
   isMicrophoneOn: boolean;
+  isHandsFreeMode: boolean;
+  isBotSpeaking: boolean;
   isAutoSendPending?: boolean;
   isTranscribing?: boolean;
   browserSupportsSpeechRecognition: boolean;
@@ -1925,6 +2030,7 @@ interface ChatInputProps {
   status: 'submitted' | 'streaming' | 'ready' | 'error';
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
   onToggleMicrophone: () => void;
+  onToggleHandsFreeMode: () => void;
   hasLeadForm: boolean;
   onLeadAction: () => void;
   isLoadingLeadConfig: boolean;
@@ -1940,9 +2046,9 @@ interface ChatInputProps {
 }
 
 function ChatInput({
-  text, setText, loading, isMicrophoneOn, isAutoSendPending = false, isTranscribing = false, browserSupportsSpeechRecognition,
+  text, setText, loading, isMicrophoneOn, isHandsFreeMode, isBotSpeaking, isAutoSendPending = false, isTranscribing = false, browserSupportsSpeechRecognition,
   voiceBlockedMessage = null,
-  onSubmit, onNewChat, status, inputRef, onToggleMicrophone,
+  onSubmit, onNewChat, status, inputRef, onToggleMicrophone, onToggleHandsFreeMode,
   hasLeadForm, onLeadAction, isLoadingLeadConfig,
   isAwaitingLeadAnswer, isConversationalMode, chatbot,
   selectedLang, onLanguageChange, t, availableLanguages,
@@ -1994,26 +2100,33 @@ function ChatInput({
         </div>
       )}
 
-      {/* Voice state indicator: transcribing → sending → listening */}
-      {(isMicrophoneOn || isTranscribing) && (() => {
-        const voiceState = isTranscribing ? 'transcribing' : isAutoSendPending ? 'sending' : 'listening';
+      {(isMicrophoneOn || isHandsFreeMode || isTranscribing || isBotSpeaking) && (() => {
+        const voiceState = isBotSpeaking ? 'bot-speaking' : isTranscribing ? 'transcribing' : isAutoSendPending ? 'sending' : 'listening';
         const styles = {
-          transcribing: { wrap: 'bg-blue-50 border-blue-200', text: 'text-blue-600', bar: '#3b82f6', dot: 'bg-blue-500 animate-pulse', label: 'Transcribing…', dur: '0.5s' },
-          sending:      { wrap: 'bg-orange-50 border-orange-200', text: 'text-orange-600', bar: '#f97316', dot: 'bg-orange-500 animate-ping', label: 'Sending… tap mic to cancel', dur: '0.4s' },
-          listening:    { wrap: 'bg-red-50 border-red-100', text: 'text-red-600', bar: '#ef4444', dot: 'bg-red-500 animate-pulse', label: 'Listening… speak now', dur: '0.65s' },
+          'bot-speaking': { wrap: 'bg-gray-100 border-gray-300', text: 'text-gray-600', bar: '#9ca3af', dot: 'bg-gray-400', label: 'Bot is speaking...', dur: '0s' },
+          transcribing:   { wrap: 'bg-blue-50 border-blue-200', text: 'text-blue-600', bar: '#3b82f6', dot: 'bg-blue-500 animate-pulse', label: 'Transcribing…', dur: '0.5s' },
+          sending:        { wrap: 'bg-orange-50 border-orange-200', text: 'text-orange-600', bar: '#f97316', dot: 'bg-orange-500 animate-ping', label: 'Sending… tap mic to cancel', dur: '0.4s' },
+          listening:      { wrap: 'bg-red-50 border-red-100', text: 'text-red-600', bar: '#ef4444', dot: 'bg-red-500 animate-pulse', label: isHandsFreeMode ? 'Hands-Free On: Speak freely' : 'Listening… speak now', dur: '0.65s' },
         }[voiceState];
+        
+        if (isHandsFreeMode && voiceState === 'listening') {
+          styles.wrap = 'bg-purple-50 border-purple-200';
+          styles.text = 'text-purple-600';
+          styles.bar = '#9333ea';
+          styles.dot = 'bg-purple-500 animate-pulse';
+        }
+        
         return (
           <div className={`flex items-center gap-3 px-3 py-2 mb-2 mx-1 border rounded-xl transition-colors duration-300 ${styles.wrap}`}>
-            {/* Animated sound-wave bars */}
             <div className="flex items-end gap-[3px] h-5 flex-shrink-0">
               {([12, 18, 22, 18, 12] as number[]).map((h, i) => (
                 <span
                   key={i}
-                  className="w-[3px] rounded-full animate-bounce"
+                  className={`w-[3px] rounded-full ${voiceState === 'bot-speaking' ? '' : 'animate-bounce'}`}
                   style={{
-                    height: h,
+                    height: voiceState === 'bot-speaking' ? 8 : h,
                     backgroundColor: styles.bar,
-                    animationDelay: `${i * 80}ms`,
+                    animationDelay: voiceState === 'bot-speaking' ? '0s' : `${i * 80}ms`,
                     animationDuration: styles.dur,
                   }}
                 />
@@ -2041,8 +2154,8 @@ function ChatInput({
               value={text}
               onChange={e => { if (e.target.value.length <= 2000) setText(e.target.value); }}
               placeholder={isAwaitingLeadAnswer ? t('typeAnswer') : t('typeMessage')}
-              disabled={loading || isMicrophoneOn || isTranscribing}
-              className="min-h-10 max-h-32 w-full text-[14px] bg-white/60 backdrop-blur-sm rounded-lg px-3 py-2 resize-none focus-visible:ring-0 focus-visible:ring-offset-0"
+              disabled={loading || isMicrophoneOn || isHandsFreeMode || isTranscribing || isBotSpeaking}
+              className="min-h-10 max-h-32 w-full text-[14px] bg-white/60 backdrop-blur-sm rounded-lg px-3 py-2 resize-none focus-visible:ring-0 focus-visible:ring-offset-0 disabled:opacity-60"
               rows={1}
             />
             {text.length > 1500 && (
@@ -2068,12 +2181,23 @@ function ChatInput({
                     type="button" size="sm" variant="ghost"
                     onClick={onToggleMicrophone}
                     className={`cursor-pointer transition-all ${isMicrophoneOn ? 'bg-red-100 text-red-600 ring-2 ring-red-400 ring-offset-1 animate-pulse rounded-md' : ''}`}
+                    title="Tap to Dictate (Normal Mic)"
                   >
                     {isMicrophoneOn ? <MicOffIcon className="h-4 w-4" /> : <MicIcon className="h-4 w-4" />}
                   </PromptInputButton>
                 )}
+                
+                {showMic && browserSupportsSpeechRecognition && (
+                  <PromptInputButton
+                    type="button" size="sm" variant="ghost"
+                    onClick={onToggleHandsFreeMode}
+                    className={`cursor-pointer transition-all ${isHandsFreeMode ? 'bg-purple-100 text-purple-600 ring-2 ring-purple-400 ring-offset-1 animate-pulse rounded-md' : 'text-muted-foreground hover:bg-gray-100'}`}
+                    title={isHandsFreeMode ? "Hands-Free Mode Active (Tap to disable)" : "Enable Hands-Free Mode (Auto Submit & Voice Control)"}
+                  >
+                    <Headset className="h-4 w-4" />
+                  </PromptInputButton>
+                )}
 
-                {/* Voice-reply toggle — bot speaks its answer aloud when you ask by voice */}
                 {showMic && browserSupportsSpeechRecognition && showTTS && (
                   <PromptInputButton
                     type="button" size="sm" variant="ghost"
@@ -2088,8 +2212,6 @@ function ChatInput({
                   </PromptInputButton>
                 )}
 
-                {/* Mic blocked (denied / insecure context) — show a disabled icon with reason
-                    instead of silently hiding voice so the user knows why it's unavailable. */}
                 {showMic && !browserSupportsSpeechRecognition && voiceBlockedMessage && (
                   <PromptInputButton
                     type="button" size="sm" variant="ghost" disabled
@@ -2104,7 +2226,7 @@ function ChatInput({
                 {showNewChat && (
                   <PromptInputButton
                     type="button" size="sm" variant="ghost"
-                    className={`rounded-full cursor-pointer ${isMicrophoneOn ? 'bg-red-100 text-red-600' : 'hover:bg-gray-100'}`}
+                    className={`rounded-full cursor-pointer hover:bg-gray-100`}
                     onClick={onNewChat}
                   >
                     <RefreshCw className="h-4 w-4" />
@@ -2124,7 +2246,7 @@ function ChatInput({
 
           <PromptInputSubmit
             size="icon"
-            disabled={(!text.trim() && !isMicrophoneOn) || loading || text.length >= 2000}
+            disabled={(!text.trim() && !isMicrophoneOn && !isHandsFreeMode) || loading || text.length >= 2000 || isBotSpeaking}
             status={status}
             className="h-12 w-12 shrink-0 rounded-full m-1 shadow-lg hover:scale-105 transition-all"
             style={{ backgroundColor: accentColor, color: '#ffffff' }}
