@@ -120,6 +120,40 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ plat
         name: `${pData.localizedFirstName} ${pData.localizedLastName}`.trim() || 'LinkedIn User',
         image: null
       };
+    } else if (platform === 'google') {
+      // Step A: Exchange for tokens
+      const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          grant_type: "authorization_code",
+          code,
+          redirect_uri: redirectUri,
+          client_id: process.env.GOOGLE_CLIENT_ID!,
+          client_secret: process.env.GOOGLE_CLIENT_SECRET!,
+        }),
+      });
+
+      const tokenData = await tokenRes.json();
+      if (!tokenRes.ok) throw new Error(tokenData.error_description || "Google token exchange failed");
+
+      accessToken = tokenData.access_token;
+      refreshToken = tokenData.refresh_token || null; 
+      expiresAt = new Date(Date.now() + tokenData.expires_in * 1000);
+
+      // Step B: Fetch Profile
+      const pRes = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      const pData = await pRes.json();
+      
+      if (!pRes.ok) throw new Error(`Google Profile Error: ${pRes.statusText}`);
+
+      profileData = {
+        id: pData.id,
+        name: pData.name || pData.email || 'Google User',
+        image: pData.picture || null
+      };
     } else {
       throw new Error("Unsupported platform");
     }

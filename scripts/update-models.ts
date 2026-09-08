@@ -1,10 +1,10 @@
 // scripts/update-models.ts
-// Updates all old Gemini model names in the Chatbot table to gemini-2.5-flash
+// Updates all old Gemini model names in the Chatbot table to gemini-3.5-flash
 
 import { prisma } from "@/lib/prisma";
 
 const OLD_MODELS = ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-pro", "gemini-2.0-flash-lite"];
-const NEW_MODEL = "gemini-2.5-flash";
+const NEW_MODEL = "gemini-3.5-flash";
 
 async function updateModels() {
   console.log("🚀 Starting model update...\n");
@@ -27,7 +27,7 @@ async function updateModels() {
   console.log("\nChatbots to update:");
   toUpdate.forEach(c => console.log(`  - ${c.name} (${c.model})`));
 
-  // Update all old models to gemini-2.5-flash
+  // Update all old models to gemini-3.5-flash
   const result = await prisma.chatbot.updateMany({
     where: { model: { in: OLD_MODELS } },
     data: { model: NEW_MODEL },

@@ -98,11 +98,14 @@ model Chatbot {
   updatedAt DateTime @updatedAt
 
   // Each chatbot has only one form and one logic configuration
+  voiceAgent     VoiceAgent?
   form           ChatbotForm?
   logic          ChatbotLogic?
   theme          ChatbotTheme?
   
   leads           Lead[]
+  tickets         Ticket[]
+  contacts        Contact[]
   connections     Connections[]
   conversations   Conversation[]
   knowledgeBases  KnowledgeBase[]
@@ -561,6 +564,8 @@ enum Platform {
   FACEBOOK
   MESSENGER
   LINKEDIN
+  GOOGLE
+  GOOGLE_MEET
 }
 
 enum Frequency {
@@ -644,4 +649,67 @@ model QuestionCache {
   @@unique([chatbotId, questionHash])  // ← per-chatbot uniqueness
   @@index([chatbotId])
   @@index([lastUsedAt])
+}
+
+model VoiceAgent {
+  id            String   @id @default(cuid())
+  phoneNumber   String   @unique
+  sipTrunkId    String?
+  method        String   @default("call_forwarding")
+  
+  // Personality & Behavior
+  agentName     String   @default("AI Assistant")
+  voiceId       String   @default("Puck") // Gemini voices: Puck, Charon, Kore, Fenrir, Aoede
+  firstSpeaker  String   @default("agent") // 'agent' or 'user'
+  greeting      String   @default("Hello! How can I help you today?")
+  directive     String?  @db.Text // The system prompt
+  
+  chatbotId     String   @unique
+  chatbot       Chatbot  @relation(fields: [chatbotId], references: [id], onDelete: Cascade)
+  
+  callLogs      CallLog[]
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model CallLog {
+  id            String     @id @default(cuid())
+  voiceAgentId  String
+  voiceAgent    VoiceAgent @relation(fields: [voiceAgentId], references: [id], onDelete: Cascade)
+  
+  callerNumber  String
+  duration      Int?       // Call duration in seconds
+  transcript    Json?      // Array of objects: { speaker: 'user' | 'agent', text: string }
+  recordingUrl  String?    // Link to S3 or Cloudinary audio file
+  status        String     @default("completed") // completed, missed, failed
+  
+  createdAt     DateTime   @default(now())
+}
+
+// ─── Contacts for Call Forwarding/Conferencing ───
+model Contact {
+  id          String   @id @default(cuid())
+  chatbotId   String
+  chatbot     Chatbot  @relation(fields: [chatbotId], references: [id], onDelete: Cascade)
+  
+  name        String
+  role        String   // e.g., "PLUMBER", "SALES", "SUPPORT", "MANAGER"
+  phoneNumber String   // The number to dial (+91...)
+  
+  createdAt   DateTime @default(now())
+}
+
+// ─── Tickets for Complaints & Meetings ───
+model Ticket {
+  id          String   @id @default(cuid())
+  chatbotId   String
+  chatbot     Chatbot  @relation(fields: [chatbotId], references: [id], onDelete: Cascade)
+  
+  caller      String   // The phone number of the person who called
+  type        String   // e.g., "COMPLAINT", "MEETING"
+  details     Json     // Dynamic data (e.g., { issue: "broken pipe" } or { time: "2 PM" })
+  status      String   @default("OPEN")
+  
+  createdAt   DateTime @default(now())
 }

@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
     const cleanText = text.replace(/<[^>]*>?/gm, '');
 
     const response = await ai.models.generateContentStream({
-      model: "gemini-2.5-flash-preview-tts",
+      model: "gemini-3.5-flash-preview-tts",
       contents: [{ role: 'user', parts: [{ text: cleanText }] }],
       config: {
         responseModalities: ["AUDIO"],

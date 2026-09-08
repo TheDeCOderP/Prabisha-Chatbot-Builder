@@ -44,7 +44,7 @@ const GEMINI_MODELS: GeminiModel[] = [
     group: 'Gemini 2.5',
   },
   {
-    id: 'gemini-2.5-flash',
+    id: 'gemini-3.5-flash',
     name: 'Gemini 2.5 Flash',
     desc: 'Best price-performance with reasoning',
     tier: 'flash',
@@ -53,7 +53,7 @@ const GEMINI_MODELS: GeminiModel[] = [
     group: 'Gemini 2.5',
   },
   {
-    id: 'gemini-2.5-flash-lite',
+    id: 'gemini-3.5-flash-lite',
     name: 'Gemini 2.5 Flash-Lite',
     desc: 'Fastest & most budget-friendly in 2.5',
     tier: 'flash-lite',
@@ -139,7 +139,7 @@ export default function ModelSelectionPage() {
   });
   
   const [isLoading, setIsLoading] = useState(false);
-  const [selectedModel, setSelectedModel] = useState('gemini-2.5-flash');
+  const [selectedModel, setSelectedModel] = useState('gemini-3.5-flash');
   const [temperature, setTemperature]     = useState(0.7);
   const [maxTokens, setMaxTokens]         = useState(2048);
   const [saving, setSaving]               = useState(false);

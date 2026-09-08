@@ -336,7 +336,7 @@ export async function rewriteQuery(userMessage: string): Promise<string[]> {
   const t = timer('rewriteQuery (LLM call)');
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.5-flash',
       contents: [{ role: 'user', parts: [{ text: QUERY_REWRITE_PROMPT.replace('{question}', userMessage) }] }],
       // thinkingBudget:0 → don't spend the tiny token budget on internal reasoning
       config: { maxOutputTokens: 100, temperature: 0.3, thinkingConfig: { thinkingBudget: 0 } },
@@ -936,7 +936,7 @@ export async function generateGreetingResponse(chatbot: any, language: string): 
 
   try {
     const response = await ai.models.generateContent({
-      model: chatbot?.model || 'gemini-2.5-flash',
+      model: chatbot?.model || 'gemini-3.5-flash',
       contents: [{
         role: 'user',
         parts: [{
@@ -1047,15 +1047,15 @@ export async function generateRAGResponse(
         .replace('{logicContext}', logicContext)
         .replace('{question}', enrichedUserMessage);
 
-  const tLLM = timer(`Step 3: LLM generateText (${chatbot.model || 'gemini-2.5-flash'})`);
+  const tLLM = timer(`Step 3: LLM generateText (${chatbot.model || 'gemini-3.5-flash'})`);
   const response = await withRetry(() => ai.models.generateContent({
-    model: chatbot.model || 'gemini-2.5-flash',
+    model: chatbot.model || 'gemini-3.5-flash',
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
     config: {
       maxOutputTokens: chatbot.max_tokens || 1200,
       temperature: chatbot.temperature ?? 0.4,
       // Disable "thinking" so the whole token budget produces the visible answer.
-      // Otherwise gemini-2.5-flash spends most of max_tokens on hidden reasoning and
+      // Otherwise gemini-3.5-flash spends most of max_tokens on hidden reasoning and
       // the HTML answer gets truncated mid-sentence (broken tags).
       thinkingConfig: { thinkingBudget: 0 },
     },
@@ -1343,7 +1343,7 @@ export async function streamRAGResponse(
 
   const tStreamInit = timer('streamText init (LLM call start)');
   const streamResult = await ai.models.generateContentStream({
-    model: chatbot.model || 'gemini-2.5-flash',
+    model: chatbot.model || 'gemini-3.5-flash',
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
     config: {
       maxOutputTokens: chatbot.max_tokens || 1200,
