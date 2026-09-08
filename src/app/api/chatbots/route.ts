@@ -125,7 +125,7 @@ What you help with: answer questions about the business, its products/services, 
 If you're unsure about something, say so plainly rather than guessing. Keep answers focused — don't repeat yourself or over-explain.`,
           workspaceId,
           greeting: [{ en: "How can I help you today?" }],
-          model: "gemini-2.5-flash",
+          model: "gemini-3.5-flash",
           max_tokens: 2048,
           temperature: 0.7,
           suggestions: [

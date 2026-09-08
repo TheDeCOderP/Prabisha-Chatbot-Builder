@@ -19,7 +19,7 @@ import {
   SquareTerminal,
   Sun,
   NotebookPen,
-  UserRoundPlus,
+  Headset,
   Link,
   LibraryBig,
   Users,
@@ -101,6 +101,11 @@ export default function AppSidebar({ ...props }: React.ComponentProps<typeof Sid
             icon: Bot,
             title: "Chatbots",
             url: "/chatbots",
+          },
+          {
+            icon: Headset,
+            title: "Voice Agents",
+            url: "/voice-agents",
           },
           {
             icon: Users,

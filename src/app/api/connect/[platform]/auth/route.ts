@@ -44,6 +44,16 @@ const PLATFORM_CONFIG: Record<string, PlatformConfig> = {
       'pages_read_engagement',
       'pages_manage_posts'
     ],
+  },
+  google: {
+    authUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+    clientId: process.env.GOOGLE_CLIENT_ID,
+    scopeSeparator: ' ',
+    scopes: [
+      'https://www.googleapis.com/auth/userinfo.profile',
+      'https://www.googleapis.com/auth/userinfo.email',
+      'https://www.googleapis.com/auth/calendar.events', // Required for Google Meet
+    ],
   }
 };
 
@@ -88,6 +98,11 @@ export async function GET(
     // Optional: Add platform specific params if needed
     if (platform === 'facebook' || platform === 'instagram') {
        // Add specific FB/IG params here if required in the future
+    }
+
+    if (platform === 'google') {
+      authUrl.searchParams.append('access_type', 'offline');
+      authUrl.searchParams.append('prompt', 'consent');
     }
 
     return NextResponse.redirect(authUrl.toString());
