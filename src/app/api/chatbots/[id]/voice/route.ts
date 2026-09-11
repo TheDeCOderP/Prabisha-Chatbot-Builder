@@ -61,12 +61,11 @@ export async function POST(
     // Create LiveKit Inbound SIP Trunk
     if (process.env.LIVEKIT_API_KEY && process.env.LIVEKIT_API_SECRET) {
       try {
+        // FIXED: The `numbers` array is passed as the second argument. 
+        // Removed the invalid third argument entirely.
         const trunk = await sipClient.createSipInboundTrunk(
           `Trunk-${formattedPhone}`,
-          [formattedPhone],
-          {
-            numbers: [`sip:${formattedPhone}@${livekitHost}`],
-          }
+          [formattedPhone]
         );
         sipTrunkId = trunk.sipTrunkId;
       } catch (err) {
