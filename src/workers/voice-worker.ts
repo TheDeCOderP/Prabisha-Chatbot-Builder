@@ -20,6 +20,14 @@ export default defineAgent({
     
     // 1. Identify who is calling and what number they dialed
     const roomName = ctx.room.name;
+
+    if (!roomName) {
+      console.error('[VOICE] No room name found');
+      await ctx.room.disconnect();
+      return; 
+    }
+
+    // Extract the caller's phone number
     const rawNumberMatch = roomName.match(/(\+?\d{10,15})/);
     const dialedNumber = rawNumberMatch ? rawNumberMatch[0] : roomName;
     
@@ -41,7 +49,7 @@ export default defineAgent({
 
     if (!voiceSettings) {
        console.error(`[VOICE] Unregistered number dialed: ${dialedNumber}`);
-       await ctx.disconnect();
+       await ctx.room.disconnect();
        return; 
     }
 
@@ -193,7 +201,8 @@ export default defineAgent({
     });
 
     // 5. Capture Real-time Transcriptions
-    ctx.room.on('transcriptionReceived', (segments, participant) => {
+    // @ts-expect-error - LiveKit typings mismatch: Event fires at runtime but is missing from RoomCallbacks TS definition
+    ctx.room.on('transcriptionReceived', (segments: any[], participant: any) => {
       for (const segment of segments) {
         if (segment.isFinal) {
           transcript.push({

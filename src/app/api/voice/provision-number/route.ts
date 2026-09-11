@@ -13,13 +13,11 @@ export async function POST(req: Request) {
     const { chatbotId, phoneNumber, method } = await req.json();
 
     // 1. Create a dynamic SIP Trunk in LiveKit for this specific number
+    // FIXED: The array of numbers is passed as the second argument.
+    // The invalid third argument (options object) has been removed.
     const trunk = await sipClient.createSipInboundTrunk(
       `Trunk-${phoneNumber}`,
-      [phoneNumber], // The number allowed to call in
-      {
-        // This URI is what the user will put into Exotel / their PBX
-        numbers: [`sip:${phoneNumber}@your-project.sip.livekit.cloud`],
-      }
+      [phoneNumber] // The number allowed to call in
     );
 
     // 2. Save it to your PostgreSQL database
