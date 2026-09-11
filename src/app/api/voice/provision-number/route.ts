@@ -1,23 +1,21 @@
 import { NextResponse } from "next/server";
 import { SipClient } from "livekit-server-sdk";
-import { prisma } from "@/lib/prisma"; // Adjust based on your prisma client path
-
-const sipClient = new SipClient(
-  process.env.LIVEKIT_URL!,
-  process.env.LIVEKIT_API_KEY!,
-  process.env.LIVEKIT_API_SECRET!
-);
+import { prisma } from "@/lib/prisma"; 
 
 export async function POST(req: Request) {
   try {
+    const sipClient = new SipClient(
+      process.env.LIVEKIT_URL || "https://dummy.livekit.cloud",
+      process.env.LIVEKIT_API_KEY || "",
+      process.env.LIVEKIT_API_SECRET || ""
+    );
+
     const { chatbotId, phoneNumber, method } = await req.json();
 
     // 1. Create a dynamic SIP Trunk in LiveKit for this specific number
-    // FIXED: The array of numbers is passed as the second argument.
-    // The invalid third argument (options object) has been removed.
     const trunk = await sipClient.createSipInboundTrunk(
       `Trunk-${phoneNumber}`,
-      [phoneNumber] // The number allowed to call in
+      [phoneNumber] 
     );
 
     // 2. Save it to your PostgreSQL database
