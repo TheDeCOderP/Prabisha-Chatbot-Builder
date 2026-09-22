@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Grid3x3, Loader2, Search, X } from 'lucide-react';
+import { Grid3x3, Loader2, Search, X, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import Image from 'next/image';
 import { cn } from '@/lib/utils';
@@ -37,6 +37,15 @@ const COLOR_TEXT: Record<string, string> = {
   indigo: 'text-indigo-600 dark:text-indigo-400', pink: 'text-pink-600 dark:text-pink-400',
   red: 'text-red-600 dark:text-red-400', yellow: 'text-yellow-600 dark:text-yellow-400',
 };
+
+function isCurrentProduct(url: string): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return new URL(url).hostname === window.location.hostname;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * "All apps" switcher — ported from pm/Prabisha-DMA's identical component so
@@ -114,7 +123,7 @@ export default function ProductsPanel() {
       </Button>
 
       {isOpen && (
-        <div className="absolute top-full right-0 mt-2 w-[calc(100vw-2rem)] max-w-[380px] bg-white dark:bg-gray-800 rounded-lg shadow-2xl border border-border dark:border-border z-50 animate-in fade-in slide-in-from-top-2 duration-200">
+        <div className="absolute top-full right-0 mt-2 w-80 max-w-[calc(100vw-2rem)] bg-white dark:bg-gray-800 rounded-lg shadow-2xl border border-border dark:border-border z-50 animate-in fade-in slide-in-from-top-2 duration-200">
           <div className="p-4">
             <div className="flex gap-4 justify-between mb-3">
               <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Prabisha Products</h3>
@@ -170,37 +179,49 @@ export default function ProductsPanel() {
                 </div>
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {filtered.map((product) => (
-                    <a
-                      key={product.id}
-                      href={product.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="group flex flex-col items-center p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-150"
-                      onClick={() => setIsOpen(false)}
-                      title={product.description}
-                    >
-                      <div className={cn(
-                        'w-12 h-12 rounded-lg flex items-center justify-center overflow-hidden mb-2 group-hover:scale-105 transition-transform',
-                        COLOR_BG[product.color ?? ''] ?? 'bg-gray-100 dark:bg-gray-700',
-                      )}>
-                        {product.logoUrl || product.mainImageUrl ? (
-                          <Image
-                            src={product.logoUrl || product.mainImageUrl || ''}
-                            alt={product.name || 'Product'}
-                            width={48}
-                            height={48}
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <Grid3x3 className={cn('w-6 h-6', COLOR_TEXT[product.color ?? ''] ?? 'text-gray-600 dark:text-gray-300')} />
+                  {filtered.map((product) => {
+                    const isCurrent = isCurrentProduct(product.url);
+                    return (
+                      <a
+                        key={product.id}
+                        href={product.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="group flex flex-col items-center p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-150"
+                        onClick={() => setIsOpen(false)}
+                        title={isCurrent ? 'You are here' : product.description}
+                      >
+                        <div className={cn(
+                          'relative w-12 h-12 rounded-lg flex items-center justify-center overflow-hidden mb-2 group-hover:scale-105 transition-transform',
+                          COLOR_BG[product.color ?? ''] ?? 'bg-gray-100 dark:bg-gray-700',
+                          isCurrent && 'ring-2 ring-primary ring-offset-2 ring-offset-white dark:ring-offset-gray-800',
+                        )}>
+                          {product.logoUrl || product.mainImageUrl ? (
+                            <Image
+                              src={product.logoUrl || product.mainImageUrl || ''}
+                              alt={product.name || 'Product'}
+                              width={48}
+                              height={48}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <Grid3x3 className={cn('w-6 h-6', COLOR_TEXT[product.color ?? ''] ?? 'text-gray-600 dark:text-gray-300')} />
+                          )}
+                          {isCurrent && (
+                            <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-primary flex items-center justify-center shadow-sm">
+                              <Check className="w-2.5 h-2.5 text-white" />
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-xs font-medium text-gray-900 dark:text-white text-center line-clamp-2">
+                          {product.name}
+                        </span>
+                        {isCurrent && (
+                          <span className="text-[10px] font-medium text-primary">You are here</span>
                         )}
-                      </div>
-                      <span className="text-xs font-medium text-gray-900 dark:text-white text-center line-clamp-2">
-                        {product.name}
-                      </span>
-                    </a>
-                  ))}
+                      </a>
+                    );
+                  })}
                 </div>
               )}
             </div>
