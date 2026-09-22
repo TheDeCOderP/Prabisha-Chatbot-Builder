@@ -123,7 +123,7 @@ export default function ProductsPanel() {
       </Button>
 
       {isOpen && (
-        <div className="absolute top-full right-0 mt-2 w-80 max-w-[calc(100vw-2rem)] bg-white dark:bg-gray-800 rounded-lg shadow-2xl border border-border dark:border-border z-50 animate-in fade-in slide-in-from-top-2 duration-200">
+        <div className="absolute top-full left-0 mt-2 w-80 max-w-[calc(100vw-2rem)] bg-white dark:bg-gray-800 rounded-lg shadow-2xl border border-border dark:border-border z-50 animate-in fade-in slide-in-from-top-2 duration-200">
           <div className="p-4">
             <div className="flex gap-4 justify-between mb-3">
               <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Prabisha Products</h3>

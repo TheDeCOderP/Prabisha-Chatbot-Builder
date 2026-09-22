@@ -20,7 +20,6 @@ import {
 } from "@/components/ui/breadcrumb";
 import { WorkspaceProvider } from "@/providers/workspace-provider";
 import Loader from "@/components/ui/loader";
-import ProductsPanel from "@/components/layout/our-products";
 
 // Breadcrumb label mappings
 const BREADCRUMB_MAPPINGS: Record<string, string> = {
@@ -108,7 +107,7 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
       <SidebarProvider>
         <AppSidebar id={params.id as string} collapsible="offcanvas" />
         <SidebarInset>
-          <header className="flex h-16 shrink-0 items-center justify-between gap-2">
+          <header className="flex h-16 shrink-0 items-center gap-2">
             <div className="flex items-center gap-2 px-4">
               <SidebarTrigger className="-ml-1" />
               <Separator
@@ -140,9 +139,6 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
                   ))}
                 </BreadcrumbList>
               </Breadcrumb>
-            </div>
-            <div className="flex items-center gap-2 px-4">
-              <ProductsPanel />
             </div>
           </header>
 

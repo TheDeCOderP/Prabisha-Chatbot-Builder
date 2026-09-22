@@ -64,6 +64,7 @@ import { Chatbot } from "../../../generated/prisma/client"
 import { usePathname, useRouter } from "next/navigation"
 import { NavMain } from "@/components/nav-main"
 import { NavUser } from "@/components/nav-user"
+import ProductsPanel from "./our-products"
 
 // Types for navigation items
 type NavItem = {
@@ -281,6 +282,12 @@ export default function AppSidebar({ ...props }: React.ComponentProps<typeof Sid
   return (
     <Sidebar variant="inset" collapsible="offcanvas" {...props}>
       <SidebarHeader>
+        {/* All-apps switcher — same "top of sidebar" placement as every
+            other Prabisha repo; the switcher/chatbot selector right below
+            is the current-workspace indicator. */}
+        <div className="flex items-center justify-end px-1 pt-1">
+          <ProductsPanel />
+        </div>
         {isChatbotRoute && activeWorkspace ? (
           <ChatbotSwitcher
             chatbots={chatbots}
