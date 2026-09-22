@@ -18,7 +18,7 @@ export async function GET() {
       throw new Error(`Failed to fetch products: ${response.statusText}`);
     }
 
-    const products: Array<{ slug: string; name: string; description: string; url: string; logoUrl?: string | null }> =
+    const products: Array<{ slug: string; name: string; description: string; url: string; logoUrl?: string | null; color?: string }> =
       await response.json();
 
     const data = products.map((p) => ({
@@ -29,6 +29,7 @@ export async function GET() {
       description: p.description,
       logoUrl: p.logoUrl ?? null,
       mainImageUrl: null,
+      color: p.color ?? "blue",
       category: { id: p.slug, name: "Prabisha", slug: "prabisha" },
     }));
 
