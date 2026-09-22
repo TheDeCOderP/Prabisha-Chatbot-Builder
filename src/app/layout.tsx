@@ -8,6 +8,7 @@ import { ThemeProvider } from "next-themes";
 import { Suspense } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import GoogleOneTap from "@/components/features/GoogleOneTap";
+import Script from "next/script";
 
 const poppins = Poppins({
   variable: "--font-poppins",
@@ -50,6 +51,11 @@ export default function RootLayout({
             </SessionProvider>
           </ThemeProvider>
         </Suspense>
+        {/* Prabisha Products switcher — the actual UI lives in tenant-boilerplate
+            (src/app/embed/apps-widget), loaded here via iframe so a design
+            change there updates every Prabisha repo at once. See
+            public/products-widget.js in that repo for the widget contract. */}
+        <Script src="https://apps.prabisha.com/products-widget.js" strategy="lazyOnload" />
       </body>
     </html>
   );
