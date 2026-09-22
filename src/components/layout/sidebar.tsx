@@ -281,10 +281,11 @@ export default function AppSidebar({ ...props }: React.ComponentProps<typeof Sid
   return (
     <Sidebar variant="inset" collapsible="offcanvas" {...props}>
       <SidebarHeader>
-        {/* All-apps switcher — same "top of sidebar" placement as every
-            other Prabisha repo; the switcher/chatbot selector right below
-            is the current-workspace indicator. */}
-        <div className="flex items-center justify-end px-1 pt-1">
+        {/* Current-app label + Explore — the current workspace/chatbot is
+            shown separately right below; this row says which Prabisha
+            PRODUCT you're in, with the way out to the others. */}
+        <div className="flex items-center justify-between gap-2 px-2 pt-1">
+          <span className="text-sm font-semibold text-foreground">Chatbots</span>
           <div data-prabisha-products />
         </div>
         {isChatbotRoute && activeWorkspace ? (
