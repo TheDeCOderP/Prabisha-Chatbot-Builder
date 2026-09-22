@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Loader2, Mic, Cpu, Check, Bot, User, PhoneCall, ChevronLeft } from "lucide-react"
+import { Separator } from "@/components/ui/separator"
 
 const VOICE_DIRECTIVE_PLACEHOLDER = `Example:
 You are Sarah, a helpful receptionist for Acme Corp.
@@ -136,80 +137,78 @@ export default function VoiceAgentCustomizationPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        {/* ── Identity & Voice ── */}
-        <div className="space-y-6">
-          <div className="space-y-2">
-            <Label htmlFor="agentName" className="flex items-center gap-2">
-              <Bot className="h-4 w-4 text-violet-500" /> Agent Name
-            </Label>
-            <Input
-              id="agentName"
-              value={agentName}
-              onChange={(e) => setAgentName(e.target.value)}
-              placeholder="e.g. Sarah"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label className="flex items-center gap-2">
-              <Mic className="h-4 w-4 text-blue-500" /> Voice Model
-            </Label>
-            <Select value={voiceId} onValueChange={setVoiceId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select a voice" />
-              </SelectTrigger>
-              <SelectContent>
-                {GEMINI_VOICES.map((v) => (
-                  <SelectItem key={v.id} value={v.id}>
-                    <div className="flex flex-col">
-                      <span className="font-medium">{v.name}</span>
-                      <span className="text-xs text-muted-foreground">{v.description}</span>
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+      {/* ── Identity & Voice ── */}
+      <div className="space-y-6">
+        <div className="space-y-2">
+          <Label htmlFor="agentName" className="flex items-center gap-2">
+            <Bot className="h-4 w-4 text-violet-500" /> Agent Name
+          </Label>
+          <Input
+            id="agentName"
+            value={agentName}
+            onChange={(e) => setAgentName(e.target.value)}
+            placeholder="e.g. Sarah"
+          />
         </div>
 
-        {/* ── Call Flow ── */}
-        <div className="space-y-6 p-5 border rounded-xl bg-muted/20">
-          <div className="space-y-3">
-            <Label className="text-base font-semibold">Call Flow</Label>
-            <p className="text-xs text-muted-foreground mb-2">Who speaks first when the phone connects?</p>
-            
-            <RadioGroup value={firstSpeaker} onValueChange={setFirstSpeaker} className="flex flex-col gap-3">
-              <div className={`flex items-center space-x-2 border p-3 rounded-lg cursor-pointer transition-colors ${firstSpeaker === 'agent' ? 'border-primary bg-primary/5' : 'bg-background hover:bg-muted/50'}`} onClick={() => setFirstSpeaker("agent")}>
-                <RadioGroupItem value="agent" id="agent" />
-                <Label htmlFor="agent" className="flex items-center gap-2 cursor-pointer w-full">
-                  <Bot className="w-4 h-4 text-primary" /> AI Greets Caller First
-                </Label>
-              </div>
-              <div className={`flex items-center space-x-2 border p-3 rounded-lg cursor-pointer transition-colors ${firstSpeaker === 'user' ? 'border-primary bg-primary/5' : 'bg-background hover:bg-muted/50'}`} onClick={() => setFirstSpeaker("user")}>
-                <RadioGroupItem value="user" id="user" />
-                <Label htmlFor="user" className="flex items-center gap-2 cursor-pointer w-full">
-                  <User className="w-4 h-4 text-emerald-500" /> Wait for Caller to Speak
-                </Label>
-              </div>
-            </RadioGroup>
-          </div>
-
-          {firstSpeaker === "agent" && (
-            <div className="space-y-2 pt-2 animate-in fade-in slide-in-from-top-2 duration-300">
-              <Label>Greeting Message</Label>
-              <Textarea 
-                value={greeting} 
-                onChange={(e) => setGreeting(e.target.value)} 
-                className="resize-none h-20"
-                placeholder="e.g. Thanks for calling! How can I help you today?" 
-              />
-            </div>
-          )}
+        <div className="space-y-2">
+          <Label className="flex items-center gap-2">
+            <Mic className="h-4 w-4 text-blue-500" /> Voice Model
+          </Label>
+          <Select value={voiceId} onValueChange={setVoiceId}>
+            <SelectTrigger>
+              <SelectValue placeholder="Select a voice" />
+            </SelectTrigger>
+            <SelectContent>
+              {GEMINI_VOICES.map((v) => (
+                <SelectItem key={v.id} value={v.id}>
+                  <div className="flex flex-col">
+                    <span className="font-medium">{v.name}</span>
+                    <span className="text-xs text-muted-foreground">{v.description}</span>
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
-      <hr />
+      {/* ── Call Flow ── */}
+      <div className="space-y-6 p-5 border rounded-xl bg-muted/20">
+        <div className="space-y-3">
+          <Label className="text-base font-semibold">Call Flow</Label>
+          <p className="text-xs text-muted-foreground mb-2">Who speaks first when the phone connects?</p>
+          
+          <RadioGroup value={firstSpeaker} onValueChange={setFirstSpeaker} className="flex flex-col gap-3">
+            <div className={`flex items-center space-x-2 border p-3 rounded-lg cursor-pointer transition-colors ${firstSpeaker === 'agent' ? 'border-primary bg-primary/5' : 'bg-background hover:bg-muted/50'}`} onClick={() => setFirstSpeaker("agent")}>
+              <RadioGroupItem value="agent" id="agent" />
+              <Label htmlFor="agent" className="flex items-center gap-2 cursor-pointer w-full">
+                <Bot className="w-4 h-4 text-primary" /> AI Greets Caller First
+              </Label>
+            </div>
+            <div className={`flex items-center space-x-2 border p-3 rounded-lg cursor-pointer transition-colors ${firstSpeaker === 'user' ? 'border-primary bg-primary/5' : 'bg-background hover:bg-muted/50'}`} onClick={() => setFirstSpeaker("user")}>
+              <RadioGroupItem value="user" id="user" />
+              <Label htmlFor="user" className="flex items-center gap-2 cursor-pointer w-full">
+                <User className="w-4 h-4 text-emerald-500" /> Wait for Caller to Speak
+              </Label>
+            </div>
+          </RadioGroup>
+        </div>
+
+        {firstSpeaker === "agent" && (
+          <div className="space-y-2 pt-2 animate-in fade-in slide-in-from-top-2 duration-300">
+            <Label>Greeting Message</Label>
+            <Textarea 
+              value={greeting} 
+              onChange={(e) => setGreeting(e.target.value)} 
+              className="resize-none h-20"
+              placeholder="e.g. Thanks for calling! How can I help you today?" 
+            />
+          </div>
+        )}
+      </div>
+      
+      <Separator className="my-6" />
 
       {/* ── Directive ── */}
       <div className="space-y-3">

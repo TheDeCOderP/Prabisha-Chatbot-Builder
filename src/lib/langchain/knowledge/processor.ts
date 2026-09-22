@@ -1,17 +1,8 @@
-// lib/knowledge/tableProcessor.ts
+// lib/langchain/knowledge/processor.ts
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 import mammoth from 'mammoth';
-import { GoogleGenAI } from '@google/genai';
-
-// ─── Gemini client (@google/genai) ───────────────────────────────────────────
-//
-// Using @google/genai (the newer SDK) instead of @google/generative-ai.
-// The API surface is slightly different:
-//   - new GoogleGenAI({ apiKey })   instead of new GoogleGenerativeAI(key)
-//   - ai.models.generateContent()  instead of model.generateContent()
-
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+import { PDFParse } from 'pdf-parse';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -31,36 +22,22 @@ export interface ProcessedFile {
 /**
  * A single embeddable chunk produced from a PDF.
  *
- * Strategy: per-page extraction via Gemini, then each page is split into
+ * Strategy: Extraction via pdf-parse, then the text is split into
  * overlapping chunks so no single vector exceeds the embedding model's token
  * limit (~8k tokens / ~6k words) while preserving cross-sentence context.
- *
- * Why not one vector per document?
- *   → Retrieval precision collapses on long PDFs. A question about page 8 of a
- *     50-page manual would surface the entire document; the relevant passage
- *     gets drowned out by irrelevant content.
- *
- * Why not one vector per page?
- *   → Pages can still be too long for most embedding models, and a sentence
- *     split across a page boundary loses context.
- *
- * Why per-page chunks with overlap?
- *   → Each chunk is short enough to embed accurately, the overlap (100 words)
- *     prevents context loss at boundaries, and the metadata (page, chunkIndex,
- *     totalChunks) lets you cite the exact source location.
  */
 export interface PDFChunk {
-  /** Zero-based page index */
+  /** Zero-based page index (Note: Defaults to 0 when parsing full text at once) */
   page: number;
-  /** Zero-based chunk index within this page */
+  /** Zero-based chunk index within this page/document */
   chunkIndex: number;
-  /** Total chunks on this page */
+  /** Total chunks generated */
   totalChunksOnPage: number;
   /** Total pages in the PDF */
   totalPages: number;
   /** The text content to embed */
   content: string;
-  /** Brief summary Gemini produced for image-heavy pages */
+  /** Brief summary for image-heavy pages (Not available in local parsing) */
   pageContext?: string;
 }
 
@@ -77,7 +54,7 @@ export interface ProcessedPDF {
     fileType: string;
     fileSize: number;
     chunkCount: number;
-    extractionMethod: 'gemini';
+    extractionMethod: 'pdf-parse';
   };
 }
 
@@ -113,133 +90,80 @@ function chunkPageText(text: string): string[] {
   return chunks;
 }
 
-// ─── extractPDFWithGemini ─────────────────────────────────────────────────────
+// ─── extractTextFromPDF ───────────────────────────────────────────────────────
 //
-// Uses @google/genai with gemini-3.5-flash.
-// The PDF is sent as an inline base64 blob — Gemini natively understands PDFs
-// and returns structured per-page JSON in a single round-trip.
+// Uses pdf-parse to extract text locally.
+// Converts the File arrayBuffer to a Node Buffer, which pdf-parse consumes.
 
 export async function extractTextFromPDF(file: File): Promise<ProcessedPDF> {
   const fileName    = file.name;
   const fileSize    = file.size;
   const fileType    = file.type || 'application/pdf';
+  
   const arrayBuffer = await file.arrayBuffer();
-  const base64Data  = Buffer.from(arrayBuffer).toString('base64');
+  const buffer      = Buffer.from(arrayBuffer);
 
-  const extractionPrompt = `
-You are a document extraction assistant. Extract the text content from this PDF.
+  let fullText = '';
+  let totalPages = 1;
 
-Return a JSON array where each element represents ONE page:
-
-[
-  {
-    "page": 1,
-    "content": "Full readable text of the page, preserving paragraphs and structure",
-    "pageContext": "Optional brief summary if the page contains mostly tables/images"
-  }
-]
-
-Rules:
-- "page" is 1-based.
-- "content" must contain ALL readable text on that page — headings, body text, list items, table cell values. Do NOT truncate.
-- For pages that are mostly images with little text, describe the visual content in "content".
-- For tables, convert them to readable prose: "Column A: val1, Column B: val2".
-- Preserve paragraph breaks with \\n\\n.
-- Return ONLY the raw JSON array. No markdown fences, no explanation.
-`.trim();
-
-  let geminiPages: Array<{ page: number; content: string; pageContext?: string }>;
+  // Initialize the v2 parser
+  const parser = new PDFParse({ data: buffer });
 
   try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.5-flash',
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            // Inline PDF blob — same pattern as resume-parser.ts uses for images
-            {
-              inlineData: {
-                mimeType: 'application/pdf',
-                data: base64Data,
-              },
-            },
-            { text: extractionPrompt },
-          ],
-        },
-      ],
-    });
-
-    // @google/genai returns response.text directly (no .response wrapper)
-    const rawText = (response.text ?? '').replace(/```json|```/g, '').trim();
-
-    if (!rawText) {
-      throw new Error('Gemini returned an empty response');
+    // Extract the text
+    const textResult = await parser.getText();
+    fullText = (textResult.text || '').trim();
+    
+    if (!fullText) {
+      throw new Error('No text could be extracted from this PDF.');
     }
 
-    geminiPages = JSON.parse(rawText);
+    // Extract the metadata (for page count)
+    const infoResult = await parser.getInfo();
+    totalPages = infoResult.total || 1;
 
-    if (!Array.isArray(geminiPages)) {
-      throw new Error('Gemini did not return a JSON array');
-    }
   } catch (err) {
     throw new Error(
-      `Gemini PDF extraction failed: ${err instanceof Error ? err.message : String(err)}`
+      `PDF extraction failed: ${err instanceof Error ? err.message : String(err)}`
     );
+  } finally {
+    // CRITICAL: Free memory per pdf-parse v2 docs
+    await parser.destroy();
   }
 
-  // ── Build chunks ──────────────────────────────────────────────────────────
-
-  const totalPages = geminiPages.length;
   const allChunks: PDFChunk[] = [];
-  let fullText = '';
 
-  for (const geminiPage of geminiPages) {
-    const pageText = (geminiPage.content || '').trim();
-    if (!pageText) continue;
+  // Since pdf-parse returns the entire document as a single string by default,
+  // we chunk the full document text at once.
+  const pageChunks = chunkPageText(fullText);
 
-    fullText += pageText + '\n\n';
-
-    const pageChunks = chunkPageText(pageText);
-
-    pageChunks.forEach((chunkText, chunkIdx) => {
-      allChunks.push({
-        page:              geminiPage.page - 1, // 0-based internally
-        chunkIndex:        chunkIdx,
-        totalChunksOnPage: pageChunks.length,
-        totalPages,
-        content:           chunkText,
-        pageContext:       geminiPage.pageContext,
-      });
+  pageChunks.forEach((chunkText, chunkIdx) => {
+    allChunks.push({
+      page: 0, // Fallback since we are processing the entire text blob at once
+      chunkIndex: chunkIdx,
+      totalChunksOnPage: pageChunks.length,
+      totalPages,
+      content: chunkText,
     });
-  }
-
-  if (allChunks.length === 0) {
-    throw new Error('No text could be extracted from this PDF.');
-  }
+  });
 
   return {
     chunks: allChunks,
-    fullText: fullText.trim(),
+    fullText: fullText,
     metadata: {
-      pageCount:        totalPages,
-      wordCount:        countWords(fullText),
-      extractedAt:      new Date().toISOString(),
+      pageCount: totalPages,
+      wordCount: countWords(fullText),
+      extractedAt: new Date().toISOString(),
       fileName,
       fileType,
       fileSize,
-      chunkCount:       allChunks.length,
-      extractionMethod: 'gemini',
+      chunkCount: allChunks.length,
+      extractionMethod: 'pdf-parse',
     },
   };
 }
 
 // ─── processFile ─────────────────────────────────────────────────────────────
-//
-// For non-PDF files returns a single ProcessedFile (unchanged behaviour).
-// For PDFs it delegates to extractPDFWithGemini and collapses to fullText so
-// the rest of the codebase that only needs a single string still works.
-// Callers wanting per-page vectors should use extractPDFWithGemini() directly.
 
 export async function processFile(file: File): Promise<ProcessedFile> {
   const buffer        = Buffer.from(await file.arrayBuffer());
@@ -276,7 +200,7 @@ export async function processFile(file: File): Promise<ProcessedFile> {
         content = pdf.fullText;
         metadata.pageCount        = pdf.metadata.pageCount;
         metadata.chunkCount       = pdf.metadata.chunkCount;
-        metadata.extractionMethod = 'gemini';
+        metadata.extractionMethod = 'pdf-parse';
         break;
       }
 
