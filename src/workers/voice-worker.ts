@@ -22,7 +22,7 @@ export default defineAgent({
   entry: async (ctx) => {
     const startTime = Date.now();
     const transcript: { speaker: string; text: string; time: string }[] = [];
-    let voiceSettings;
+    let voiceSettings: any = null;
     let callerNumber = "Unknown";
     let conversation: any;
     let endCallTimer: ReturnType<typeof setTimeout> | undefined;
