@@ -234,6 +234,8 @@ const RAG_ANSWER_PROMPT = `
 {languageDirective}
 {systemPrompt}
 
+{contactsContext}
+
 You have relevant knowledge below. Use it to answer like a smart friend who knows this stuff — not like a search engine.
 
 ────────────────────────
@@ -292,6 +294,8 @@ Return ONLY clean HTML.
 const GENERAL_ANSWER_PROMPT = `
 {languageDirective}
 {systemPrompt}
+
+{contactsContext}
 
 ────────────────────────
 CONVERSATION HISTORY:
@@ -559,6 +563,21 @@ export async function getLogicContext(chatbot: any, message: string, preloadedLo
 
   t.end();
   return ctx;
+}
+
+function formatContactsContext(contacts: Array<{ name: string; role: string; email: string | null; phoneNumber: string | null }>): string {
+  if (!contacts.length) return 'CONTACT DIRECTORY:\nNo contacts have been configured. Do not invent a contact or contact details.';
+
+  const entries = contacts.map(contact => {
+    const details = [contact.email && `email: ${contact.email}`, contact.phoneNumber && `phone: ${contact.phoneNumber}`]
+      .filter(Boolean)
+      .join(', ');
+    return `- ${contact.name} | role: ${contact.role}${details ? ` | ${details}` : ''}`;
+  });
+
+  return `CONTACT DIRECTORY (use this when the user asks who to contact or wants to schedule a meeting):
+${entries.join('\n')}
+Only use contact details listed above. If no listed person matches, say that plainly.`;
 }
 
 function generateSystemPrompt(chatbot: any, clientContext?: { timezone?: string; pageUrl?: string; isReturning?: boolean }): string {
@@ -976,7 +995,7 @@ export async function generateRAGResponse(
 
   // STEP 1: Parallel — history + query rewrite + chatbotLogic
   const tStep1 = timer('Step 1: history + rewriteQuery + chatbotLogic (parallel)');
-  const [history, queries, chatbotLogic] = await Promise.all([
+  const [history, queries, chatbotLogic, contacts] = await Promise.all([
     prisma.message.findMany({
       where: { conversationId },
       orderBy: { createdAt: 'asc' },
@@ -985,7 +1004,12 @@ export async function generateRAGResponse(
     rewriteQuery(userMessage),
     preloadedChatbotLogic
       ? Promise.resolve(preloadedChatbotLogic)
-      : prisma.chatbotLogic.findUnique({ where: { chatbotId: chatbot.id } })
+      : prisma.chatbotLogic.findUnique({ where: { chatbotId: chatbot.id } }),
+    prisma.contact.findMany({
+      where: { chatbotId: chatbot.id },
+      select: { name: true, role: true, email: true, phoneNumber: true },
+      orderBy: [{ role: 'asc' }, { name: 'asc' }],
+    })
   ]);
   tStep1.end();
 
@@ -994,6 +1018,7 @@ export async function generateRAGResponse(
   tLogicCtx.end();
 
   const formattedHistory = formatHistory(history);
+  const contactsContext = formatContactsContext(contacts);
 
   const enrichedUserMessage = enrichFollowUp(userMessage, history);
 
@@ -1037,12 +1062,14 @@ export async function generateRAGResponse(
     ? RAG_ANSWER_PROMPT
         .replace('{languageDirective}', langDirective)
         .replace('{systemPrompt}', systemPrompt)
+        .replace('{contactsContext}', contactsContext)
         .replace('{context}', knowledgeContext)
         .replace('{history}', formattedHistory)
         .replace('{question}', enrichedUserMessage)
     : GENERAL_ANSWER_PROMPT
         .replace('{languageDirective}', langDirective)
         .replace('{systemPrompt}', systemPrompt)
+        .replace('{contactsContext}', contactsContext)
         .replace('{history}', formattedHistory)
         .replace('{logicContext}', logicContext)
         .replace('{question}', enrichedUserMessage);
@@ -1281,17 +1308,25 @@ export async function streamRAGResponse(
   const langDirective = languageDirective(language);
 
   const tHistory = timer('prisma: fetch recent history');
-  const history = await prisma.message.findMany({
-    where: {
-      conversationId,
-      createdAt: { gte: new Date(Date.now() - 30 * 60 * 1000) }
-    },
-    orderBy: { createdAt: 'asc' },
-    take: 10
-  });
+  const [history, contacts] = await Promise.all([
+    prisma.message.findMany({
+      where: {
+        conversationId,
+        createdAt: { gte: new Date(Date.now() - 30 * 60 * 1000) }
+      },
+      orderBy: { createdAt: 'asc' },
+      take: 10
+    }),
+    prisma.contact.findMany({
+      where: { chatbotId: chatbot.id },
+      select: { name: true, role: true, email: true, phoneNumber: true },
+      orderBy: [{ role: 'asc' }, { name: 'asc' }],
+    }),
+  ]);
   tHistory.end();
 
   const formattedHistory = formatHistory(history);
+  const contactsContext = formatContactsContext(contacts);
   const intent = detectIntent(userMessage);
 
   // ── GREETING FAST PATH ────────────────────────────────────────────────────
@@ -1331,12 +1366,14 @@ export async function streamRAGResponse(
     ? RAG_ANSWER_PROMPT
         .replace('{languageDirective}', langDirective)
         .replace('{systemPrompt}', systemPrompt)
+        .replace('{contactsContext}', contactsContext)
         .replace('{context}', knowledgeContext)
         .replace('{history}', formattedHistory)
         .replace('{question}', enrichedUserMessage)
     : GENERAL_ANSWER_PROMPT
         .replace('{languageDirective}', langDirective)
         .replace('{systemPrompt}', systemPrompt)
+        .replace('{contactsContext}', contactsContext)
         .replace('{history}', formattedHistory)
         .replace('{logicContext}', logicContext)
         .replace('{question}', enrichedUserMessage);
