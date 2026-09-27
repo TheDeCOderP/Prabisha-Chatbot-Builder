@@ -566,6 +566,7 @@ enum Platform {
   LINKEDIN
   GOOGLE
   GOOGLE_MEET
+  GOOGLE_CALENDAR
 }
 
 enum Frequency {
@@ -695,7 +696,8 @@ model Contact {
   
   name        String
   role        String   // e.g., "PLUMBER", "SALES", "SUPPORT", "MANAGER"
-  phoneNumber String   // The number to dial (+91...)
+  email       String?
+  phoneNumber String?   // The number to dial (+91...)
   
   createdAt   DateTime @default(now())
 }

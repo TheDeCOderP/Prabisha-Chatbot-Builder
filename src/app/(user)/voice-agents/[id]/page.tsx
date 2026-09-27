@@ -156,15 +156,17 @@ export default function VoiceAgentCustomizationPage() {
             <Mic className="h-4 w-4 text-blue-500" /> Voice Model
           </Label>
           <Select value={voiceId} onValueChange={setVoiceId}>
-            <SelectTrigger>
+            <SelectTrigger className="w-full">
               <SelectValue placeholder="Select a voice" />
             </SelectTrigger>
             <SelectContent>
               {GEMINI_VOICES.map((v) => (
                 <SelectItem key={v.id} value={v.id}>
-                  <div className="flex flex-col">
+                  <div className="flex items-center gap-1">
                     <span className="font-medium">{v.name}</span>
-                    <span className="text-xs text-muted-foreground">{v.description}</span>
+                    <span className="text-muted-foreground text-sm opacity-80">
+                      : {v.description}
+                    </span>
                   </div>
                 </SelectItem>
               ))}

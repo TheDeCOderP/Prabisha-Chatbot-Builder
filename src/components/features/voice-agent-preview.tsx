@@ -7,16 +7,26 @@ import {
   VoiceAssistantControlBar,
   useVoiceAssistant
 } from "@livekit/components-react";
-import { Loader2, Mic } from "lucide-react";
+import { Loader2, Mic, RefreshCw, Phone, PhoneCall, PhoneOutgoing } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import "@livekit/components-styles";
 
 export default function VoiceAgentPreview({ agentId }: { agentId: string }) {
+  // UI View State
+  const [previewMode, setPreviewMode] = useState<"web" | "phone">("web");
+  
+  // WebRTC (Browser) State
   const [connectionDetails, setConnectionDetails] = useState<{ token: string; url: string } | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
 
-  const connectToAgent = async () => {
+  // Outbound Phone State
+  const [testPhone, setTestPhone] = useState("");
+  const [isDialing, setIsDialing] = useState(false);
+
+  // ─── WebRTC Handlers ──────────────────────────────────────────────────────
+  const connectToWebAgent = async () => {
     if (isConnecting || connectionDetails) return;
     setIsConnecting(true);
     try {
@@ -25,62 +35,197 @@ export default function VoiceAgentPreview({ agentId }: { agentId: string }) {
       const data = await res.json();
       setConnectionDetails({ token: data.token, url: data.url });
     } catch (error) {
-      toast.error("Could not start preview session.");
+      toast.error("Could not start web preview session.");
     } finally {
       setIsConnecting(false);
     }
   };
 
-  const disconnect = useCallback(() => {
+  const disconnectWebAgent = useCallback(() => {
     setConnectionDetails(null);
   }, []);
 
+  // ─── Outbound Phone Handlers ──────────────────────────────────────────────
+  const handleDialPhone = async () => {
+    if (!testPhone.trim()) {
+      toast.error("Please enter a valid phone number");
+      return;
+    }
+    
+    setIsDialing(true);
+    try {
+      const res = await fetch('/api/campaigns/dial', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          agentId,
+          prospectNumber: testPhone.trim(),
+          prospectName: "System Tester",
+          leadSource: "Dashboard Preview Panel"
+        })
+      });
+
+      if (!res.ok) throw new Error("Dialer API failed");
+      toast.success(`Ringing ${testPhone}...`);
+      
+      // Auto-reset the visual dialing state after 15 seconds
+      setTimeout(() => setIsDialing(false), 15000);
+    } catch (error) {
+      toast.error("Failed to initiate outbound call. Check SIP trunk settings.");
+      setIsDialing(false);
+    }
+  };
+
+  const resetAll = () => {
+    disconnectWebAgent();
+    setIsDialing(false);
+  };
+
   return (
-    <div className="w-full h-full flex flex-col items-center justify-center relative">
-      {!connectionDetails ? (
-        <InactiveOrbUI onConnect={connectToAgent} isConnecting={isConnecting} />
-      ) : (
-        <LiveKitRoom
-          serverUrl={connectionDetails.url}
-          token={connectionDetails.token}
-          connect={true}
-          audio={true}
-          video={false}
-          onDisconnected={disconnect}
-          className="flex flex-col items-center justify-center w-full"
-        >
-          <ActiveOrbUI onDisconnect={disconnect} />
-          <RoomAudioRenderer />
-        </LiveKitRoom>
-      )}
+    <div className="w-full h-full flex flex-col bg-background relative overflow-hidden">
+      {/* ─── PREVIEW CONTROLS HEADER (TOOLBAR) ─── */}
+      <div className="flex items-center justify-between px-4 py-2.5 border-b bg-background shrink-0 z-10">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Live Preview</span>
+          <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
+            {previewMode === "web" ? (
+              <Mic className="h-3 w-3" />
+            ) : (
+              <PhoneOutgoing className="h-3 w-3" />
+            )}
+            <span className="text-[10px] font-semibold">
+              {previewMode === "web" ? "WebRTC Preview" : "Telecom Preview"}
+            </span>
+          </div>
+        </div>
+        <div className="flex items-center gap-1">
+          <Button
+            variant={previewMode === "web" ? "secondary" : "ghost"} 
+            size="icon"
+            className="h-7 w-7"
+            onClick={() => { setPreviewMode("web"); resetAll(); }}
+            title="Browser WebRTC Preview"
+          >
+            <Mic className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            variant={previewMode === "phone" ? "secondary" : "ghost"} 
+            size="icon"
+            className="h-7 w-7"
+            onClick={() => { setPreviewMode("phone"); resetAll(); }}
+            title="Outbound Telecom Preview"
+          >
+            <PhoneOutgoing className="h-3.5 w-3.5" />
+          </Button>
+          <div className="w-[1px] h-4 bg-border mx-1" />
+          <Button
+            variant="ghost" 
+            size="icon"
+            className="h-7 w-7"
+            onClick={resetAll}
+            title="Reset"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      </div>
+
+      {/* ─── MAIN PREVIEW AREA ─── */}
+      <div className="flex-1 flex flex-col items-center justify-center bg-muted/10 relative">
+        
+        {/* MODE: BROWSER WEBRTC */}
+        {previewMode === "web" && (
+          !connectionDetails ? (
+            <InactiveOrbUI onConnect={connectToWebAgent} isConnecting={isConnecting} />
+          ) : (
+            <LiveKitRoom
+              serverUrl={connectionDetails.url}
+              token={connectionDetails.token}
+              connect={true}
+              audio={true}
+              video={false}
+              onDisconnected={disconnectWebAgent}
+              className="flex flex-col items-center justify-center w-full h-full"
+            >
+              <ActiveOrbUI onDisconnect={disconnectWebAgent} />
+              <RoomAudioRenderer />
+            </LiveKitRoom>
+          )
+        )}
+
+        {/* MODE: OUTBOUND PHONE NETWORK */}
+        {previewMode === "phone" && (
+          <div className="w-full max-w-sm px-6 animate-in fade-in zoom-in-95 duration-300">
+            {!isDialing ? (
+              <div className="flex flex-col items-center text-center space-y-6">
+                <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center">
+                  <PhoneCall className="w-10 h-10 text-primary" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold tracking-tight mb-2">Live Network Test</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Enter your phone number to have the AI call you directly over the actual telecom network using your SIP Trunk.
+                  </p>
+                </div>
+                <div className="flex w-full items-center gap-2">
+                  <Input 
+                    type="tel"
+                    placeholder="+919876543210" 
+                    value={testPhone}
+                    onChange={(e) => setTestPhone(e.target.value)}
+                    className="flex-1"
+                  />
+                  <Button onClick={handleDialPhone} disabled={!testPhone.trim()}>
+                    <Phone className="w-4 h-4 mr-2" />
+                    Dial
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center gap-8">
+                {/* Reusing the orb purely for visual effect while ringing */}
+                <LiquidMorphOrb state="speaking" onClick={() => setIsDialing(false)} />
+                <div className="text-center space-y-2">
+                  <p className="font-semibold text-lg text-emerald-500 animate-pulse">Ringing your phone...</p>
+                  <p className="text-sm text-muted-foreground">Answer the call on your device to speak with the agent.</p>
+                </div>
+                <Button variant="outline" className="rounded-full" onClick={() => setIsDialing(false)}>
+                  Cancel Visual Test
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+
+      </div>
     </div>
   );
 }
 
-// ─── INACTIVE / DISCONNECTED STATE ─────────────────────────────────────────
+// ─── INACTIVE / DISCONNECTED STATE (WEB MODE) ──────────────────────────────
 function InactiveOrbUI({ onConnect, isConnecting }: { onConnect: () => void, isConnecting: boolean }) {
   return (
-    <div className="flex flex-col items-center gap-8 w-full max-w-sm">
+    <div className="flex flex-col items-center gap-8 w-full max-w-sm animate-in fade-in duration-500">
       <div className="flex flex-col items-center gap-6 mt-8">
         <LiquidMorphOrb state={isConnecting ? "connecting" : "disconnected"} onClick={onConnect} />
         
         <div className="flex items-center gap-2 h-6">
           <span className={`w-2 h-2 rounded-full ${isConnecting ? 'bg-primary animate-pulse' : 'bg-muted-foreground'}`} />
           <p className="text-sm font-medium text-foreground">
-            {isConnecting ? "Connecting..." : "Tap orb to start"}
+            {isConnecting ? "Connecting to LiveKit..." : "Tap orb to start browser session"}
           </p>
         </div>
       </div>
       
       <Button onClick={onConnect} disabled={isConnecting} className="rounded-full px-8 shadow-md">
         {isConnecting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Mic className="w-4 h-4 mr-2" />}
-        {isConnecting ? "Starting..." : "Start Agent"}
+        {isConnecting ? "Starting..." : "Start Web Preview"}
       </Button>
     </div>
   );
 }
 
-// ─── ACTIVE / CONNECTED STATE ──────────────────────────────────────────────
+// ─── ACTIVE / CONNECTED STATE (WEB MODE) ───────────────────────────────────
 function ActiveOrbUI({ onDisconnect }: { onDisconnect: () => void }) {
   const { state } = useVoiceAssistant();
 
@@ -95,7 +240,7 @@ function ActiveOrbUI({ onDisconnect }: { onDisconnect: () => void }) {
   };
 
   return (
-    <div className="flex flex-col items-center gap-8 w-full max-w-sm">
+    <div className="flex flex-col items-center gap-8 w-full max-w-sm animate-in zoom-in-95 duration-300">
       <div className="flex flex-col items-center gap-6 mt-8">
         <LiquidMorphOrb state={state} onClick={onDisconnect} />
         
@@ -113,7 +258,7 @@ function ActiveOrbUI({ onDisconnect }: { onDisconnect: () => void }) {
   );
 }
 
-// ─── THE NEW LIQUID MORPH ORB COMPONENT ────────────────────────────────────
+// ─── THE LIQUID MORPH ORB COMPONENT ────────────────────────────────────────
 function LiquidMorphOrb({ state, onClick }: { state: string; onClick: () => void }) {
   const isSpinning = state !== "disconnected";
 

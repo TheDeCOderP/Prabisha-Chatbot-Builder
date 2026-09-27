@@ -25,6 +25,7 @@ import {
   Users,
   MessageCircleQuestion,
   Cog,
+  Phone,
 } from "lucide-react"
 import {
   Sidebar,
@@ -190,6 +191,11 @@ export default function AppSidebar({ ...props }: React.ComponentProps<typeof Sid
             icon: Bot,
             title: "AI Model",
             url: `/chatbots/${id}/models`,
+          },
+          {
+            icon: Phone,
+            title: "Contacts",
+            url: `/chatbots/${id}/contacts`,
           },
           {
             icon: Link,

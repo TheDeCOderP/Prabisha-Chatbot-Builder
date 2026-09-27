@@ -14,12 +14,6 @@ function VoiceAgentLayoutContent({ children, agentId }: { children: React.ReactN
 
             {/* Right Column: AI Voice Orb Preview */}
             <div className="hidden lg:flex lg:flex-col w-1/2 relative bg-muted/10 rounded-r-xl overflow-hidden shadow-inner border-l border-border">
-                {/* Updated text colors to match your theme instead of forced white */}
-                <div className="absolute top-6 left-6 z-10">
-                    <h2 className="text-foreground font-medium text-lg tracking-tight">Voice Agent Preview</h2>
-                    <p className="text-muted-foreground text-sm font-mono mt-1">ID: {agentId}</p>
-                </div>
-                
                 {/* The glowing orb component */}
                 <div className="flex-1 flex items-center justify-center">
                     <VoiceAgentPreview  agentId={agentId} />
